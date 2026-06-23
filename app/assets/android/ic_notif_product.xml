@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Product / offer icon for listing notifications -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M24,6l16,8v20c0,2.2 -1.8,4 -4,4H12c-2.2,0 -4,-1.8 -4,-4V14l16,-8z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M18,22h12v3H18zM18,28h8v3H18z" />
+</vector>

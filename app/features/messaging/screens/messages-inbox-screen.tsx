@@ -33,12 +33,11 @@ import { useAppSelector } from "@/store/hooks";
 const BRAND = "#27BB97";
 const BG = APP_SCREEN_BG;
 
-type FilterKey = "all" | "unread" | "favorites";
+type FilterKey = "all" | "unread";
 
 const FILTER_OPTIONS: { key: FilterKey; label: string }[] = [
   { key: "all", label: "All" },
   { key: "unread", label: "Unread" },
-  { key: "favorites", label: "Favorites" },
 ];
 
 function formatChatTime(dateStr: string) {
@@ -59,7 +58,6 @@ export function MessagesInboxScreen() {
 
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => new Set());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -146,19 +144,11 @@ export function MessagesInboxScreen() {
     [conversations],
   );
 
-  const favoritesCount = useMemo(
-    () => conversations.filter((c) => favoriteIds.has(c._id)).length,
-    [conversations, favoriteIds],
-  );
-
   const filtered = useMemo(() => {
     let list = conversations;
 
     if (activeFilter === "unread") {
       list = list.filter((c) => (c.unreadCount ?? 0) > 0);
-    }
-    if (activeFilter === "favorites") {
-      list = list.filter((c) => favoriteIds.has(c._id));
     }
 
     if (searchQuery.trim()) {
@@ -179,7 +169,7 @@ export function MessagesInboxScreen() {
       const bt = b.lastMessage?.createdAt ?? b.updatedAt;
       return new Date(bt).getTime() - new Date(at).getTime();
     });
-  }, [activeFilter, conversations, favoriteIds, getOtherParticipant, searchQuery]);
+  }, [activeFilter, conversations, getOtherParticipant, searchQuery]);
 
   const openChat = useCallback(
     (conv: Conversation) => {
@@ -216,7 +206,6 @@ export function MessagesInboxScreen() {
 
   const getFilterLabel = (key: FilterKey, base: string) => {
     if (key === "unread" && unreadCount > 0) return `${base} ${unreadCount}`;
-    if (key === "favorites" && favoritesCount > 0) return `${base} ${favoritesCount}`;
     return base;
   };
 

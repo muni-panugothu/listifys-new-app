@@ -48,22 +48,14 @@ import {
   useCallback, useEffect, useMemo, useRef, useState,
 } from "react";
 import {
-  ActivityIndicator, FlatList, Platform,
+  ActivityIndicator, FlatList,
   Pressable, ScrollView,
   Text, TextInput, View, Modal, Alert,
   type NativeScrollEvent, type NativeSyntheticEvent,
-  type ScrollViewProps,
 } from "react-native";
-import {
-  KeyboardGestureArea,
-  KeyboardStickyView,
-} from "@/lib/safe-keyboard-controller";
-import {
-  ChatKeyboardScrollView,
-  useKeyboardStickyOffset,
-} from "@/components/chat-keyboard-scroll-view";
 import { validateOfferAmount, parseListedPrice } from "@/lib/offer-validation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 
 import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
@@ -275,30 +267,63 @@ export function ChatConversationScreen() {
   const inputRef   = useRef<TextInput>(null);
   const typingRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isNearBottomRef = useRef(true);
+  const listContentHeightRef = useRef(0);
 
-  const footerPad  = Math.max(insets.bottom, 10);
-  const stickyOffset = useKeyboardStickyOffset();
+  const keyboardInset = useKeyboardInset();
+  const composerSafePad = keyboardInset > 0 ? 6 : Math.max(insets.bottom, 10);
   const canSend    = messageText.trim().length > 0 && !!activeThread && activeThread.status === "active";
   const isSeller   = activeThread ? String((activeThread.seller as any)?.id ?? activeThread.seller) === user?.id : false;
 
-  const renderChatScrollComponent = useCallback(
-    (props: ScrollViewProps) => <ChatKeyboardScrollView {...props} />,
-    [],
-  );
-
-  // ── Keyboard / scroll ─────────────────────────────────────────────────────
-  const scrollToBottom = useCallback((force = false) => {
+  // ── Keyboard / scroll (team-chat pattern: inset lifts whole column) ────────
+  const scrollToBottom = useCallback((animated = true, force = false) => {
     if (!force && !isNearBottomRef.current) return;
-    requestAnimationFrame(() => {
-      flatRef.current?.scrollToEnd({ animated: true });
-    });
+    const list = flatRef.current;
+    if (!list) return;
+
+    const attempt = () => {
+      try {
+        list.scrollToEnd({ animated });
+      } catch {
+        try {
+          const y = Math.max(0, listContentHeightRef.current);
+          list.scrollToOffset({ offset: y, animated });
+        } catch {
+          // List may not be laid out yet.
+        }
+      }
+    };
+
+    attempt();
+    requestAnimationFrame(attempt);
+    setTimeout(attempt, 60);
+    setTimeout(attempt, 200);
   }, []);
+
+  const handleListContentSizeChange = useCallback((_w: number, h: number) => {
+    if (typeof h === "number" && h > 0) listContentHeightRef.current = h;
+    if (isNearBottomRef.current) scrollToBottom(false, true);
+  }, [scrollToBottom]);
 
   const handleListScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-    isNearBottomRef.current = distanceFromBottom < 150;
+    isNearBottomRef.current = distanceFromBottom < 120;
   }, []);
+
+  useEffect(() => {
+    if (keyboardInset > 0) {
+      isNearBottomRef.current = true;
+      scrollToBottom(true, true);
+      const t = setTimeout(() => scrollToBottom(true, true), 80);
+      return () => clearTimeout(t);
+    }
+  }, [keyboardInset, scrollToBottom]);
+
+  useEffect(() => {
+    if (!loading && messages.length > 0 && isNearBottomRef.current) {
+      scrollToBottom(true, true);
+    }
+  }, [messages.length, loading, scrollToBottom]);
 
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -388,7 +413,7 @@ export function ChatConversationScreen() {
       joinThread(thread._id);
       const res = await getThreadMessages(thread._id, 1, 50);
       setMessages(sortChron(res.messages));
-      if (animate) scrollToBottom();
+      if (animate) scrollToBottom(true, true);
       markThreadRead(thread._id).then(syncNotificationBadge).catch(() => {});
     } catch (e) {
       showErrorToast(
@@ -422,7 +447,7 @@ export function ChatConversationScreen() {
           }
           return sortChron(dedup([...next, data]));
         });
-        scrollToBottom();
+        scrollToBottom(true, true);
 
         // Only ack delivery for messages from other users. Batched: the
         // socket-service coalesces all calls within ~250ms into one emit.
@@ -533,7 +558,7 @@ export function ChatConversationScreen() {
           return sortChron(all);
         });
         setActiveThreadSt((prev) => prev ? { ...prev, offerStatus: d.offerStatus as any } : prev);
-        scrollToBottom();
+        scrollToBottom(true, true);
       }
       dispatch(offerUpdated({ threadId: d.threadId, conversationId: conversation?._id ?? "", offerStatus: d.offerStatus, accepted: d.accepted, message: d.message }));
     };
@@ -677,7 +702,7 @@ export function ChatConversationScreen() {
       createdAt: new Date().toISOString(),
     };
     setMessages((prev) => sortChron([...prev, tempMsg]));
-    scrollToBottom(true);
+    scrollToBottom(true, true);
 
     try {
       const res = await sendMessageApi(convId, {
@@ -697,6 +722,8 @@ export function ChatConversationScreen() {
         next[i] = { ...prev[i], ...res.message };
         return sortChron(next);
       });
+      isNearBottomRef.current = true;
+      scrollToBottom(true, true);
     } catch (e) {
       setMessages((prev) => prev.filter((m) => m._id !== tempId));
       showErrorToast(
@@ -710,13 +737,13 @@ export function ChatConversationScreen() {
   }, [activeThread, conversation, params.conversationId, scrollToBottom, user]);
 
   const handleSend = useCallback(async () => {
-    if (!canSend || !activeThread) return;
+    if (!canSend || !activeThread || sending) return;
     const text = messageText.trim();
-    setMessageText("");
     const pendingReply = replyTo;
     setReplyTo(null);
-    // Keep the keyboard open after send — avoids the composer jumping down.
-    inputRef.current?.focus();
+    setSending(true);
+    setMessageText("");
+    setTimeout(() => inputRef.current?.focus(), 0);
     try {
       await sendComposedMessage({
         text,
@@ -725,8 +752,9 @@ export function ChatConversationScreen() {
     } catch {
       setMessageText(text);
       setReplyTo(pendingReply);
+      setSending(false);
     }
-  }, [canSend, activeThread, messageText, replyTo, sendComposedMessage]);
+  }, [canSend, activeThread, messageText, replyTo, sendComposedMessage, sending]);
 
   // ── Attachment / voice / emoji / actions handlers ──────────────────────────
   const handleAttachmentsPicked = useCallback(async (locals: LocalAttachment[]) => {
@@ -764,7 +792,7 @@ export function ChatConversationScreen() {
       };
 
       setMessages((prev) => sortChron([...prev, tempMsg]));
-      scrollToBottom(true);
+      scrollToBottom(true, true);
 
       try {
         const uploaded = await uploadChatAttachment(convId, {
@@ -832,7 +860,7 @@ export function ChatConversationScreen() {
     };
 
     setMessages((prev) => sortChron([...prev, tempMsg]));
-    scrollToBottom(true);
+    scrollToBottom(true, true);
 
     try {
       const uploaded = await uploadChatAttachment(convId, {
@@ -1021,7 +1049,7 @@ export function ChatConversationScreen() {
       const res = await makeOffer(activeThread._id, amount);
       setMessages((prev) => sortChron([...prev, res.message]));
       setActiveThreadSt(res.thread);
-      scrollToBottom();
+      scrollToBottom(true, true);
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Failed to make offer");
     }
@@ -1033,7 +1061,7 @@ export function ChatConversationScreen() {
       setMessages((prev) => sortChron([...prev, res.message]));
       setActiveThreadSt(res.thread);
       setThreads((prev) => prev.map((t) => t._id === threadId ? res.thread : t));
-      scrollToBottom();
+      scrollToBottom(true, true);
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Failed to accept offer");
     }
@@ -1045,7 +1073,7 @@ export function ChatConversationScreen() {
       setMessages((prev) => sortChron([...prev, res.message]));
       setActiveThreadSt(res.thread);
       setThreads((prev) => prev.map((t) => t._id === threadId ? res.thread : t));
-      scrollToBottom();
+      scrollToBottom(true, true);
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Failed to decline offer");
     }
@@ -1373,29 +1401,21 @@ export function ChatConversationScreen() {
         />
       )}
 
-      {/* ── Messages + composer ─────────────────────────────────────────────── */}
-      <KeyboardGestureArea
-        interpolator={Platform.OS === "ios" ? "ios" : "linear"}
-        style={{ flex: 1 }}
-        textInputNativeID="chat-composer-input"
-      >
+      {/* ── Messages + composer (keyboard inset lifts whole column) ─────────── */}
+      <View style={{ flex: 1, marginBottom: keyboardInset }}>
         <FlatList
           ref={flatRef}
           style={{ flex: 1 }}
           data={messages}
           keyExtractor={(m) => m._id}
           renderItem={renderMessage}
-          renderScrollComponent={renderChatScrollComponent}
-          contentContainerStyle={{ paddingVertical: 12, paddingBottom: 4 }}
-          onContentSizeChange={() => {
-            if (isNearBottomRef.current) scrollToBottom();
-          }}
+          contentContainerStyle={{ paddingVertical: 12, paddingBottom: 8 }}
+          onContentSizeChange={handleListContentSizeChange}
           onScroll={handleListScroll}
-          scrollEventThrottle={16}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: 80 }}
+          scrollEventThrottle={100}
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode="none"
           onScrollToIndexFailed={(info) => {
-            // FlatList couldn't measure the target — fall back to an offset
-            // estimate, then re-try the precise jump once row heights settle.
             const offset = Math.max(0, info.averageItemLength * info.index);
             flatRef.current?.scrollToOffset({ offset, animated: false });
             setTimeout(() => {
@@ -1406,7 +1426,6 @@ export function ChatConversationScreen() {
               }
             }, 80);
           }}
-          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             <View style={{ alignItems: "center", paddingTop: 40 }}>
               <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: TEXT_MUTED }}>
@@ -1425,7 +1444,6 @@ export function ChatConversationScreen() {
           }
         />
 
-        {/* ── Closed banner ───────────────────────────────────────────────────── */}
         {isClosed && (
           <View style={{ backgroundColor: "#FEF2F2", paddingVertical: 10, paddingHorizontal: 16, alignItems: "center" }}>
             <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 13, color: "#EF4444" }}>
@@ -1442,10 +1460,14 @@ export function ChatConversationScreen() {
           </View>
         )}
 
-        {/* ── Input bar ────────────────────────────────────────────────────────── */}
         {!isClosed && (
-          <KeyboardStickyView offset={stickyOffset}>
-            {/* Reply preview above the composer (visible only while a target is set). */}
+          <View
+            style={{
+              backgroundColor: BAR_BG,
+              borderTopWidth: replyTo ? 0 : 1,
+              borderTopColor: "#E5E7EB",
+            }}
+          >
             {replyTo && (
               <ReplyPreviewBar
                 message={replyTo}
@@ -1460,15 +1482,12 @@ export function ChatConversationScreen() {
                 alignItems:       "flex-end",
                 paddingHorizontal: 8,
                 paddingTop:        8,
-                paddingBottom:     footerPad,
-                backgroundColor:  BAR_BG,
-                borderTopWidth:   replyTo ? 0 : 1,
-                borderTopColor:   "#E5E7EB",
+                paddingBottom:     composerSafePad,
                 gap:              6,
               }}
             >
               {/* Offer button (buyer only) */}
-              {!isSeller && activeThread?.status === "active" && activeThread.offerStatus === "none" && (
+              {!isSeller && activeThread?.status === "active" && activeThread.offerStatus === "none" && voice.state !== "recording" && (
                 <Pressable
                   onPress={() => setOfferModal(true)}
                   style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: BRAND + "15", alignItems: "center", justifyContent: "center" }}
@@ -1478,13 +1497,7 @@ export function ChatConversationScreen() {
               )}
 
               {voice.state === "recording" ? (
-                <View
-                  style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6 }}
-                  {...voice.micPanHandlers}
-                >
-                  <VoiceRecordingBar voice={voice} />
-                  <VoiceMicButton voice={voice} bare />
-                </View>
+                <VoiceRecordingBar voice={voice} />
               ) : (
                 <View
                   style={{
@@ -1524,7 +1537,13 @@ export function ChatConversationScreen() {
                     placeholderTextColor={TEXT_MUTED}
                     value={messageText}
                     onChangeText={handleTextChange}
-                    onFocus={() => scrollToBottom(true)}
+                    onFocus={() => {
+                      isNearBottomRef.current = true;
+                      scrollToBottom(true, true);
+                    }}
+                    onContentSizeChange={() => {
+                      if (isNearBottomRef.current) scrollToBottom(true, true);
+                    }}
                     multiline
                     blurOnSubmit={false}
                     returnKeyType="default"
@@ -1551,31 +1570,31 @@ export function ChatConversationScreen() {
                 </View>
               )}
 
-              {/* Right action — Send when there's text & not recording, otherwise the mic.
-                  The mic View stays mounted across recording so PanResponder
-                  doesn't lose the gesture mid-swipe. */}
-              {voice.state !== "recording" && (messageText.trim() ? (
+              {/* Mic stays mounted while recording so the hold gesture is not lost. */}
+              {voice.state === "recording" ? (
+                <VoiceMicButton voice={voice} />
+              ) : (messageText.trim() || sending) ? (
                 <Pressable
                   onPress={handleSend}
                   disabled={!canSend || sending}
                   style={{
                     width: 44, height: 44, borderRadius: 22,
-                    backgroundColor: canSend ? BRAND : "#E5E7EB",
+                    backgroundColor: (canSend || sending) ? BRAND : "#E5E7EB",
                     alignItems: "center", justifyContent: "center",
                   }}
                 >
                   {sending
                     ? <ActivityIndicator size="small" color="#fff" />
-                    : <MaterialIcons name="send" size={20} color={canSend ? "#fff" : "#9CA3AF"} />
+                    : <MaterialIcons name="send" size={20} color={(canSend || sending) ? "#fff" : "#9CA3AF"} />
                   }
                 </Pressable>
               ) : (
                 <VoiceMicButton voice={voice} />
-              ))}
+              )}
             </View>
-          </KeyboardStickyView>
+          </View>
         )}
-      </KeyboardGestureArea>
+      </View>
 
       {/* ── Attachment / emoji / actions sheets ─────────────────────────────── */}
       <AttachmentPickerSheet
@@ -1600,8 +1619,8 @@ export function ChatConversationScreen() {
       <Modal visible={offerModal} transparent animationType="slide" onRequestClose={() => setOfferModal(false)}>
         <View style={{ flex: 1 }}>
           <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }} onPress={() => setOfferModal(false)} />
-          <KeyboardStickyView offset={stickyOffset}>
-            <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: Math.max(insets.bottom, 16) }}>
+          <View style={{ paddingBottom: Math.max(insets.bottom, 16) + keyboardInset }}>
+            <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 }}>
               <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 18, color: TEXT_DARK, marginBottom: 4 }}>Make an Offer</Text>
               {activeThread?.product?.title && (
                 <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: TEXT_MUTED, marginBottom: 16 }}>
@@ -1651,7 +1670,7 @@ export function ChatConversationScreen() {
                 <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 16, color: "#fff" }}>Send Offer</Text>
               </Pressable>
             </View>
-          </KeyboardStickyView>
+          </View>
         </View>
       </Modal>
     </View>

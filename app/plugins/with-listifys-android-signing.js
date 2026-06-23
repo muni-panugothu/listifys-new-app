@@ -25,7 +25,7 @@ function withListifysAndroidSigning(config) {
         fs.copyFileSync(googleServicesSource, path.join(androidAppDir, "google-services.json"));
       }
 
-      const notificationIconSource = path.join(projectRoot, "assets", "android", "ic_notification.xml");
+      const androidAssetsDir = path.join(projectRoot, "assets", "android");
       const drawableDir = path.join(
         cfg.modRequest.platformProjectRoot,
         "app",
@@ -34,12 +34,16 @@ function withListifysAndroidSigning(config) {
         "res",
         "drawable",
       );
-      if (fs.existsSync(notificationIconSource)) {
+      if (fs.existsSync(androidAssetsDir)) {
         fs.mkdirSync(drawableDir, { recursive: true });
-        fs.copyFileSync(
-          notificationIconSource,
-          path.join(drawableDir, "ic_notification.xml"),
-        );
+        for (const file of fs.readdirSync(androidAssetsDir)) {
+          if (file.endsWith(".xml")) {
+            fs.copyFileSync(
+              path.join(androidAssetsDir, file),
+              path.join(drawableDir, file),
+            );
+          }
+        }
       }
 
       return cfg;

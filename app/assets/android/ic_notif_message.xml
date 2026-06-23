@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chat / inbox icon for message notifications -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#27BB97"
+        android:pathData="M8,8h32c2.2,0 4,1.8 4,4v14c0,2.2 -1.8,4 -4,4H18l-8,8V12c0,-2.2 1.8,-4 4,-4z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M14,18h20v3H14zM14,24h14v3H14z" />
+</vector>

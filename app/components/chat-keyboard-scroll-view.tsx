@@ -27,7 +27,7 @@ export const ChatKeyboardScrollView = forwardRef<
       ref={ref}
       automaticallyAdjustContentInsets={false}
       contentInsetAdjustmentBehavior="never"
-      keyboardDismissMode="interactive"
+      keyboardDismissMode="none"
       offset={Math.max(bottom - INPUT_MARGIN, 0)}
       {...props}
     />

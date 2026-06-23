@@ -203,15 +203,19 @@ function NotificationRow({
       overshootRight={false}
       friction={2}
       rightThreshold={40}
-      containerStyle={{ marginBottom: 4 }}
+      containerStyle={{ marginBottom: 0 }}
     >
       <View
         onLayout={(e) => setRowHeight(e.nativeEvent.layout.height)}
-        style={{ backgroundColor: "#FFFFFF" }}
+        style={{
+          backgroundColor: "#FFFFFF",
+          borderBottomWidth: 1,
+          borderBottomColor: "#F3F4F6",
+        }}
       >
         <Pressable
           onPress={onPress}
-          className="flex-row items-start py-3.5"
+          className="flex-row items-center px-5 py-3.5"
           style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
         >
         <View
@@ -251,7 +255,7 @@ function NotificationRow({
 
         {!item.read ? (
           <View
-            className="ml-2 mt-1.5 h-2.5 w-2.5 rounded-full"
+            className="ml-2 h-2.5 w-2.5 rounded-full"
             style={{ backgroundColor: UNREAD_DOT }}
           />
         ) : (
@@ -277,9 +281,9 @@ function Section({
   if (items.length === 0) return null;
 
   return (
-    <View className="mb-2">
+    <View className="mb-4">
       <Text
-        className="mb-1 text-[14px]"
+        className="mb-1 px-5 text-[14px]"
         style={{ fontFamily: ListifyFonts.medium, color: TEXT_MUTED }}
       >
         {title}
@@ -474,6 +478,7 @@ export function NotificationsCenterScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        style={{ flex: 1, backgroundColor: "#FFFFFF" }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -483,8 +488,8 @@ export function NotificationsCenterScreen() {
           />
         }
         contentContainerStyle={{
-          paddingHorizontal: 20,
           paddingBottom: Math.max(insets.bottom, 16) + 24,
+          flexGrow: 1,
         }}
       >
         <Section
@@ -509,7 +514,7 @@ export function NotificationsCenterScreen() {
         ) : null}
 
         {notifications.length === 0 ? (
-          <View className="items-center py-16">
+          <View className="items-center px-5 py-16">
             <MaterialIcons
               name="notifications-none"
               size={48}

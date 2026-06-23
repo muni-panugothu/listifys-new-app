@@ -1,5 +1,5 @@
 /**
- * Voice recording primitives — WhatsApp-style hold-to-record mic.
+ * Voice recording — hold mic to record, release to send, slide left or tap ✕ to cancel.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Animated, PanResponder, Pressable, Text, View, type PanResponderInstance } from "react-native";
@@ -35,6 +35,7 @@ export type VoiceRecordingApi = {
   elapsedMs: number;
   dragX: number;
   micPanHandlers: ReturnType<PanResponderInstance["panHandlers"]> | Record<string, unknown>;
+  slidePanHandlers?: Record<string, unknown>;
   cancelRecording: () => void;
   disabled?: boolean;
 };
@@ -44,28 +45,27 @@ type HookProps = {
   disabled?: boolean;
 };
 
-type SessionPhase = "idle" | "preparing" | "recording";
+type SessionPhase = "idle" | "preparing" | "recording" | "finishing";
 
 export function useVoiceRecording({ onSend, disabled }: HookProps): VoiceRecordingApi {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
-  const [state, setState]       = useState<VoiceRecordingState>("idle");
-  const [elapsedMs, setElapsed]   = useState(0);
-  const [dragX, setDragX]       = useState(0);
+  const [state, setState]     = useState<VoiceRecordingState>("idle");
+  const [elapsedMs, setElapsed] = useState(0);
+  const [dragX, setDragX]     = useState(0);
 
-  const phaseRef       = useRef<SessionPhase>("idle");
-  const cancelledRef   = useRef(false);
-  const startedAtRef   = useRef(0);
-  const tickRef        = useRef<ReturnType<typeof setInterval> | null>(null);
-  const audioReadyRef  = useRef(false);
+  const phaseRef      = useRef<SessionPhase>("idle");
+  const cancelledRef  = useRef(false);
+  const startedAtRef  = useRef(0);
+  const tickRef       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioReadyRef = useRef(false);
+  const onSendRef     = useRef(onSend);
+  onSendRef.current   = onSend;
 
   useEffect(() => {
     void (async () => {
       try {
-        await setAudioModeAsync({
-          allowsRecording: true,
-          playsInSilentMode: true,
-        });
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
         audioReadyRef.current = true;
       } catch {
         audioReadyRef.current = false;
@@ -83,6 +83,12 @@ export function useVoiceRecording({ onSend, disabled }: HookProps): VoiceRecordi
     }
   }, []);
 
+  const resetUi = useCallback(() => {
+    setState("idle");
+    setDragX(0);
+    setElapsed(0);
+  }, []);
+
   const startRecording = useCallback(async () => {
     if (disabled || phaseRef.current !== "idle") return;
 
@@ -98,14 +104,10 @@ export function useVoiceRecording({ onSend, disabled }: HookProps): VoiceRecordi
       }
 
       if (!audioReadyRef.current) {
-        await setAudioModeAsync({
-          allowsRecording: true,
-          playsInSilentMode: true,
-        });
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
         audioReadyRef.current = true;
       }
 
-      // If a prior session left the native recorder active, stop it first.
       if (recorder.isRecording) {
         try { await recorder.stop(); } catch { /* ignore */ }
       }
@@ -126,35 +128,38 @@ export function useVoiceRecording({ onSend, disabled }: HookProps): VoiceRecordi
       }, 200);
     } catch (e: any) {
       phaseRef.current = "idle";
-      setState("idle");
+      resetUi();
       stopTicker();
       Alert.alert("Recording Error", e?.message ?? "Could not start recording.");
     }
-  }, [disabled, recorder, stopTicker]);
+  }, [disabled, recorder, resetUi, stopTicker]);
 
   const finishRecording = useCallback(async (cancelled: boolean) => {
-    if (phaseRef.current === "idle") return;
+    if (phaseRef.current === "idle" || phaseRef.current === "finishing") return;
 
+    phaseRef.current = "finishing";
     stopTicker();
     const elapsed = Date.now() - (startedAtRef.current || Date.now());
-    setState("idle");
-    setDragX(0);
-    phaseRef.current = "idle";
+    resetUi();
 
     try {
       if (recorder.isRecording) {
         await recorder.stop();
       }
     } catch {
-      // Native recorder may already be stopped on quick cancel.
+      // Native recorder may already be stopped.
     }
 
-    if (cancelled) {
+    phaseRef.current = "idle";
+
+    if (cancelled || cancelledRef.current) {
+      cancelledRef.current = false;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       return;
     }
+
     if (elapsed < MIN_RECORDING_MS) {
-      Alert.alert("Hold to record", "Tap and hold the mic to record a voice message.");
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       return;
     }
 
@@ -165,26 +170,25 @@ export function useVoiceRecording({ onSend, disabled }: HookProps): VoiceRecordi
     }
 
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onSend({
+    onSendRef.current({
       uri,
       name:       `voice-${Date.now()}.m4a`,
       mimeType:   "audio/mp4",
       durationMs: elapsed,
     });
-  }, [onSend, recorder, stopTicker]);
+  }, [recorder, resetUi, stopTicker]);
 
   const cancelRecording = useCallback(() => {
-    if (phaseRef.current === "idle") return;
+    if (phaseRef.current === "idle" || phaseRef.current === "finishing") return;
     cancelledRef.current = true;
     void finishRecording(true);
   }, [finishRecording]);
 
-  const panResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => !disabled,
-    onStartShouldSetPanResponderCapture: () => !disabled,
-    onMoveShouldSetPanResponder:  () => phaseRef.current === "recording",
-    onMoveShouldSetPanResponderCapture: () => phaseRef.current === "recording",
+  const micPanResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => !disabled && phaseRef.current === "idle",
+    onMoveShouldSetPanResponder: () => phaseRef.current === "recording",
     onPanResponderGrant: () => {
+      if (phaseRef.current !== "idle") return;
       void startRecording();
     },
     onPanResponderMove: (_, gesture) => {
@@ -198,29 +202,45 @@ export function useVoiceRecording({ onSend, disabled }: HookProps): VoiceRecordi
       }
     },
     onPanResponderRelease: () => {
-      if (cancelledRef.current) return;
+      if (phaseRef.current !== "recording" || cancelledRef.current) return;
       void finishRecording(false);
     },
     onPanResponderTerminate: () => {
-      if (cancelledRef.current) return;
+      if (phaseRef.current !== "recording") return;
       void finishRecording(true);
     },
   }), [disabled, startRecording, finishRecording]);
+
+  const slidePanResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: () => phaseRef.current === "recording",
+    onPanResponderMove: (_, gesture) => {
+      if (phaseRef.current !== "recording") return;
+      const dx = Math.min(0, gesture.dx);
+      setDragX(dx);
+      if (dx < -CANCEL_THRESHOLD_PX && !cancelledRef.current) {
+        cancelledRef.current = true;
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        void finishRecording(true);
+      }
+    },
+  }), [finishRecording]);
 
   return {
     state,
     elapsedMs,
     dragX,
-    micPanHandlers: panResponder.panHandlers,
+    micPanHandlers: micPanResponder.panHandlers,
+    slidePanHandlers: slidePanResponder.panHandlers,
     cancelRecording,
     disabled,
   };
 }
 
-export function VoiceMicButton({ voice, bare }: { voice: VoiceRecordingApi; bare?: boolean }) {
+export function VoiceMicButton({ voice }: { voice: VoiceRecordingApi }) {
   const isRecording = voice.state === "recording";
-  const inner = (
+  return (
     <View
+      {...voice.micPanHandlers}
       style={{
         width: 44,
         height: 44,
@@ -237,8 +257,6 @@ export function VoiceMicButton({ voice, bare }: { voice: VoiceRecordingApi; bare
       />
     </View>
   );
-  if (bare) return inner;
-  return <View {...voice.micPanHandlers}>{inner}</View>;
 }
 
 export function VoiceRecordingBar({
@@ -272,6 +290,7 @@ export function VoiceRecordingBar({
 
   return (
     <View
+      {...(voice.slidePanHandlers ?? {})}
       style={{
         flex: 1,
         flexDirection: "row",

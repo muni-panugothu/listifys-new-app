@@ -35,7 +35,7 @@ const emitToUser = (userId, event, data) => {
   try { getIO().to(`user:${userId}`).emit(event, data); } catch (_) {}
 };
 
-const pushNotifyRecipient = async ({ recipientId, senderId, senderName, conversationId, threadId, productTitle, productImage, preview, type = 'message', notificationId }) => {
+const pushNotifyRecipient = async ({ recipientId, senderId, senderName, senderPhoto, conversationId, threadId, productTitle, productImage, preview, type = 'message', notificationId }) => {
   const recipient = await User.findById(recipientId).select('fcmToken').lean();
   if (!recipient?.fcmToken) return;
   const isOffer = type === 'offer' || type === 'offer_received';
@@ -46,6 +46,7 @@ const pushNotifyRecipient = async ({ recipientId, senderId, senderName, conversa
   const pushId = notificationId
     ? String(notificationId)
     : `${isOffer ? 'offer' : 'msg'}_${conversationId}_${Date.now()}`;
+  const avatarUrl = senderPhoto ? s3Service.toProxyUrl(senderPhoto) : null;
   await sendRichNotification(recipient.fcmToken, {
     notificationId: pushId,
     type: notifType,
@@ -59,6 +60,7 @@ const pushNotifyRecipient = async ({ recipientId, senderId, senderName, conversa
       name: senderName || '',
     },
     ...(productImage ? { imageUrl: productImage } : {}),
+    ...(avatarUrl ? { iconUrl: avatarUrl } : {}),
     groupKey: 'messages',
     actions: isOffer
       ? [{ id: 'view_offer', title: '👀 View offer' }, { id: 'reply', title: '💬 Reply' }]
@@ -69,6 +71,7 @@ const pushNotifyRecipient = async ({ recipientId, senderId, senderName, conversa
       productTitle: productTitle || '',
       senderId: String(senderId),
       senderName,
+      ...(avatarUrl ? { senderPhoto: avatarUrl } : {}),
     },
   }).catch(() => {});
 };
@@ -343,8 +346,9 @@ exports.sendMessage = async (req, res) => {
     }
 
     emitToConversation(conversationId, 'chat:message', { ...formattedMsg, threadId: String(threadId) });
-    const senderUser = await User.findById(userId).select('name').lean();
+    const senderUser = await User.findById(userId).select('name profileImage googleProfileImage avatar').lean();
     const senderName = senderUser?.name || 'Someone';
+    const senderPhoto = senderUser?.profileImage || senderUser?.googleProfileImage || senderUser?.avatar || null;
     for (const pid of conversation.participants) {
       const pidStr = String(pid);
       if (pidStr === String(userId)) continue;
@@ -358,9 +362,11 @@ exports.sendMessage = async (req, res) => {
             recipientId: pidStr,
             senderId: userId,
             senderName,
+            senderPhoto,
             conversationId,
             threadId,
             productTitle: thread.product?.title,
+            productImage: thread.product?.image,
             preview: (plainContent || '').slice(0, 80) || 'Sent an attachment',
             notificationId: n?._id,
           }).catch(() => {});
@@ -370,9 +376,11 @@ exports.sendMessage = async (req, res) => {
             recipientId: pidStr,
             senderId: userId,
             senderName,
+            senderPhoto,
             conversationId,
             threadId,
             productTitle: thread.product?.title,
+            productImage: thread.product?.image,
             preview: (plainContent || '').slice(0, 80) || 'Sent an attachment',
           }).catch(() => {});
         });
@@ -539,7 +547,8 @@ exports.makeOffer = async (req, res) => {
     const { thread, message, plainLabel } = await chatService.makeOffer({ threadId, buyerId: userId, amount: Number(amount), currency: currency || '₹' });
     const formattedMsg = chatService.formatMessage(message, userId);
     emitToConversation(String(thread.conversation), 'chat:offer', { threadId: String(thread._id), message: formattedMsg, offerStatus: thread.offerStatus, activeOffer: thread.activeOffer });
-    const buyer = await User.findById(userId).select('name').lean();
+    const buyer = await User.findById(userId).select('name profileImage googleProfileImage avatar').lean();
+    const buyerPhoto = buyer?.profileImage || buyer?.googleProfileImage || buyer?.avatar || null;
     createNotification({ recipient: String(thread.seller), sender: userId, type: 'offer_received', message: plainLabel, metadata: { conversationId: String(thread.conversation), threadId: String(thread._id), offerAmount: amount, listingId: thread.product?.productId ? String(thread.product.productId) : undefined, listingType: thread.product?.productType, senderId: userId, senderName: buyer?.name } })
       .then((n) => {
         if (n) {
@@ -549,6 +558,7 @@ exports.makeOffer = async (req, res) => {
           recipientId: String(thread.seller),
           senderId: userId,
           senderName: buyer?.name || 'Buyer',
+          senderPhoto: buyerPhoto,
           conversationId: String(thread.conversation),
           threadId: String(thread._id),
           productTitle: thread.product?.title,
@@ -563,6 +573,7 @@ exports.makeOffer = async (req, res) => {
           recipientId: String(thread.seller),
           senderId: userId,
           senderName: buyer?.name || 'Buyer',
+          senderPhoto: buyerPhoto,
           conversationId: String(thread.conversation),
           threadId: String(thread._id),
           productTitle: thread.product?.title,

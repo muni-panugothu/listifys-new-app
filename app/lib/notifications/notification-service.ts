@@ -27,11 +27,28 @@ import { getHrefForNotificationPayload } from './deep-link-handler';
 import { hrefToDeepLink } from './notification-deeplink';
 import { cacheNotificationPayload } from './notification-payload-cache';
 
-// ── Small icon (must exist as a vector drawable in android/app/src/main/res/drawable)
 const SMALL_ICON = 'ic_notification';
+const BRAND_COLOR = '#27BB97';
 
-// ── Light + accent colour (Notifee requires a hex string, not an ARGB int) ─────
-const LIGHT_COLOUR = '#4f46e5'; // indigo-600 — change to your brand colour
+function resolveLargeIcon(
+  type: string,
+  payload: RichNotificationPayload,
+): string | undefined {
+  if (payload.iconUrl?.trim()) return payload.iconUrl.trim();
+  if (payload.senderPhoto?.trim()) return payload.senderPhoto.trim();
+  if (type === 'message') return 'ic_notif_message';
+  if (
+    type === 'offer_received'
+    || type === 'offer_accepted'
+    || type === 'offer_rejected'
+    || type === 'new_listing'
+    || type === 'listing_saved'
+    || type === 'price_drop'
+  ) {
+    return 'ic_notif_product';
+  }
+  return 'ic_listifys_logo';
+}
 
 /** Notifee requires every data value to be a non-empty string. */
 function toNotifeeData(payload: RichNotificationPayload): Record<string, string> {
@@ -114,6 +131,7 @@ async function displayStandardNotification(
   const channelId = channelForType(type ?? 'general');
   const notifId = notificationId ?? String(Date.now());
   const notifData = toNotifeeData(payload);
+  const largeIcon = resolveLargeIcon(type ?? 'general', payload);
   const deepLink = (() => {
     const href = getHrefForNotificationPayload(payload);
     return href ? hrefToDeepLink(href) : undefined;
@@ -145,7 +163,7 @@ async function displayStandardNotification(
   const android: AndroidNotification = {
     channelId,
     smallIcon: SMALL_ICON,
-    color: LIGHT_COLOUR,
+    color: BRAND_COLOR,
     importance: AndroidImportance.HIGH,
     visibility: AndroidVisibility.PRIVATE,
     ...(groupKey ? { groupId: groupKey } : {}),
@@ -154,6 +172,7 @@ async function displayStandardNotification(
     vibrationPattern: [300, 150, 300, 150],
     pressAction: defaultPressAction,
     actions: androidActions,
+    largeIcon,
     style: imageUrl
       ? {
           type: AndroidStyle.BIGPICTURE,
@@ -165,7 +184,6 @@ async function displayStandardNotification(
           type: AndroidStyle.BIGTEXT,
           text: body,
         },
-    ...(iconUrl ? { largeIcon: iconUrl } : {}),
   };
 
   const ios = buildIosConfig(payload, { imageUrl });
@@ -182,6 +200,8 @@ async function displayStandardNotification(
         android: {
           channelId,
           smallIcon: SMALL_ICON,
+          color: BRAND_COLOR,
+          largeIcon: 'ic_listifys_logo',
           groupId: groupKey,
         groupSummary: true,
         importance: AndroidImportance.LOW,
@@ -219,6 +239,8 @@ async function displayStandardNotification(
       android: {
         channelId,
         smallIcon: SMALL_ICON,
+        color: BRAND_COLOR,
+        largeIcon: 'ic_listifys_logo',
         importance: AndroidImportance.HIGH,
         pressAction: { id: 'default', launchActivity: 'default' },
       },
@@ -262,6 +284,8 @@ async function displayCallNotification(
     android: {
       channelId,
       smallIcon: SMALL_ICON,
+      color: BRAND_COLOR,
+      largeIcon: 'ic_listifys_logo',
       importance: AndroidImportance.HIGH,
       visibility: AndroidVisibility.PUBLIC,
       category: AndroidCategory.CALL,
