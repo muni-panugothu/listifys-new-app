@@ -79,7 +79,8 @@ function buildBody(message: ChatMessage, thread: ProductThread): string {
 export function OfferCard({ message, thread, isSeller, fromMe, onAccept, onDecline }: Props) {
   const status      = message.offerData?.status ?? "pending";
   const accentColor = STATUS_COLORS[status] ?? PENDING;
-  const showActions = isSeller && status === "pending" && thread.status === "active";
+  const threadOfferPending = thread.offerStatus === "pending";
+  const showActions = isSeller && status === "pending" && threadOfferPending && thread.status === "active";
 
   const body = buildBody(message, thread);
 

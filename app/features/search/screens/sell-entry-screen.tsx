@@ -133,12 +133,6 @@ export function SellEntryScreen() {
             >
               My listings
             </Text>
-            <Text
-              className="text-[12px]"
-              style={{ fontFamily: ListifyFonts.regular, color: TEXT_MUTED }}
-            >
-              View active, expired and drafts
-            </Text>
           </View>
           <MaterialIcons name="chevron-right" size={24} color="#C4C4C4" />
         </Pressable>

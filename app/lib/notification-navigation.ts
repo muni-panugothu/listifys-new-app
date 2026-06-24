@@ -94,10 +94,14 @@ export function getNotificationRoute(item: NotificationItem): Href | null {
   }
 
   if (type === "follow") {
-    if (!senderId) return null;
+    const followerId =
+      metaString(metadata, "followerId") ?? senderId;
+    const followerName =
+      metaString(metadata, "followerName") ?? senderName;
+    if (!followerId) return null;
     return {
       pathname: "/seller-public-profile",
-      params: { sellerId: senderId, sellerName: senderName },
+      params: { sellerId: followerId, sellerName: followerName },
     } as Href;
   }
 

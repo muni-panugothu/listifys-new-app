@@ -14,7 +14,6 @@ import { subscribeRouteTransitions, type Href, Stack, useRouter } from "@/lib/sa
 import { usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import * as Location from "expo-location";
 import "react-native-gesture-handler";
 import "react-native-reanimated";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -166,18 +165,10 @@ function AppLayout() {
     void initOfflineQueue();
   }, []);
 
-  // Restore saved location and prompt for OS permission early (like notifications).
+  // Restore saved location from storage only — permission prompt runs on home feed.
   useEffect(() => {
     if (!sessionHydrated) return;
-
     void dispatch(hydrateAppLocation());
-
-    void (async () => {
-      const { status } = await Location.getForegroundPermissionsAsync();
-      if (status === Location.PermissionStatus.UNDETERMINED) {
-        await Location.requestForegroundPermissionsAsync();
-      }
-    })();
   }, [dispatch, sessionHydrated]);
 
   // ── Attach call socket listeners after session hydration ─────────────────

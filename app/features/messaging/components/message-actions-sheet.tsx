@@ -53,7 +53,7 @@ export function MessageActionsSheet({ visible, message, currentUserId, onClose, 
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent={false} onRequestClose={onClose}>
       <View style={{ flex: 1 }}>
         <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.35)" }} onPress={onClose} />
         <View

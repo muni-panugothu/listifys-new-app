@@ -50,7 +50,7 @@ import {
 import {
   ActivityIndicator, FlatList,
   Pressable, ScrollView,
-  Text, TextInput, View, Modal, Alert,
+  Text, TextInput, View, Modal, Alert, Keyboard,
   type NativeScrollEvent, type NativeSyntheticEvent,
 } from "react-native";
 import { validateOfferAmount, parseListedPrice } from "@/lib/offer-validation";
@@ -81,9 +81,9 @@ import { MessageAttachmentView } from "@/features/messaging/components/message-a
 import { RepliedMessagePreview } from "@/features/messaging/components/replied-message-preview";
 import { ReplyPreviewBar } from "@/features/messaging/components/reply-preview-bar";
 import { AttachmentPickerSheet, type LocalAttachment } from "@/features/messaging/components/attachment-picker-sheet";
-import { EmojiPickerSheet } from "@/features/messaging/components/emoji-picker-sheet";
+import { EmojiPickerPanel } from "@/features/messaging/components/emoji-picker-sheet";
 import {
-  useVoiceRecording, VoiceMicButton, VoiceRecordingBar,
+  useVoiceRecording, VoiceMicButton, VoiceRecordingPanel,
   type RecordedVoiceNote,
 } from "@/features/messaging/components/voice-recorder";
 import { MessageActionsSheet, type MessageAction } from "@/features/messaging/components/message-actions-sheet";
@@ -259,6 +259,7 @@ export function ChatConversationScreen() {
   const [emojiSheet,      setEmojiSheet]      = useState(false);
   // Long-press → MessageActionsSheet target (null = closed).
   const [actionTarget,    setActionTarget]    = useState<ChatMessage | null>(null);
+  const [mediaPreview,    setMediaPreview]    = useState<{ uri: string; kind: "image" | "video" } | null>(null);
   // Briefly halo a bubble after the user taps a reply snippet that jumps to it.
   const [highlightedId,   setHighlightedId]   = useState<string | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -671,6 +672,7 @@ export function ChatConversationScreen() {
     text: string;
     attachments?: ChatAttachment[];
     replyToId?: string;
+    replyToMessage?: ChatMessage;
     optimisticAttachments?: ChatAttachment[]; // shown in temp bubble before server echo
   }) => {
     const convId = conversation?._id ?? params.conversationId;
@@ -700,6 +702,7 @@ export function ChatConversationScreen() {
       status: "sending",
       clientMessageId,
       createdAt: new Date().toISOString(),
+      ...(opts.replyToMessage ? { replyTo: opts.replyToMessage } : {}),
     };
     setMessages((prev) => sortChron([...prev, tempMsg]));
     scrollToBottom(true, true);
@@ -741,18 +744,16 @@ export function ChatConversationScreen() {
     const text = messageText.trim();
     const pendingReply = replyTo;
     setReplyTo(null);
-    setSending(true);
     setMessageText("");
-    setTimeout(() => inputRef.current?.focus(), 0);
     try {
       await sendComposedMessage({
         text,
         replyToId: pendingReply?._id,
+        replyToMessage: pendingReply ?? undefined,
       });
     } catch {
       setMessageText(text);
       setReplyTo(pendingReply);
-      setSending(false);
     }
   }, [canSend, activeThread, messageText, replyTo, sendComposedMessage, sending]);
 
@@ -898,6 +899,12 @@ export function ChatConversationScreen() {
     setMessageText((prev) => prev + emoji);
   }, []);
 
+  const handleOpenMedia = useCallback((attachment: ChatAttachment, kind: "image" | "video") => {
+    const uri = resolveAbsoluteMediaUrl(attachment.url) || attachment.url;
+    if (!uri) return;
+    setMediaPreview({ uri: typeof uri === "string" ? uri : String(uri), kind });
+  }, []);
+
   // Single voice-recording lifecycle. The hook owns the recorder + PanResponder;
   // we just consume its state to swap composer UI while keeping the mic
   // mounted (so the active gesture isn't lost when the recording bar appears).
@@ -911,7 +918,9 @@ export function ChatConversationScreen() {
     if (msg.deletedForEveryone) return;
     if (msg.messageType === "system") return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setActionTarget(msg);
+    Keyboard.dismiss();
+    setEmojiSheet(false);
+    requestAnimationFrame(() => setActionTarget(msg));
   }, []);
 
   const handleDeleteForMeAction = useCallback(async (msg: ChatMessage) => {
@@ -1058,7 +1067,14 @@ export function ChatConversationScreen() {
   const handleAcceptOffer = useCallback(async (threadId: string) => {
     try {
       const res = await acceptOffer(threadId);
-      setMessages((prev) => sortChron([...prev, res.message]));
+      setMessages((prev) => {
+        const updated = prev.map((m) => (
+          m.messageType === "offer" && m.offerData?.status === "pending"
+            ? { ...m, offerData: { ...m.offerData!, status: "accepted" as const } }
+            : m
+        ));
+        return sortChron([...updated, res.message]);
+      });
       setActiveThreadSt(res.thread);
       setThreads((prev) => prev.map((t) => t._id === threadId ? res.thread : t));
       scrollToBottom(true, true);
@@ -1070,7 +1086,14 @@ export function ChatConversationScreen() {
   const handleDeclineOffer = useCallback(async (threadId: string) => {
     try {
       const res = await declineOffer(threadId);
-      setMessages((prev) => sortChron([...prev, res.message]));
+      setMessages((prev) => {
+        const updated = prev.map((m) => (
+          m.messageType === "offer" && m.offerData?.status === "pending"
+            ? { ...m, offerData: { ...m.offerData!, status: "declined" as const } }
+            : m
+        ));
+        return sortChron([...updated, res.message]);
+      });
       setActiveThreadSt(res.thread);
       setThreads((prev) => prev.map((t) => t._id === threadId ? res.thread : t));
       scrollToBottom(true, true);
@@ -1118,14 +1141,19 @@ export function ChatConversationScreen() {
             </View>
           )}
           <View style={{ alignItems: fromMe ? "flex-end" : "flex-start", marginHorizontal: 12, marginVertical: 4 }}>
-            <OfferCard
-              message={msg}
-              thread={activeThread}
-              isSeller={isSeller}
-              fromMe={fromMe}
-              onAccept={() => handleAcceptOffer(activeThread._id)}
-              onDecline={() => handleDeclineOffer(activeThread._id)}
-            />
+            <Pressable
+              onLongPress={() => handleLongPressMessage(msg)}
+              delayLongPress={250}
+            >
+              <OfferCard
+                message={msg}
+                thread={activeThread}
+                isSeller={isSeller}
+                fromMe={fromMe}
+                onAccept={() => handleAcceptOffer(activeThread._id)}
+                onDecline={() => handleDeclineOffer(activeThread._id)}
+              />
+            </Pressable>
             <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 10, color: TEXT_MUTED, marginTop: 2 }}>
               {formatTime(msg.createdAt)}
             </Text>
@@ -1177,6 +1205,7 @@ export function ChatConversationScreen() {
                   const r = msg.replyTo;
                   if (r && typeof r === "object" && r._id) handleReplyJump(r._id);
                 }}
+                onLongPress={() => handleLongPressMessage(msg)}
               />
             )}
 
@@ -1186,6 +1215,8 @@ export function ChatConversationScreen() {
                   attachments={msg.attachments as ChatAttachment[]}
                   fromMe={fromMe}
                   isPending={msg.status === "sending"}
+                  onOpenMedia={handleOpenMedia}
+                  onLongPress={() => handleLongPressMessage(msg)}
                 />
               </View>
             )}
@@ -1209,7 +1240,7 @@ export function ChatConversationScreen() {
         </View>
       </>
     );
-  }, [messages, user, activeThread, isSeller, handleAcceptOffer, handleDeclineOffer, handleLongPressMessage, handleReplyJump, highlightedId]);
+  }, [messages, user, activeThread, isSeller, handleAcceptOffer, handleDeclineOffer, handleLongPressMessage, handleReplyJump, handleOpenMedia, highlightedId]);
 
   const isClosed = activeThread?.status !== "active";
 
@@ -1409,6 +1440,7 @@ export function ChatConversationScreen() {
           data={messages}
           keyExtractor={(m) => m._id}
           renderItem={renderMessage}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: 48 }}
           contentContainerStyle={{ paddingVertical: 12, paddingBottom: 8 }}
           onContentSizeChange={handleListContentSizeChange}
           onScroll={handleListScroll}
@@ -1476,6 +1508,13 @@ export function ChatConversationScreen() {
               />
             )}
 
+            {emojiSheet && (
+              <EmojiPickerPanel
+                onClose={() => setEmojiSheet(false)}
+                onPick={handleEmojiPick}
+              />
+            )}
+
             <View
               style={{
                 flexDirection:    "row",
@@ -1486,8 +1525,12 @@ export function ChatConversationScreen() {
                 gap:              6,
               }}
             >
+              {voice.isActive ? (
+                <VoiceRecordingPanel voice={voice} />
+              ) : (
+                <>
               {/* Offer button (buyer only) */}
-              {!isSeller && activeThread?.status === "active" && activeThread.offerStatus === "none" && voice.state !== "recording" && (
+              {!isSeller && activeThread?.status === "active" && activeThread.offerStatus === "none" && (
                 <Pressable
                   onPress={() => setOfferModal(true)}
                   style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: BRAND + "15", alignItems: "center", justifyContent: "center" }}
@@ -1496,28 +1539,28 @@ export function ChatConversationScreen() {
                 </Pressable>
               )}
 
-              {voice.state === "recording" ? (
-                <VoiceRecordingBar voice={voice} />
-              ) : (
-                <View
-                  style={{
-                    flex: 1,
-                    flexDirection: "row",
-                    alignItems: "flex-end",
-                    minHeight: 40,
-                    backgroundColor: "#F3F4F6",
-                    borderRadius: 24,
-                    paddingHorizontal: 6,
-                    paddingVertical: 2,
-                    gap: 2,
-                  }}
-                >
+              <View
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  alignItems: "flex-end",
+                  minHeight: 40,
+                  backgroundColor: "#F3F4F6",
+                  borderRadius: 24,
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  gap: 2,
+                }}
+              >
                   <Pressable
-                    onPress={() => { setEmojiSheet(true); }}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setEmojiSheet((open) => !open);
+                    }}
                     hitSlop={8}
                     style={{ width: 34, height: 34, alignItems: "center", justifyContent: "center" }}
                   >
-                    <MaterialIcons name="emoji-emotions" size={22} color={TEXT_MUTED} />
+                    <MaterialIcons name="emoji-emotions" size={22} color={emojiSheet ? BRAND : TEXT_MUTED} />
                   </Pressable>
 
                   <TextInput
@@ -1538,6 +1581,7 @@ export function ChatConversationScreen() {
                     value={messageText}
                     onChangeText={handleTextChange}
                     onFocus={() => {
+                      setEmojiSheet(false);
                       isNearBottomRef.current = true;
                       scrollToBottom(true, true);
                     }}
@@ -1567,13 +1611,9 @@ export function ChatConversationScreen() {
                       <MaterialIcons name="photo-camera" size={22} color={TEXT_MUTED} />
                     </Pressable>
                   )}
-                </View>
-              )}
+              </View>
 
-              {/* Mic stays mounted while recording so the hold gesture is not lost. */}
-              {voice.state === "recording" ? (
-                <VoiceMicButton voice={voice} />
-              ) : (messageText.trim() || sending) ? (
+              {(messageText.trim() || sending) ? (
                 <Pressable
                   onPress={handleSend}
                   disabled={!canSend || sending}
@@ -1591,6 +1631,8 @@ export function ChatConversationScreen() {
               ) : (
                 <VoiceMicButton voice={voice} />
               )}
+                </>
+              )}
             </View>
           </View>
         )}
@@ -1601,11 +1643,6 @@ export function ChatConversationScreen() {
         visible={attachmentSheet}
         onClose={() => setAttachmentSheet(false)}
         onPicked={handleAttachmentsPicked}
-      />
-      <EmojiPickerSheet
-        visible={emojiSheet}
-        onClose={() => setEmojiSheet(false)}
-        onPick={handleEmojiPick}
       />
       <MessageActionsSheet
         visible={!!actionTarget}
@@ -1671,6 +1708,39 @@ export function ChatConversationScreen() {
               </Pressable>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!mediaPreview}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMediaPreview(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.95)" }}>
+          <Pressable
+            onPress={() => setMediaPreview(null)}
+            style={{ position: "absolute", top: insets.top + 8, right: 16, zIndex: 2, padding: 8 }}
+            hitSlop={12}
+          >
+            <MaterialIcons name="close" size={28} color="#fff" />
+          </Pressable>
+          <Pressable
+            style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 16 }}
+            onPress={() => setMediaPreview(null)}
+          >
+            {mediaPreview?.kind === "image" ? (
+              <Image
+                source={mediaPreview.uri}
+                contentFit="contain"
+                style={{ width: "100%", height: "100%" }}
+              />
+            ) : (
+              <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: "#fff" }}>
+                Video preview coming soon
+              </Text>
+            )}
+          </Pressable>
         </View>
       </Modal>
     </View>

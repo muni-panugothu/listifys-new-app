@@ -47,15 +47,18 @@ type Props = {
   currentUserId?: string;
   fromMe: boolean;
   onPress?: () => void;
+  onLongPress?: () => void;
 };
 
-export function RepliedMessagePreview({ replyTo, currentUserId, fromMe, onPress }: Props) {
+export function RepliedMessagePreview({ replyTo, currentUserId, fromMe, onPress, onLongPress }: Props) {
   if (!replyTo || typeof replyTo === "string") return null;
   const meta = buildMeta(replyTo);
 
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={250}
       style={{
         flexDirection: "row",
         alignItems: "center",

@@ -1,8 +1,8 @@
 /**
- * Voice recording — hold mic to record, release to send, slide left or tap ✕ to cancel.
+ * Voice recording — tap mic to start, then delete / pause / send (WhatsApp-style).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, PanResponder, Pressable, Text, View, type PanResponderInstance } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Animated, Keyboard, Pressable, Text, View } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import {
   RecordingPresets,
@@ -16,9 +16,7 @@ import { ListifyFonts } from "@/constants/typography";
 const BRAND      = "#27BB97";
 const REC        = "#EF4444";
 const TEXT_MUTED = "#9CA3AF";
-
-const CANCEL_THRESHOLD_PX = 90;
-const MIN_RECORDING_MS    = 700;
+const MIN_RECORDING_MS = 500;
 
 export type RecordedVoiceNote = {
   uri: string;
@@ -28,15 +26,17 @@ export type RecordedVoiceNote = {
   durationMs: number;
 };
 
-export type VoiceRecordingState = "idle" | "recording";
+export type VoiceRecordingState = "idle" | "preparing" | "recording" | "paused";
 
 export type VoiceRecordingApi = {
   state: VoiceRecordingState;
+  isActive: boolean;
+  isPaused: boolean;
   elapsedMs: number;
-  dragX: number;
-  micPanHandlers: ReturnType<PanResponderInstance["panHandlers"]> | Record<string, unknown>;
-  slidePanHandlers?: Record<string, unknown>;
+  startRecording: () => void;
   cancelRecording: () => void;
+  sendRecording: () => void;
+  togglePause: () => void;
   disabled?: boolean;
 };
 
@@ -45,36 +45,51 @@ type HookProps = {
   disabled?: boolean;
 };
 
-type SessionPhase = "idle" | "preparing" | "recording" | "finishing";
+type SessionPhase = "idle" | "preparing" | "recording" | "paused" | "finishing";
+
+async function releaseRecorder(recorder: ReturnType<typeof useAudioRecorder>) {
+  try {
+    await recorder.stop();
+  } catch {
+    // nothing to stop
+  }
+}
+
+function formatElapsed(ms: number) {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
 
 export function useVoiceRecording({ onSend, disabled }: HookProps): VoiceRecordingApi {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
-  const [state, setState]     = useState<VoiceRecordingState>("idle");
+  const [state, setState]       = useState<VoiceRecordingState>("idle");
   const [elapsedMs, setElapsed] = useState(0);
-  const [dragX, setDragX]     = useState(0);
 
   const phaseRef      = useRef<SessionPhase>("idle");
-  const cancelledRef  = useRef(false);
   const startedAtRef  = useRef(0);
+  const pausedTotalRef = useRef(0);
+  const pauseStartedRef = useRef(0);
   const tickRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioReadyRef = useRef(false);
+  const sendLockRef   = useRef(false);
   const onSendRef     = useRef(onSend);
   onSendRef.current   = onSend;
 
   useEffect(() => {
-    void (async () => {
-      try {
-        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-        audioReadyRef.current = true;
-      } catch {
-        audioReadyRef.current = false;
-      }
-    })();
+    void setAudioModeAsync({
+      allowsRecording: true,
+      playsInSilentMode: true,
+      interruptionMode: "doNotMix",
+    }).then(() => { audioReadyRef.current = true; }).catch(() => { audioReadyRef.current = false; });
+
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
+      void releaseRecorder(recorder);
     };
-  }, []);
+  }, [recorder]);
 
   const stopTicker = useCallback(() => {
     if (tickRef.current) {
@@ -83,169 +98,328 @@ export function useVoiceRecording({ onSend, disabled }: HookProps): VoiceRecordi
     }
   }, []);
 
-  const resetUi = useCallback(() => {
-    setState("idle");
-    setDragX(0);
-    setElapsed(0);
-  }, []);
+  const startTicker = useCallback(() => {
+    stopTicker();
+    tickRef.current = setInterval(() => {
+      const pausedExtra = phaseRef.current === "paused" && pauseStartedRef.current
+        ? Date.now() - pauseStartedRef.current
+        : 0;
+      setElapsed(Date.now() - startedAtRef.current - pausedTotalRef.current - pausedExtra);
+    }, 200);
+  }, [stopTicker]);
 
-  const startRecording = useCallback(async () => {
+  const resetSession = useCallback(() => {
+    stopTicker();
+    phaseRef.current = "idle";
+    startedAtRef.current = 0;
+    pausedTotalRef.current = 0;
+    pauseStartedRef.current = 0;
+    setElapsed(0);
+    setState("idle");
+  }, [stopTicker]);
+
+  const beginRecording = useCallback(async () => {
     if (disabled || phaseRef.current !== "idle") return;
 
+    Keyboard.dismiss();
     phaseRef.current = "preparing";
-    cancelledRef.current = false;
+    setState("preparing");
 
     try {
       const perm = await requestRecordingPermissionsAsync();
       if (!perm.granted) {
-        phaseRef.current = "idle";
+        resetSession();
         Alert.alert("Microphone permission needed", "Enable microphone access in Settings.");
         return;
       }
 
       if (!audioReadyRef.current) {
-        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
+          interruptionMode: "doNotMix",
+        });
         audioReadyRef.current = true;
       }
 
-      if (recorder.isRecording) {
-        try { await recorder.stop(); } catch { /* ignore */ }
+      await releaseRecorder(recorder);
+      await recorder.prepareToRecordAsync(RecordingPresets.HIGH_QUALITY);
+
+      if (phaseRef.current !== "preparing") {
+        await releaseRecorder(recorder);
+        return;
       }
 
-      await recorder.prepareToRecordAsync(RecordingPresets.HIGH_QUALITY);
       recorder.record();
-
       phaseRef.current = "recording";
       startedAtRef.current = Date.now();
+      pausedTotalRef.current = 0;
+      pauseStartedRef.current = 0;
       setElapsed(0);
-      setDragX(0);
       setState("recording");
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-      stopTicker();
-      tickRef.current = setInterval(() => {
-        setElapsed(Date.now() - startedAtRef.current);
-      }, 200);
-    } catch (e: any) {
-      phaseRef.current = "idle";
-      resetUi();
-      stopTicker();
-      Alert.alert("Recording Error", e?.message ?? "Could not start recording.");
-    }
-  }, [disabled, recorder, resetUi, stopTicker]);
-
-  const finishRecording = useCallback(async (cancelled: boolean) => {
-    if (phaseRef.current === "idle" || phaseRef.current === "finishing") return;
-
-    phaseRef.current = "finishing";
-    stopTicker();
-    const elapsed = Date.now() - (startedAtRef.current || Date.now());
-    resetUi();
-
-    try {
-      if (recorder.isRecording) {
-        await recorder.stop();
+      startTicker();
+    } catch (e: unknown) {
+      await releaseRecorder(recorder);
+      resetSession();
+      const message = e instanceof Error ? e.message : "Could not start recording.";
+      if (!message.includes("already been prepared")) {
+        Alert.alert("Recording Error", message);
       }
-    } catch {
-      // Native recorder may already be stopped.
     }
-
-    phaseRef.current = "idle";
-
-    if (cancelled || cancelledRef.current) {
-      cancelledRef.current = false;
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      return;
-    }
-
-    if (elapsed < MIN_RECORDING_MS) {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      return;
-    }
-
-    const uri = recorder.uri;
-    if (!uri) {
-      Alert.alert("Recording Error", "No audio file was saved. Please try again.");
-      return;
-    }
-
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onSendRef.current({
-      uri,
-      name:       `voice-${Date.now()}.m4a`,
-      mimeType:   "audio/mp4",
-      durationMs: elapsed,
-    });
-  }, [recorder, resetUi, stopTicker]);
+  }, [disabled, recorder, resetSession, startTicker]);
 
   const cancelRecording = useCallback(() => {
     if (phaseRef.current === "idle" || phaseRef.current === "finishing") return;
-    cancelledRef.current = true;
-    void finishRecording(true);
-  }, [finishRecording]);
+    phaseRef.current = "finishing";
+    void (async () => {
+      await releaseRecorder(recorder);
+      resetSession();
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    })();
+  }, [recorder, resetSession]);
 
-  const micPanResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => !disabled && phaseRef.current === "idle",
-    onMoveShouldSetPanResponder: () => phaseRef.current === "recording",
-    onPanResponderGrant: () => {
-      if (phaseRef.current !== "idle") return;
-      void startRecording();
-    },
-    onPanResponderMove: (_, gesture) => {
-      if (phaseRef.current !== "recording") return;
-      const dx = Math.min(0, gesture.dx);
-      setDragX(dx);
-      if (dx < -CANCEL_THRESHOLD_PX && !cancelledRef.current) {
-        cancelledRef.current = true;
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        void finishRecording(true);
-      }
-    },
-    onPanResponderRelease: () => {
-      if (phaseRef.current !== "recording" || cancelledRef.current) return;
-      void finishRecording(false);
-    },
-    onPanResponderTerminate: () => {
-      if (phaseRef.current !== "recording") return;
-      void finishRecording(true);
-    },
-  }), [disabled, startRecording, finishRecording]);
+  const sendRecording = useCallback(() => {
+    if (phaseRef.current !== "recording" && phaseRef.current !== "paused") return;
+    if (sendLockRef.current) return;
 
-  const slidePanResponder = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: () => phaseRef.current === "recording",
-    onPanResponderMove: (_, gesture) => {
-      if (phaseRef.current !== "recording") return;
-      const dx = Math.min(0, gesture.dx);
-      setDragX(dx);
-      if (dx < -CANCEL_THRESHOLD_PX && !cancelledRef.current) {
-        cancelledRef.current = true;
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        void finishRecording(true);
+    phaseRef.current = "finishing";
+    stopTicker();
+
+    const elapsed = Date.now() - startedAtRef.current - pausedTotalRef.current
+      - (pauseStartedRef.current ? Date.now() - pauseStartedRef.current : 0);
+
+    void (async () => {
+      try {
+        if (recorder.isRecording) {
+          await recorder.stop();
+        } else {
+          await releaseRecorder(recorder);
+        }
+      } catch {
+        await releaseRecorder(recorder);
       }
-    },
-  }), [finishRecording]);
+
+      resetSession();
+
+      if (elapsed < MIN_RECORDING_MS) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        Alert.alert("Too short", "Hold the recording for at least half a second.");
+        return;
+      }
+
+      sendLockRef.current = true;
+      let uri = recorder.uri;
+      if (!uri) {
+        await new Promise((r) => setTimeout(r, 200));
+        uri = recorder.uri;
+      }
+      if (!uri) {
+        sendLockRef.current = false;
+        Alert.alert("Recording Error", "No audio file was saved. Please try again.");
+        return;
+      }
+
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onSendRef.current({
+        uri,
+        name: `voice-${Date.now()}.m4a`,
+        mimeType: "audio/mp4",
+        durationMs: elapsed,
+      });
+      setTimeout(() => { sendLockRef.current = false; }, 800);
+    })();
+  }, [recorder, resetSession, stopTicker]);
+
+  const togglePause = useCallback(() => {
+    if (phaseRef.current === "recording") {
+      try {
+        recorder.pause();
+      } catch {
+        return;
+      }
+      pauseStartedRef.current = Date.now();
+      phaseRef.current = "paused";
+      setState("paused");
+      stopTicker();
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      return;
+    }
+
+    if (phaseRef.current === "paused") {
+      if (pauseStartedRef.current) {
+        pausedTotalRef.current += Date.now() - pauseStartedRef.current;
+        pauseStartedRef.current = 0;
+      }
+      try {
+        recorder.record();
+      } catch {
+        return;
+      }
+      phaseRef.current = "recording";
+      setState("recording");
+      startTicker();
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [recorder, startTicker, stopTicker]);
 
   return {
     state,
+    isActive: state !== "idle",
+    isPaused: state === "paused",
     elapsedMs,
-    dragX,
-    micPanHandlers: micPanResponder.panHandlers,
-    slidePanHandlers: slidePanResponder.panHandlers,
+    startRecording: () => { void beginRecording(); },
     cancelRecording,
+    sendRecording,
+    togglePause,
     disabled,
   };
 }
 
-export function VoiceMicButton({ voice }: { voice: VoiceRecordingApi }) {
-  const isRecording = voice.state === "recording";
+function WaveformBars({ active }: { active: boolean }) {
+  const bars = useRef(
+    Array.from({ length: 28 }, () => new Animated.Value(0.25)),
+  ).current;
+
+  useEffect(() => {
+    if (!active) {
+      bars.forEach((b) => b.setValue(0.2));
+      return;
+    }
+    const loops = bars.map((bar, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(bar, {
+            toValue: 0.25 + Math.random() * 0.75,
+            duration: 180 + (i % 5) * 40,
+            useNativeDriver: false,
+          }),
+          Animated.timing(bar, {
+            toValue: 0.15 + Math.random() * 0.35,
+            duration: 180 + (i % 4) * 50,
+            useNativeDriver: false,
+          }),
+        ]),
+      ),
+    );
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+  }, [active, bars]);
+
+  return (
+    <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 2, height: 28, paddingHorizontal: 4 }}>
+      {bars.map((bar, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            flex: 1,
+            maxWidth: 4,
+            borderRadius: 2,
+            backgroundColor: "#9CA3AF",
+            height: bar.interpolate({ inputRange: [0, 1], outputRange: [4, 28] }),
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** Full composer panel shown while recording (tap mic → this UI). */
+export function VoiceRecordingPanel({ voice }: { voice: VoiceRecordingApi }) {
+  if (!voice.isActive) return null;
+
+  const showWave = voice.state === "recording";
+
   return (
     <View
-      {...voice.micPanHandlers}
+      style={{
+        flex: 1,
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: "#E5E7EB",
+        paddingHorizontal: 14,
+        paddingTop: 12,
+        paddingBottom: 10,
+        gap: 12,
+        minHeight: 88,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 16, color: TEXT_MUTED, minWidth: 36 }}>
+          {voice.state === "preparing" ? "…" : formatElapsed(voice.elapsedMs)}
+        </Text>
+        <WaveformBars active={showWave} />
+      </View>
+
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <Pressable
+          onPress={voice.cancelRecording}
+          hitSlop={12}
+          style={{ padding: 8 }}
+          accessibilityLabel="Delete recording"
+        >
+          <MaterialIcons name="delete-outline" size={26} color={TEXT_MUTED} />
+        </Pressable>
+
+        <Pressable
+          onPress={voice.togglePause}
+          disabled={voice.state === "preparing"}
+          hitSlop={12}
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: voice.state === "preparing" ? 0.4 : 1,
+          }}
+          accessibilityLabel={voice.isPaused ? "Resume recording" : "Pause recording"}
+        >
+          <MaterialIcons
+            name={voice.isPaused ? "mic" : "pause"}
+            size={28}
+            color={REC}
+          />
+        </Pressable>
+
+        <Pressable
+          onPress={voice.sendRecording}
+          disabled={voice.state === "preparing"}
+          hitSlop={12}
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            backgroundColor: BRAND,
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: voice.state === "preparing" ? 0.5 : 1,
+          }}
+          accessibilityLabel="Send voice message"
+        >
+          <MaterialIcons name="send" size={22} color="#fff" style={{ marginLeft: 2 }} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+export function VoiceMicButton({
+  voice,
+  onPress,
+}: {
+  voice: VoiceRecordingApi;
+  onPress?: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress ?? voice.startRecording}
+      disabled={voice.disabled || voice.isActive}
       style={{
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: isRecording ? REC : "transparent",
         alignItems: "center",
         justifyContent: "center",
       }}
@@ -253,94 +427,8 @@ export function VoiceMicButton({ voice }: { voice: VoiceRecordingApi }) {
       <MaterialIcons
         name="mic"
         size={24}
-        color={isRecording ? "#fff" : (voice.disabled ? "#D1D5DB" : BRAND)}
+        color={voice.disabled ? "#D1D5DB" : BRAND}
       />
-    </View>
-  );
-}
-
-export function VoiceRecordingBar({
-  voice,
-  onCancel,
-}: {
-  voice: VoiceRecordingApi;
-  onCancel?: () => void;
-}) {
-  const pulse = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (voice.state !== "recording") {
-      pulse.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 600, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [voice.state, pulse]);
-
-  const mm = Math.floor(voice.elapsedMs / 60000);
-  const ss = Math.floor((voice.elapsedMs / 1000) % 60);
-  const timeLabel = `${mm}:${ss < 10 ? "0" : ""}${ss}`;
-  const slideOffset = Math.max(-CANCEL_THRESHOLD_PX, voice.dragX);
-
-  return (
-    <View
-      {...(voice.slidePanHandlers ?? {})}
-      style={{
-        flex: 1,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        paddingHorizontal: 8,
-        paddingVertical: 8,
-        backgroundColor: "#FEF2F2",
-        borderRadius: 24,
-        minHeight: 44,
-      }}
-    >
-      <Pressable
-        onPress={onCancel ?? voice.cancelRecording}
-        hitSlop={10}
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 16,
-          backgroundColor: "rgba(239,68,68,0.15)",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <MaterialIcons name="close" size={20} color={REC} />
-      </Pressable>
-      <Animated.View
-        style={{
-          width: 10, height: 10, borderRadius: 5,
-          backgroundColor: REC,
-          opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }),
-        }}
-      />
-      <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 14, color: REC, minWidth: 42 }}>
-        {timeLabel}
-      </Text>
-      <View
-        style={{
-          flex: 1,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          transform: [{ translateX: slideOffset }],
-        }}
-      >
-        <MaterialIcons name="chevron-left" size={20} color={TEXT_MUTED} />
-        <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: TEXT_MUTED }}>
-          Slide to cancel
-        </Text>
-      </View>
-    </View>
+    </Pressable>
   );
 }

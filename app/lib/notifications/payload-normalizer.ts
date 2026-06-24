@@ -64,18 +64,34 @@ export function notificationItemToPayload(item: {
   sender?: { id?: string; name?: string } | null;
 }): RichNotificationPayload {
   const metadata = (item.metadata ?? item.data ?? {}) as Record<string, string>;
-  const senderId = item.sender?.id ?? metadata.senderId ?? '';
-  const senderName = item.sender?.name ?? metadata.senderName ?? '';
+  const type = (item.type ?? 'general').toLowerCase();
+  const senderId = item.sender?.id ?? metadata.senderId ?? metadata.followerId ?? '';
+  const senderName = item.sender?.name ?? metadata.senderName ?? metadata.followerName ?? '';
+  const followerId = metadata.followerId ? String(metadata.followerId) : (type === 'follow' ? senderId : undefined);
+
+  const route =
+    type === 'follow'
+      ? '/seller-public-profile'
+      : type === 'message' ||
+          type === 'offer' ||
+          type === 'offer_received' ||
+          type === 'offer_accepted' ||
+          type === 'offer_rejected'
+        ? '/chat-conversation'
+        : undefined;
 
   return normalizeNotificationPayload({
     type: item.type ?? 'general',
     notificationId: item._id,
     title: item.title ?? '',
     body: item.message ?? '',
-    route: '/chat-conversation',
+    ...(route ? { route } : {}),
     params: JSON.stringify({
       ...metadata,
-      ...(senderId ? { recipientId: String(senderId), name: senderName } : {}),
+      ...(type === 'follow' && followerId
+        ? { sellerId: followerId, sellerName: senderName }
+        : {}),
+      ...(type !== 'follow' && senderId ? { recipientId: String(senderId), name: senderName } : {}),
     }),
     conversationId: metadata.conversationId ? String(metadata.conversationId) : undefined,
     threadId: metadata.threadId ? String(metadata.threadId) : undefined,
@@ -83,6 +99,6 @@ export function notificationItemToPayload(item: {
     senderName,
     listingId: metadata.listingId ? String(metadata.listingId) : undefined,
     listingType: metadata.listingType ? String(metadata.listingType) : undefined,
-    followerId: metadata.followerId ? String(metadata.followerId) : undefined,
+    followerId,
   });
 }

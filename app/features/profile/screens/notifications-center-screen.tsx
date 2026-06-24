@@ -19,6 +19,8 @@ import {
   normalizeNotification,
 } from "@/lib/notification-navigation";
 import { navigateFromNotification } from "@/lib/notifications/deep-link-handler";
+import { getNotificationRoute } from "@/lib/notification-navigation";
+import { queueNotificationNavigation } from "@/lib/notifications/pending-notification-navigation";
 import { notificationItemToPayload } from "@/lib/notifications/payload-normalizer";
 import {
   type NotificationItem,
@@ -272,18 +274,20 @@ function Section({
   items,
   onItemPress,
   onItemDelete,
+  isFirst = false,
 }: {
   title: string;
   items: NotificationItem[];
   onItemPress: (item: NotificationItem) => void;
   onItemDelete: (item: NotificationItem) => void;
+  isFirst?: boolean;
 }) {
   if (items.length === 0) return null;
 
   return (
-    <View className="mb-4">
+    <View className="mb-4" style={isFirst ? { paddingTop: 16 } : undefined}>
       <Text
-        className="mb-1 px-5 text-[14px]"
+        className="mb-2 px-5 text-[14px]"
         style={{ fontFamily: ListifyFonts.medium, color: TEXT_MUTED }}
       >
         {title}
@@ -411,8 +415,12 @@ export function NotificationsCenterScreen() {
         prev.map((x) => (x._id === item._id ? { ...x, read: true } : x)),
       );
 
-      const route = notificationItemToPayload(item);
-      navigateFromNotification(route);
+      const href = getNotificationRoute(item);
+      if (href) {
+        queueNotificationNavigation(href);
+      } else {
+        navigateFromNotification(notificationItemToPayload(item));
+      }
     },
     [],
   );
@@ -497,6 +505,7 @@ export function NotificationsCenterScreen() {
           items={today}
           onItemPress={handleItemPress}
           onItemDelete={handleItemDelete}
+          isFirst
         />
         <Section
           title="This week"

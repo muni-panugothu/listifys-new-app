@@ -1813,22 +1813,26 @@ exports.updateProfile = async (req, res) => {
       updateData.phone = cleaned;
     }
 
-    // Date of birth
-    if (dateOfBirth !== undefined && dateOfBirth !== "") {
-      const dob = new Date(dateOfBirth);
-      if (isNaN(dob.getTime())) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid date of birth",
-        });
+    // Date of birth — allow empty string / null to clear
+    if (dateOfBirth !== undefined) {
+      if (dateOfBirth === "" || dateOfBirth === null) {
+        updateData.dateOfBirth = null;
+      } else {
+        const dob = new Date(dateOfBirth);
+        if (isNaN(dob.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid date of birth",
+          });
+        }
+        if (dob > new Date()) {
+          return res.status(400).json({
+            success: false,
+            message: "Date of birth cannot be in the future",
+          });
+        }
+        updateData.dateOfBirth = dob;
       }
-      if (dob > new Date()) {
-        return res.status(400).json({
-          success: false,
-          message: "Date of birth cannot be in the future",
-        });
-      }
-      updateData.dateOfBirth = dob;
     }
 
     // Email change — require OTP verification via separate endpoint

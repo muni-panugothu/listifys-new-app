@@ -14,7 +14,8 @@ export function getHrefForNotificationPayload(payload: RichNotificationPayload):
 
 /** Navigate from a push / Notifee notification payload (queued until navigator is ready). */
 export function navigateFromNotification(payload: RichNotificationPayload): void {
-  const href = getHrefForNotificationPayload(payload);
+  const normalized = normalizeNotificationPayload(payload);
+  const href = resolveHref(normalized);
 
   if (!href) {
     if (__DEV__) {
@@ -53,6 +54,21 @@ function chatHrefFromPayload(payload: RichNotificationPayload): Href | null {
 
 function resolveHref(payload: RichNotificationPayload): Href | null {
   const type = (payload.type ?? '').toLowerCase();
+
+  if (type === 'follow') {
+    const sellerId = payload.followerId ?? payload.senderId;
+    if (sellerId) {
+      return {
+        pathname: '/seller-public-profile',
+        params: {
+          sellerId,
+          sellerName: payload.senderName ?? '',
+        },
+      } as Href;
+    }
+    return '/(tabs)/home-feed-root' as Href;
+  }
+
   const isChatType =
     type === 'message' ||
     type === 'offer' ||
@@ -97,20 +113,6 @@ function resolveHref(payload: RichNotificationPayload): Href | null {
       return listingHref(payload.listingId, payload.listingType ?? 'electronics');
     }
     return '/saved-items' as Href;
-  }
-
-  if (type === 'follow') {
-    const sellerId = payload.followerId ?? payload.senderId;
-    if (sellerId) {
-      return {
-        pathname: '/seller-public-profile',
-        params: {
-          sellerId,
-          sellerName: payload.senderName ?? '',
-        },
-      } as Href;
-    }
-    return '/(tabs)/home-feed-root' as Href;
   }
 
   if (

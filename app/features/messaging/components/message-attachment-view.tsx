@@ -45,7 +45,17 @@ function detectKind(a: ChatAttachment): Kind {
 }
 
 // ── Audio player row ────────────────────────────────────────────────────────────
-function AudioBubble({ uri, tint, isPending }: { uri: string; tint: string; isPending?: boolean }) {
+function AudioBubble({
+  uri,
+  tint,
+  isPending,
+  onLongPress,
+}: {
+  uri: string;
+  tint: string;
+  isPending?: boolean;
+  onLongPress?: () => void;
+}) {
   // expo-audio's `useAudioPlayer` lazily loads when accessed. We pause when the
   // bubble unmounts (handled by the hook) so a scrolled-away note doesn't keep
   // playing.
@@ -73,7 +83,11 @@ function AudioBubble({ uri, tint, isPending }: { uri: string; tint: string; isPe
   };
 
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, minWidth: 200, paddingVertical: 4 }}>
+    <Pressable
+      onLongPress={isPending ? undefined : onLongPress}
+      delayLongPress={250}
+      style={{ flexDirection: "row", alignItems: "center", gap: 10, minWidth: 200, paddingVertical: 4 }}
+    >
       <Pressable
         onPress={isPending ? undefined : toggle}
         hitSlop={8}
@@ -97,7 +111,7 @@ function AudioBubble({ uri, tint, isPending }: { uri: string; tint: string; isPe
           {fmtSeconds(isPlaying || position > 0 ? position : duration)}
         </Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -106,15 +120,22 @@ function MediaPreview({
   uri,
   kind,
   onPress,
+  onLongPress,
   isPending,
 }: {
   uri: string;
   kind: "image" | "video";
   onPress?: () => void;
+  onLongPress?: () => void;
   isPending?: boolean;
 }) {
   return (
-    <Pressable onPress={isPending ? undefined : onPress} style={{ borderRadius: 12, overflow: "hidden", backgroundColor: "#000" }}>
+    <Pressable
+      onPress={isPending ? undefined : onPress}
+      onLongPress={isPending ? undefined : onLongPress}
+      delayLongPress={250}
+      style={{ borderRadius: 12, overflow: "hidden", backgroundColor: "#000" }}
+    >
       <Image
         source={{ uri }}
         contentFit="cover"
@@ -187,15 +208,23 @@ type Props = {
   attachments: ChatAttachment[];
   fromMe: boolean;
   onOpenMedia?: (a: ChatAttachment, kind: "image" | "video") => void;
+  onLongPress?: () => void;
   isPending?: boolean;
 };
 
-export function MessageAttachmentView({ attachments, fromMe, onOpenMedia, isPending }: Props) {
+export function MessageAttachmentView({ attachments, fromMe, onOpenMedia, onLongPress, isPending }: Props) {
   if (!attachments || attachments.length === 0) return null;
   return (
     <View style={{ gap: 6 }}>
       {attachments.map((a, idx) => (
-        <AttachmentSlot key={`${a.key || a.url}-${idx}`} a={a} fromMe={fromMe} onOpenMedia={onOpenMedia} isPending={isPending} />
+        <AttachmentSlot
+          key={`${a.key || a.url}-${idx}`}
+          a={a}
+          fromMe={fromMe}
+          onOpenMedia={onOpenMedia}
+          onLongPress={onLongPress}
+          isPending={isPending}
+        />
       ))}
     </View>
   );
@@ -205,11 +234,13 @@ function AttachmentSlot({
   a,
   fromMe,
   onOpenMedia,
+  onLongPress,
   isPending,
 }: {
   a: ChatAttachment;
   fromMe: boolean;
   onOpenMedia?: (a: ChatAttachment, kind: "image" | "video") => void;
+  onLongPress?: () => void;
   isPending?: boolean;
 }) {
   const kind = useMemo(() => detectKind(a), [a]);
@@ -218,13 +249,25 @@ function AttachmentSlot({
 
   if (kind === "audio" && resolvedUri) {
     const audioUri = typeof resolvedUri === "string" ? resolvedUri : (resolvedUri as any)?.uri || a.url;
-    return <AudioBubble uri={audioUri} tint={audioTint} isPending={isPending} />;
+    return <AudioBubble uri={audioUri} tint={audioTint} isPending={isPending} onLongPress={onLongPress} />;
   }
 
   if ((kind === "image" || kind === "video") && resolvedUri) {
     const mediaUri = typeof resolvedUri === "string" ? resolvedUri : (resolvedUri as any)?.uri || a.url;
-    return <MediaPreview uri={mediaUri} kind={kind} onPress={() => onOpenMedia?.(a, kind)} isPending={isPending} />;
+    return (
+      <MediaPreview
+        uri={mediaUri}
+        kind={kind}
+        onPress={() => onOpenMedia?.(a, kind)}
+        onLongPress={onLongPress}
+        isPending={isPending}
+      />
+    );
   }
 
-  return <DocumentChip a={a} fromMe={fromMe} />;
+  return (
+    <Pressable onLongPress={isPending ? undefined : onLongPress} delayLongPress={250}>
+      <DocumentChip a={a} fromMe={fromMe} />
+    </Pressable>
+  );
 }
