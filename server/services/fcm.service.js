@@ -24,17 +24,75 @@ const DEFAULT_SERVICE_ACCOUNT_PATH = path.resolve(__dirname, '../config/firebase
 let admin = null;
 let messaging = null;
 
+function parseServiceAccountJson(raw, sourceLabel) {
+  if (!raw?.trim()) return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch (err) {
+    logger.error(`[FCM] ${sourceLabel} contains invalid JSON`, { error: err.message });
+    return null;
+  }
+}
+
+function loadServiceAccount() {
+  const fromJsonEnv = parseServiceAccountJson(
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+    'FIREBASE_SERVICE_ACCOUNT_JSON',
+  );
+  if (fromJsonEnv) return fromJsonEnv;
+
+  const configuredPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH?.trim();
+  if (configuredPath) {
+    const fromPathAsJson = parseServiceAccountJson(
+      configuredPath,
+      'FIREBASE_SERVICE_ACCOUNT_PATH',
+    );
+    if (fromPathAsJson) {
+      logger.warn(
+        '[FCM] FIREBASE_SERVICE_ACCOUNT_PATH holds JSON, not a file path. ' +
+        'Rename it to FIREBASE_SERVICE_ACCOUNT_JSON or use FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY.',
+      );
+      return fromPathAsJson;
+    }
+
+    const resolvedPath = path.isAbsolute(configuredPath)
+      ? configuredPath
+      : path.resolve(__dirname, '..', configuredPath);
+    if (fs.existsSync(resolvedPath)) {
+      return require(resolvedPath);
+    }
+    logger.warn('[FCM] FIREBASE_SERVICE_ACCOUNT_PATH file not found', { path: resolvedPath });
+  }
+
+  if (fs.existsSync(DEFAULT_SERVICE_ACCOUNT_PATH)) {
+    return require(DEFAULT_SERVICE_ACCOUNT_PATH);
+  }
+
+  if (
+    process.env.FIREBASE_PRIVATE_KEY &&
+    process.env.FIREBASE_PROJECT_ID &&
+    process.env.FIREBASE_CLIENT_EMAIL
+  ) {
+    return {
+      project_id: process.env.FIREBASE_PROJECT_ID,
+      client_email: process.env.FIREBASE_CLIENT_EMAIL,
+      private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    };
+  }
+
+  return null;
+}
+
 function resolveServiceAccountPath() {
   const configured = process.env.FIREBASE_SERVICE_ACCOUNT_PATH?.trim();
-  if (configured) {
-    return path.isAbsolute(configured)
-      ? configured
-      : path.resolve(__dirname, '..', configured);
-  }
-  if (fs.existsSync(DEFAULT_SERVICE_ACCOUNT_PATH)) {
-    return DEFAULT_SERVICE_ACCOUNT_PATH;
-  }
-  return null;
+  if (!configured || configured.startsWith('{')) return null;
+
+  const resolvedPath = path.isAbsolute(configured)
+    ? configured
+    : path.resolve(__dirname, '..', configured);
+  return fs.existsSync(resolvedPath) ? resolvedPath : null;
 }
 
 function isInvalidTokenError(err) {
@@ -57,12 +115,7 @@ async function clearInvalidFcmToken(fcmToken) {
 }
 
 function isFirebaseConfigured() {
-  return Boolean(
-    resolveServiceAccountPath() ||
-    (process.env.FIREBASE_PRIVATE_KEY &&
-      process.env.FIREBASE_PROJECT_ID &&
-      process.env.FIREBASE_CLIENT_EMAIL),
-  );
+  return Boolean(loadServiceAccount());
 }
 
 function getAdmin() {
@@ -78,18 +131,10 @@ function getAdmin() {
 
     let credential;
     let projectId;
-    const serviceAccountPath = resolveServiceAccountPath();
-    if (serviceAccountPath) {
-      const serviceAccount = require(serviceAccountPath);
+    const serviceAccount = loadServiceAccount();
+    if (serviceAccount) {
       projectId = serviceAccount.project_id;
       credential = admin.credential.cert(serviceAccount);
-    } else if (process.env.FIREBASE_PRIVATE_KEY) {
-      credential = admin.credential.cert({
-        projectId:   process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey:  process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-      });
-      projectId = process.env.FIREBASE_PROJECT_ID;
     } else {
       logger.warn('[FCM] No Firebase credentials configured — push notifications disabled');
       return null;

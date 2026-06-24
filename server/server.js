@@ -54,7 +54,7 @@ const { isFirebaseConfigured } = require('./services/fcm.service');
 if (!isFirebaseConfigured()) {
   logger.warn(
     '[FCM] Firebase Admin is not configured — push notifications will not work. ' +
-    'Set FIREBASE_SERVICE_ACCOUNT_PATH or place config/firebase-service-account.json',
+    'Set FIREBASE_SERVICE_ACCOUNT_JSON, FIREBASE_SERVICE_ACCOUNT_PATH (file path), or FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY',
   );
 } else {
   logger.info('[FCM] Firebase credentials detected');

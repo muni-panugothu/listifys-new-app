@@ -12,6 +12,7 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 
 import { SellFlowLayout, SellSectionCard } from "@/components/sell-flow-layout";
+import { ListifyColors } from "@/constants/listify-theme";
 import { ListifyFonts } from "@/constants/typography";
 
 import {
@@ -997,11 +998,17 @@ export function PostAdStep3MediaScreen() {
         style={{ fontFamily: ListifyFonts.regular }}
       >
         By posting, you agree to Listify&apos;s{" "}
-        <Text style={{ fontFamily: ListifyFonts.semiBold, color: "#1A1A1A" }}>
+        <Text
+          onPress={() => router.push("/terms-of-service")}
+          style={{ fontFamily: ListifyFonts.semiBold, color: ListifyColors.primary }}
+        >
           Terms
         </Text>{" "}
         and{" "}
-        <Text style={{ fontFamily: ListifyFonts.semiBold, color: "#1A1A1A" }}>
+        <Text
+          onPress={() => router.push("/privacy-policy")}
+          style={{ fontFamily: ListifyFonts.semiBold, color: ListifyColors.primary }}
+        >
           Privacy Policy
         </Text>
         .
