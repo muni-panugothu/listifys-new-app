@@ -825,18 +825,41 @@ export function HomeFeedRootScreen() {
               {filterOutOwnListings(recentlyViewed, user?.id)
                 .slice(0, 12)
                 .map((item) => {
-                const distanceLabel = canShowDistanceOnCards
-                  ? getListingDistanceLabel(
+                const feedListing = allListings.find((l) => l._id === item._id);
+                const userLatLng =
+                  canShowDistanceOnCards &&
+                  locationCoords.lat != null &&
+                  locationCoords.lng != null
+                    ? { lat: locationCoords.lat, lng: locationCoords.lng }
+                    : null;
+
+                const distanceKm = userLatLng
+                  ? resolveListingDistanceKm(
                       {
                         _id: item._id,
                         category: item.category,
-                        countryCode: item.countryCode ?? item.isoCountryCode,
-                        currency: item.currency,
+                        coordinates: item.coordinates ?? feedListing?.coordinates,
+                        distance: (feedListing as { distance?: number } | undefined)?.distance,
                       },
-                      { lat: locationCoords.lat!, lng: locationCoords.lng! },
-                      isoCountryCode || item.countryCode || item.isoCountryCode,
+                      userLatLng,
                     )
-                  : undefined;
+                  : null;
+
+                const distanceLabel =
+                  distanceKm != null
+                    ? getListingDistanceLabel(
+                        {
+                          _id: item._id,
+                          category: item.category,
+                          distance: distanceKm,
+                          coordinates: item.coordinates ?? feedListing?.coordinates,
+                          countryCode: item.countryCode ?? item.isoCountryCode,
+                          currency: item.currency,
+                        },
+                        userLatLng,
+                        isoCountryCode || item.countryCode || item.isoCountryCode,
+                      )
+                    : undefined;
 
                 return (
                   <ListingItemsGridCard

@@ -1,5 +1,6 @@
 const ServiceListing = require('../models/servicelisting.model');
 const ServiceCategory = require('../models/servicecategory.model');
+const ServiceReview = require('../models/servicereview.model');
 const mongoose = require('mongoose');
 const { logger } = require('../utils/logger');
 const { parsePagination, paginatedFind } = require('../utils/pagination');
@@ -50,6 +51,47 @@ const normaliseImages = (listing) => {
   return listing;
 };
 
+/** Attach average rating + review count from ServiceReview for hub cards. */
+async function attachReviewStats(listings) {
+  if (!Array.isArray(listings) || listings.length === 0) return listings;
+
+  const ids = listings.map((l) => l._id).filter(Boolean);
+  if (ids.length === 0) return listings;
+
+  const aggregates = await ServiceReview.aggregate([
+    { $match: { listingId: { $in: ids }, status: 'published' } },
+    {
+      $group: {
+        _id: '$listingId',
+        rating: { $avg: '$rating' },
+        reviewCount: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const byListing = new Map(
+    aggregates.map((row) => [
+      String(row._id),
+      {
+        rating: Math.round(row.rating * 10) / 10,
+        reviewCount: row.reviewCount,
+      },
+    ]),
+  );
+
+  for (const listing of listings) {
+    const stats = byListing.get(String(listing._id));
+    if (!stats) continue;
+    listing.stats = listing.stats || {};
+    listing.stats.rating = stats.rating;
+    listing.stats.reviewCount = stats.reviewCount;
+  }
+
+  return listings;
+};
+
+const USER_POPULATE_FIELDS = 'name profileImage googleProfileImage avatar';
+
 // @desc    Get all service listings
 // @route   GET /api/services/listings
 exports.getListings = async (req, res) => {
@@ -77,11 +119,12 @@ exports.getListings = async (req, res) => {
         entity: 'services',
         searchParams: { query: search, location, sort: 'relevance', page, limit },
         Model: ServiceListing,
-        populate: [{ path: 'userId', select: 'name profileImage' }, { path: 'category', select: 'name' }],
+        populate: [{ path: 'userId', select: USER_POPULATE_FIELDS }, { path: 'category', select: 'name' }],
       });
 
       if (esResult) {
         esResult.docs.forEach(normaliseImages);
+        await attachReviewStats(esResult.docs);
         res.setHeader('X-Search-Source', 'elasticsearch');
         return res.status(200).json({
           success: true,
@@ -176,13 +219,14 @@ exports.getListings = async (req, res) => {
         .sort(sortObj)
         .skip(skip)
         .limit(Number(limit))
-        .populate('userId', 'name profileImage')
+        .populate('userId', USER_POPULATE_FIELDS)
         .populate('category', 'name')
         .lean(),
       ServiceListing.countDocuments(filter)
     ]);
     
     listings.forEach(normaliseImages);
+    await attachReviewStats(listings);
     
     res.status(200).json({
       success: true,

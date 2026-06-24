@@ -1,6 +1,7 @@
 import { type Href, useRouter } from "@/lib/safe-router";
 import { useCallback } from "react";
 
+import { isNavigationLocked } from "@/lib/navigation-guard";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { showAuthGate, type AuthGateAction } from "@/store/slices/auth-gate-slice";
 
@@ -33,6 +34,7 @@ export function useProtectedNavigation() {
 
   const navigateProtected = useCallback(
     (href: Href, action: AuthGateAction = "profile") => {
+      if (isNavigationLocked()) return;
       if (isAuthenticated) {
         router.push(href);
         return;

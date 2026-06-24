@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { CommonActions } from "@react-navigation/native";
 
+import { showErrorToast } from "@/lib/toast";
 import { useAppDispatch } from "@/store/hooks";
 import { logout } from "@/store/slices/auth-slice";
 
@@ -18,11 +19,14 @@ export function LogoutModalScreen() {
     setLoading(true);
     try {
       await dispatch(logout()).unwrap();
+    } catch (error) {
+      showErrorToast(
+        "Sign out",
+        error instanceof Error ? error.message : "Could not sign out completely.",
+      );
     } finally {
       setLoading(false);
     }
-    // Reset the entire navigation stack to only the onboarding screen so no
-    // authenticated routes remain accessible via the back gesture/button.
     navigation.dispatch(
       CommonActions.reset({
         index: 0,

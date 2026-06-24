@@ -5,6 +5,7 @@ import type { RichNotificationPayload } from './types';
 import type { Href } from '@/lib/safe-router';
 import { normalizeNotificationPayload } from './payload-normalizer';
 import { queueNotificationNavigation } from './pending-notification-navigation';
+import { devWarn } from '@/lib/dev-log';
 
 /** Resolve the expo-router href for a notification payload. */
 export function getHrefForNotificationPayload(payload: RichNotificationPayload): Href | null {
@@ -19,8 +20,7 @@ export function navigateFromNotification(payload: RichNotificationPayload): void
 
   if (!href) {
     if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.warn('[Notifications] No route resolved for type:', normalized.type, normalized);
+      devWarn('[Notifications] No route resolved for type:', { type: normalized.type, payload: normalized });
     }
     return;
   }

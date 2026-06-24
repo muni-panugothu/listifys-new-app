@@ -19,6 +19,7 @@ import notifee, {
   type IOSNotificationAttachment,
 } from '@notifee/react-native';
 import { Platform } from 'react-native';
+import { devLog } from '@/lib/dev-log';
 import type { RichNotificationPayload, NotificationAction } from './types';
 import { channelForType, CHANNEL } from './channels';
 import { trackNotificationEvent } from './analytics';
@@ -248,8 +249,7 @@ async function displayStandardNotification(
   }
 
   if (__DEV__) {
-    // eslint-disable-next-line no-console
-    console.info('[Notifications] Displayed', { type, notifId, conversationId: payload.conversationId, deepLink });
+    devLog('[Notifications] Displayed', { type, notifId, conversationId: payload.conversationId, deepLink });
   }
 
   // Fire-and-forget analytics

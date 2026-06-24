@@ -4,6 +4,8 @@
  *
  * Set EXPO_PUBLIC_NOTIFICATION_DEBUG=1 in eas.json env to trace production builds.
  */
+import { devError, devLog, devWarn } from "@/lib/dev-log";
+
 const DEBUG =
   typeof __DEV__ !== "undefined" && __DEV__
     ? true
@@ -15,17 +17,16 @@ function emit(level: LogLevel, tag: string, message: string, extra?: Record<stri
   if (!DEBUG && level === "info") return;
 
   const line = `[Notifications:${tag}] ${message}`;
-  const payload = extra ? { ...extra } : undefined;
 
   if (level === "error") {
-    console.error(line, payload ?? "");
+    devError(line, extra);
     return;
   }
   if (level === "warn") {
-    console.warn(line, payload ?? "");
+    devWarn(line, extra);
     return;
   }
-  console.info(line, payload ?? "");
+  devLog(line, extra);
 }
 
 export const notificationDebug = {
@@ -45,6 +46,6 @@ export const notificationDebug = {
 
   /** Always logs critical failures — visible in release logcat via adb. */
   critical(tag: string, message: string, extra?: Record<string, unknown>) {
-    console.error(`[Notifications:${tag}] ${message}`, extra ?? "");
+    devError(`[Notifications:${tag}] ${message}`, extra);
   },
 };

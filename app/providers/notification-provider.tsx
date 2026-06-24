@@ -27,6 +27,7 @@ import { navigateFromNotification } from '@/lib/notifications/deep-link-handler'
 import { handleNotificationInteraction } from '@/lib/notifications/notification-interaction';
 import { useNotifications } from '@/hooks/use-notifications';
 import type { RichNotificationPayload } from '@/lib/notifications/types';
+import { devLog } from '@/lib/dev-log';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODULE-LEVEL BOOTSTRAP  (call in app/_layout.tsx OUTSIDE any component)
@@ -56,8 +57,7 @@ export function bootstrapNotifications(): void {
     const data = (detail.notification?.data ?? {}) as RichNotificationPayload;
 
     if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.info('[Notifications] Background event', {
+      devLog('[Notifications] Background event', {
         type,
         id: detail.notification?.id,
         actionId: detail.pressAction?.id,
@@ -72,8 +72,7 @@ export function bootstrapNotifications(): void {
 
   notifee.onForegroundEvent(({ type, detail }) => {
     if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.info('[Notifications] Foreground event (bootstrap)', {
+      devLog('[Notifications] Foreground event (bootstrap)', {
         type,
         id: detail.notification?.id,
         actionId: detail.pressAction?.id,

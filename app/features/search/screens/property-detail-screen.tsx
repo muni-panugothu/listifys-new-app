@@ -17,8 +17,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AUTH_API_BASE_URL } from "@/features/auth/services/auth-api";
-import { buildListingChatHref } from "@/lib/listing-chat";
+import { AUTH_API_BASE_URL, getAuthErrorMessage } from "@/features/auth/services/auth-api";
+import { buildListingChatHref, sendListingOffer } from "@/lib/listing-chat";
 import { AuthGateBottomSheet } from "@/features/auth/components/auth-gate-bottom-sheet";
 import {
   addToRecentlyViewed,
@@ -225,7 +225,6 @@ export function PropertyDetailScreen() {
     }
     setSendingOffer(true);
     try {
-      const { sendListingOffer } = await import("@/lib/listing-chat");
       await sendListingOffer(
         {
           recipientId: sid,
@@ -258,11 +257,7 @@ export function PropertyDetailScreen() {
         );
       }, 1200);
     } catch (e) {
-      const { showErrorToast } = await import("@/lib/toast");
-      showErrorToast(
-        "Offer Failed",
-        e instanceof Error ? e.message : "Could not send your offer.",
-      );
+      showErrorToast("Offer Failed", getAuthErrorMessage(e));
     } finally {
       setSendingOffer(false);
     }

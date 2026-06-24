@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import * as Device from "expo-device";
+import { devLog } from "@/lib/dev-log";
 import {
   readStoredTokens,
   writeStoredTokens,
@@ -195,8 +196,8 @@ export function getAuthApiBaseUrl(): string {
 export const AUTH_API_BASE_URL = getAuthApiBaseUrl();
 
 if (typeof __DEV__ !== "undefined" && __DEV__) {
-  // eslint-disable-next-line no-console
-  console.info("[API] Using base URL:", getAuthApiBaseUrl(), {
+  devLog("[API] Using base URL:", {
+    baseUrl: getAuthApiBaseUrl(),
     configured: getConfiguredApiBaseUrl(),
     env: process.env.EXPO_PUBLIC_API_BASE_URL ?? "(unset)",
     extra: (Constants.expoConfig?.extra as { apiBaseUrl?: string })?.apiBaseUrl ?? "(unset)",
@@ -204,8 +205,7 @@ if (typeof __DEV__ !== "undefined" && __DEV__) {
   setTimeout(() => {
     const resolved = getAuthApiBaseUrl();
     if (resolved !== AUTH_API_BASE_URL) {
-      // eslint-disable-next-line no-console
-      console.info("[API] Resolved base URL (runtime):", resolved);
+      devLog("[API] Resolved base URL (runtime):", resolved);
     }
   }, 0);
 }
@@ -368,6 +368,27 @@ let _accessToken: string | null = null;
 let _refreshToken: string | null = null;
 let _refreshPromise: Promise<boolean> | null = null;
 
+type SessionInvalidationListener = () => void;
+const sessionInvalidationListeners = new Set<SessionInvalidationListener>();
+
+/** Fired when refresh definitively fails and stored tokens are cleared. */
+export function onSessionInvalidated(listener: SessionInvalidationListener) {
+  sessionInvalidationListeners.add(listener);
+  return () => {
+    sessionInvalidationListeners.delete(listener);
+  };
+}
+
+function notifySessionInvalidated() {
+  sessionInvalidationListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {
+      // ignore listener errors
+    }
+  });
+}
+
 export async function setTokens(access: string | null | undefined, refresh: string | null | undefined) {
   const nextAccess = access?.trim() ? access.trim() : null;
   const nextRefresh = refresh?.trim() ? refresh.trim() : null;
@@ -392,10 +413,13 @@ export async function restoreTokens() {
   }
 }
 
-export async function clearTokens() {
+export async function clearTokens(options?: { notify?: boolean }) {
   _accessToken = null;
   _refreshToken = null;
   await writeStoredTokens(null);
+  if (options?.notify) {
+    notifySessionInvalidated();
+  }
 }
 
 export function getAccessToken() {
@@ -408,6 +432,15 @@ export function getRefreshToken() {
 
 export function hasStoredSessionTokens() {
   return Boolean(_accessToken || _refreshToken);
+}
+
+async function ensureAccessTokenLoaded(): Promise<void> {
+  if (!_accessToken && !_refreshToken) {
+    await restoreTokens();
+  }
+  if (!_accessToken && _refreshToken) {
+    await refreshAccessToken();
+  }
 }
 
 export async function refreshAccessToken(): Promise<boolean> {
@@ -436,10 +469,13 @@ export async function refreshAccessToken(): Promise<boolean> {
           return true;
         }
       }
-      // Refresh failed — clear tokens so user is redirected to sign-in
-      await clearTokens();
+      // Only clear session when the server explicitly rejects the refresh token.
+      if (res.status === 401 || res.status === 403) {
+        await clearTokens({ notify: true });
+      }
       return false;
     } catch {
+      // Network / timeout — keep tokens so offline sessions can retry later.
       return false;
     } finally {
       _refreshPromise = null;
@@ -515,14 +551,10 @@ async function executeRequestJson<T>(
   const timeoutMs = options?.timeoutMs ?? getRequestTimeoutMs(normalizedPath);
 
   if (typeof __DEV__ !== "undefined" && __DEV__) {
-    // eslint-disable-next-line no-console
-    console.info("[API] Request", normalizedPath, "→", baseUrls.join(", "));
+    devLog("[API] Request", `${normalizedPath} → ${baseUrls.join(", ")}`);
   }
 
-  // Ensure in-memory tokens are loaded from storage before first request
-  if (!_accessToken && !_refreshToken) {
-    await restoreTokens();
-  }
+  await ensureAccessTokenLoaded();
 
   const buildHeaders = () => ({
     ...getApiClientHeaders(),
@@ -627,6 +659,14 @@ export function getAuthErrorMessage(error: unknown) {
     }
     if (error.status === 0 || error.message.toLowerCase().includes("network")) {
       return "Unable to connect to the server. Please check your internet connection and try again.";
+    }
+    if (
+      error.status === 401 &&
+      /not authorized to access this route|please login|session invalid|invalid token|token expired/i.test(
+        error.message,
+      )
+    ) {
+      return "Your session expired. Please sign in again.";
     }
     if (error.status === 409) {
       return "User already exists. Please sign in instead.";
@@ -1133,6 +1173,19 @@ export function submitSellerReview(
     averageRating: number;
     reviewsCount: number;
   }>(`/api/auth/seller/${encodeURIComponent(sellerId)}/reviews`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function submitServiceReview(data: {
+  listingId: string;
+  providerId: string;
+  rating: number;
+  comment: string;
+  title?: string;
+}) {
+  return requestJson<{ success: boolean; data?: unknown }>("/api/services/reviews", {
     method: "POST",
     body: JSON.stringify(data),
   });

@@ -1,113 +1,176 @@
-export type LegalSection = {
+export type LegalSubsection = {
   id: string;
+  label: string;
   title: string;
   paragraphs?: string[];
-  bullets?: string[];
+  items?: string[];
+};
+
+export type LegalChapter = {
+  id: string;
+  roman: string;
+  title: string;
+  intro?: string;
+  subsections: LegalSubsection[];
 };
 
 export type LegalDocument = {
   title: string;
   lastUpdated: string;
   intro: string;
-  sections: LegalSection[];
+  chapters: LegalChapter[];
+  contactTitle: string;
   contactEmail: string;
+  contactNote?: string;
 };
 
 export const LEGAL_LAST_UPDATED = "June 24, 2026";
 export const LEGAL_CONTACT_EMAIL = "legal@listifys.com";
 export const SUPPORT_EMAIL = "support@listifys.com";
+export const ABOUT_WEB_URL = "https://listifys.com";
 
 export const PRIVACY_POLICY: LegalDocument = {
   title: "Privacy Policy",
   lastUpdated: LEGAL_LAST_UPDATED,
   contactEmail: LEGAL_CONTACT_EMAIL,
+  contactTitle: "Questions and Comments",
+  contactNote:
+    "If you would like to provide feedback about this Privacy Policy, or if you have any questions, please contact us.",
   intro:
-    "Listify (“we”, “us”, “our”) helps people buy, sell, and connect locally. This Privacy Policy explains what information we collect, how we use it, and the choices you have. By using Listify, you agree to this policy.",
-  sections: [
+    "This Privacy Policy explains how information about you is collected, used, disclosed, and otherwise processed by Listify (“we”, “us”, or “our”). This policy applies when you use our mobile applications, website, and related online services (collectively, the “Listify Service”).\n\nWe may change this Privacy Policy from time to time. If we make changes, we will revise the date at the top of this policy. If we make material changes, we will provide more prominent notice within the app. We encourage you to review this policy whenever you use Listify.",
+  chapters: [
     {
-      id: "information-we-collect",
-      title: "Information we collect",
-      paragraphs: [
-        "We collect information you provide directly and information generated when you use the app.",
-      ],
-      bullets: [
-        "Account details: name, email, phone number, profile photo, and password (stored securely).",
-        "Listings & content: photos, descriptions, prices, categories, and messages you send.",
-        "Location: approximate or precise location when you allow it — used to show nearby listings and distances.",
-        "Device & usage: device model, OS version, app version, IP address, and how you interact with features.",
-        "Communications: in-app chat, offers, notifications preferences, and support requests.",
-        "Payment-related metadata: we do not store full card numbers; payment partners handle transactions when applicable.",
+      id: "collect",
+      roman: "I",
+      title: "Information We Collect and How We Collect It",
+      subsections: [
+        {
+          id: "collect-a",
+          label: "A",
+          title: "Information you provide to us",
+          paragraphs: [
+            "Listify collects information you provide when you register, create listings, message other users, or contact support, including:",
+          ],
+          items: [
+            "Your name, email address, phone number, and profile photo.",
+            "Your account password (stored in encrypted form).",
+            "Listing details: photos, titles, descriptions, prices, and categories.",
+            "Messages, offers, and reviews you send through Listify.",
+            "Government ID or verification documents, if you choose to verify your account.",
+            "Any other information you choose to provide.",
+          ],
+        },
+        {
+          id: "collect-b",
+          label: "B",
+          title: "Information we collect automatically",
+          paragraphs: ["When you access Listify, we automatically collect information such as:"],
+          items: [
+            "Device information: hardware model, operating system, app version, and unique device identifiers.",
+            "Log data: IP address, access times, pages or screens viewed, and general usage activity.",
+            "Location information when you grant permission — used to show nearby listings and distances.",
+            "Cookies, analytics SDKs, and similar technologies that help us improve the service.",
+          ],
+        },
+        {
+          id: "collect-c",
+          label: "C",
+          title: "Information from third parties",
+          paragraphs: [
+            "We may receive information from sign-in providers (such as Google), payment processors, analytics partners, and fraud-prevention services to secure accounts and improve Listify.",
+          ],
+        },
       ],
     },
     {
-      id: "how-we-use",
-      title: "How we use your information",
-      bullets: [
-        "Operate the marketplace: publish listings, match buyers and sellers, and enable chat and offers.",
-        "Personalize your experience: recommendations, saved items, and relevant search results.",
-        "Keep you safe: fraud detection, content moderation, and account security alerts.",
-        "Send notifications: messages, offers, price drops, and account activity (you can control push settings).",
-        "Improve Listify: analytics, debugging, and product development.",
-        "Comply with law: respond to legal requests and enforce our Terms of Service.",
+      id: "use",
+      roman: "II",
+      title: "How We Use Your Information",
+      subsections: [
+        {
+          id: "use-a",
+          label: "A",
+          title: "Purposes of use",
+          items: [
+            "Verify your account and provide access to the Listify Service.",
+            "Connect buyers and sellers, enable chat, offers, and notifications.",
+            "Detect and prevent fraud, abuse, and security incidents.",
+            "Personalize listings, search results, and recommendations.",
+            "Send service messages, security alerts, and promotional communications (where permitted).",
+            "Improve, analyze, and develop Listify features.",
+            "Comply with legal obligations and enforce our Terms of Service.",
+          ],
+        },
+        {
+          id: "use-b",
+          label: "B",
+          title: "Location of processing",
+          paragraphs: [
+            "Listify is operated from India. By using the service, you consent to the processing and transfer of information in accordance with this policy and applicable law.",
+          ],
+        },
       ],
     },
     {
-      id: "sharing",
-      title: "When we share information",
-      paragraphs: [
-        "We do not sell your personal information. We share data only as described below:",
-      ],
-      bullets: [
-        "With other users: your public profile, listings, and messages you send are visible to the people you interact with.",
-        "Service providers: cloud hosting, email/SMS, maps, analytics, and push notification services under strict contracts.",
-        "Legal & safety: when required by law or to protect users, Listify, or the public.",
-        "Business transfers: if Listify is involved in a merger or acquisition, with notice where required.",
-      ],
-    },
-    {
-      id: "your-choices",
-      title: "Your choices & controls",
-      bullets: [
-        "Profile & listings: edit or delete your content from the app at any time.",
-        "Push notifications: toggle off in Settings → Notifications.",
-        "Location: disable in your device settings; some features may be limited.",
-        "Marketing emails: unsubscribe using the link in any promotional email.",
-        "Account deletion: permanently remove your account under Settings → Delete account.",
-      ],
-    },
-    {
-      id: "retention",
-      title: "Data retention",
-      paragraphs: [
-        "We keep your information while your account is active and as needed to provide services, resolve disputes, enforce agreements, and meet legal obligations. Deleted accounts are removed from active systems within a reasonable period, though backups may persist for a limited time.",
+      id: "disclose",
+      roman: "III",
+      title: "Why Your Information May Be Disclosed",
+      subsections: [
+        {
+          id: "disclose-a",
+          label: "A",
+          title: "Business disclosures",
+          items: [
+            "With other users when you post listings, send messages, or make your profile public.",
+            "With vendors and service providers who help us operate Listify (hosting, email, SMS, maps, analytics, push notifications).",
+            "When required by law, regulation, legal process, or governmental request.",
+            "To protect the rights, property, and safety of Listify, our users, or the public.",
+            "In connection with a merger, acquisition, or sale of assets, with notice where required.",
+            "With your consent or at your direction.",
+          ],
+        },
+        {
+          id: "disclose-b",
+          label: "B",
+          title: "Security",
+          paragraphs: [
+            "Listify takes reasonable measures to help protect information from loss, theft, misuse, and unauthorized access. No method of transmission or storage is completely secure.",
+          ],
+        },
       ],
     },
     {
-      id: "security",
-      title: "Security",
-      paragraphs: [
-        "We use industry-standard measures including encryption in transit, secure authentication, and access controls. No method of transmission or storage is 100% secure — please use a strong password and report suspicious activity immediately.",
-      ],
-    },
-    {
-      id: "children",
-      title: "Children",
-      paragraphs: [
-        "Listify is not intended for users under 18. We do not knowingly collect data from children. Contact us if you believe a child has provided personal information.",
-      ],
-    },
-    {
-      id: "changes",
-      title: "Changes to this policy",
-      paragraphs: [
-        "We may update this Privacy Policy from time to time. We will post the new version in the app and update the “Last updated” date. Continued use after changes means you accept the updated policy.",
-      ],
-    },
-    {
-      id: "contact",
-      title: "Contact us",
-      paragraphs: [
-        "Questions about privacy? Email us at legal@listifys.com or write to Listify Support, India.",
+      id: "choices",
+      roman: "IV",
+      title: "Your Choices",
+      subsections: [
+        {
+          id: "choices-a",
+          label: "A",
+          title: "Account information",
+          items: [
+            "Update your profile from Settings → Edit profile.",
+            "Turn push notifications on or off from Settings → Notifications.",
+            "Delete your account from Settings → Delete account.",
+            "We may retain certain information as required by law or for legitimate business purposes.",
+          ],
+        },
+        {
+          id: "choices-b",
+          label: "B",
+          title: "Location information",
+          paragraphs: [
+            "You can revoke location permission in your device settings. Some features — such as nearby listings — may not work without location access.",
+          ],
+        },
+        {
+          id: "choices-c",
+          label: "C",
+          title: "Promotional communications",
+          paragraphs: [
+            "You may opt out of promotional emails by using the unsubscribe link in those messages or by updating your preferences in Settings.",
+          ],
+        },
       ],
     },
   ],
@@ -117,128 +180,202 @@ export const TERMS_OF_SERVICE: LegalDocument = {
   title: "Terms of Service",
   lastUpdated: LEGAL_LAST_UPDATED,
   contactEmail: LEGAL_CONTACT_EMAIL,
+  contactTitle: "Questions and Comments",
+  contactNote: "For questions about these Terms, please contact us.",
   intro:
-    "Welcome to Listify. These Terms of Service (“Terms”) govern your access to and use of the Listify mobile app and related services. Please read them carefully before using Listify.",
-  sections: [
+    "These Terms of Service (“Terms”) govern your access to and use of the Listify mobile application and related services (the “Listify Service”). By creating an account or using Listify, you agree to these Terms and our Privacy Policy.\n\nWe may update these Terms from time to time. Continued use of Listify after changes become effective constitutes acceptance of the updated Terms.",
+  chapters: [
     {
-      id: "acceptance",
-      title: "Acceptance of terms",
-      paragraphs: [
-        "By creating an account or using Listify, you agree to these Terms and our Privacy Policy. If you do not agree, do not use the service.",
+      id: "agreement",
+      roman: "I",
+      title: "Agreement and Eligibility",
+      subsections: [
+        {
+          id: "agreement-a",
+          label: "A",
+          title: "Acceptance",
+          paragraphs: [
+            "By using Listify, you agree to be bound by these Terms. If you do not agree, you may not use the service.",
+          ],
+        },
+        {
+          id: "agreement-b",
+          label: "B",
+          title: "Eligibility",
+          items: [
+            "You must be at least 18 years old.",
+            "You must provide accurate registration information.",
+            "You may not use Listify for unlawful, fraudulent, or abusive purposes.",
+          ],
+        },
       ],
     },
     {
-      id: "eligibility",
-      title: "Eligibility",
-      bullets: [
-        "You must be at least 18 years old and legally able to enter a contract.",
-        "You must provide accurate registration information and keep it up to date.",
-        "One person may not maintain multiple accounts for abusive or fraudulent purposes.",
+      id: "marketplace",
+      roman: "II",
+      title: "The Listify Marketplace",
+      subsections: [
+        {
+          id: "marketplace-a",
+          label: "A",
+          title: "Our role",
+          paragraphs: [
+            "Listify is a platform that helps users discover, buy, and sell locally. Unless we state otherwise, Listify is not a party to transactions between users and does not take title to items listed on the service.",
+          ],
+        },
+        {
+          id: "marketplace-b",
+          label: "B",
+          title: "Listings and conduct",
+          items: [
+            "You may list only items or services you have the right to offer.",
+            "Prohibited items include illegal goods, weapons, drugs, stolen property, and counterfeit products.",
+            "Listings must be accurate — photos, prices, and descriptions must reflect the actual item.",
+            "Harassment, spam, scraping, and attempts to circumvent Listify systems are not allowed.",
+          ],
+        },
+        {
+          id: "marketplace-c",
+          label: "C",
+          title: "Messaging and offers",
+          paragraphs: [
+            "In-app chat and offers must be used for legitimate marketplace communication. Do not share sensitive financial credentials in messages.",
+          ],
+        },
       ],
     },
     {
-      id: "marketplace-role",
-      title: "Listify’s role",
-      paragraphs: [
-        "Listify is a platform that connects buyers and sellers. We are not a party to transactions between users unless explicitly stated. You are responsible for your listings, communications, and any agreement you make with another user.",
+      id: "content",
+      roman: "III",
+      title: "Your Content and Account",
+      subsections: [
+        {
+          id: "content-a",
+          label: "A",
+          title: "License you grant",
+          paragraphs: [
+            "You retain ownership of content you post. You grant Listify a non-exclusive, worldwide license to host, display, and distribute your content solely to operate and promote the service.",
+          ],
+        },
+        {
+          id: "content-b",
+          label: "B",
+          title: "Suspension and termination",
+          paragraphs: [
+            "We may suspend or terminate accounts that violate these Terms or create risk for the community. You may delete your account at any time from Settings.",
+          ],
+        },
       ],
     },
     {
-      id: "listings-conduct",
-      title: "Listings & acceptable use",
-      bullets: [
-        "Post only items and services you have the right to sell or offer.",
-        "No illegal, stolen, counterfeit, dangerous, or prohibited items (weapons, drugs, etc.).",
-        "No misleading titles, prices, or photos; keep listings accurate and current.",
-        "No harassment, spam, scraping, or attempts to bypass Listify systems.",
-        "Respect intellectual property and do not copy others’ content without permission.",
-      ],
-    },
-    {
-      id: "transactions",
-      title: "Transactions & payments",
-      paragraphs: [
-        "Payment methods and delivery are arranged between users unless Listify offers a protected payment feature. Listify is not responsible for payment disputes, item quality, or non-delivery unless we explicitly provide a buyer/seller protection program.",
-      ],
-    },
-    {
-      id: "messaging",
-      title: "Messaging & offers",
-      paragraphs: [
-        "Chat and offers are for legitimate marketplace communication. Do not share sensitive financial information in chat. We may review reported content to enforce these Terms.",
-      ],
-    },
-    {
-      id: "content-license",
-      title: "Your content",
-      paragraphs: [
-        "You retain ownership of content you post. You grant Listify a worldwide, non-exclusive license to host, display, and distribute your content solely to operate and promote the service.",
-      ],
-    },
-    {
-      id: "termination",
-      title: "Suspension & termination",
-      paragraphs: [
-        "We may suspend or terminate accounts that violate these Terms or pose risk to the community. You may delete your account at any time from Settings.",
-      ],
-    },
-    {
-      id: "disclaimers",
-      title: "Disclaimers",
-      paragraphs: [
-        "Listify is provided “as is” without warranties of any kind. We do not guarantee uninterrupted service, accuracy of user content, or successful transactions.",
-      ],
-    },
-    {
-      id: "liability",
-      title: "Limitation of liability",
-      paragraphs: [
-        "To the fullest extent permitted by law, Listify and its affiliates are not liable for indirect, incidental, or consequential damages arising from your use of the service. Our total liability is limited to the greater of amounts you paid us in the past 12 months or ₹1,000.",
-      ],
-    },
-    {
-      id: "governing-law",
-      title: "Governing law",
-      paragraphs: [
-        "These Terms are governed by the laws of India. Disputes shall be subject to the exclusive jurisdiction of courts in India, unless otherwise required by applicable consumer protection law.",
-      ],
-    },
-    {
-      id: "contact",
-      title: "Contact",
-      paragraphs: [
-        "For questions about these Terms, contact legal@listifys.com.",
+      id: "legal",
+      roman: "IV",
+      title: "Disclaimers, Liability, and Law",
+      subsections: [
+        {
+          id: "legal-a",
+          label: "A",
+          title: "Disclaimers",
+          paragraphs: [
+            "Listify is provided “as is” without warranties of any kind. We do not guarantee uninterrupted service or the accuracy of user-generated content.",
+          ],
+        },
+        {
+          id: "legal-b",
+          label: "B",
+          title: "Limitation of liability",
+          paragraphs: [
+            "To the fullest extent permitted by law, Listify is not liable for indirect or consequential damages. Our total liability is limited to the greater of fees you paid us in the past 12 months or ₹1,000.",
+          ],
+        },
+        {
+          id: "legal-c",
+          label: "C",
+          title: "Governing law",
+          paragraphs: [
+            "These Terms are governed by the laws of India. Disputes are subject to the courts of India, unless consumer protection law in your jurisdiction requires otherwise.",
+          ],
+        },
       ],
     },
   ],
 };
 
-export const ABOUT_HIGHLIGHTS = [
+/** OfferUp-style about page content */
+export const ABOUT_HERO = {
+  headline: "Buy. Sell. Connect.",
+  subheadline:
+    "Listify brings people together in an easy-to-use mobile app to get more of what they need, right where they are.",
+  body: "From finding that perfect chair to hiring someone for a quick repair, Listify helps you get more done locally.",
+};
+
+export const ABOUT_FEATURES = [
   {
-    icon: "storefront" as const,
-    title: "Local marketplace",
-    description: "Buy and sell electronics, vehicles, fashion, furniture, and more near you.",
+    id: "finds",
+    title: "One-of-a-kind finds",
+    description:
+      "Whatever you need, discover items with character — and a way better price — right in your neighborhood.",
+    icon: "local-offer" as const,
   },
   {
-    icon: "chat-bubble-outline" as const,
-    title: "Chat & offers",
-    description: "Message sellers, negotiate offers, and close deals in one place.",
+    id: "exchange",
+    title: "Stress-free exchange",
+    description:
+      "Check seller profiles, chat in-app before you meet, and negotiate offers without leaving Listify.",
+    icon: "handshake" as const,
   },
   {
-    icon: "home-repair-service" as const,
-    title: "Services & jobs",
-    description: "Discover local services, properties, events, and job listings.",
+    id: "list-fast",
+    title: "List fast, sell fast",
+    description:
+      "Life changes. Your stuff should too. Snap photos, post in minutes, and turn clutter into cash.",
+    icon: "photo-camera" as const,
   },
   {
-    icon: "verified-user" as const,
+    id: "trust",
     title: "Built for trust",
-    description: "Report listings, manage devices, and control notifications from Settings.",
+    description:
+      "Report listings, manage signed-in devices, and control notifications — safety tools at your fingertips.",
+    icon: "verified-user" as const,
   },
 ] as const;
 
-export const ABOUT_SAFETY_TIPS = [
-  "Meet in public places for in-person exchanges.",
-  "Never send advance payments to unverified users.",
-  "Use in-app chat so you have a record of the conversation.",
-  "Report suspicious listings or behaviour from the item menu.",
+export const ABOUT_CATEGORIES = [
+  {
+    id: "buy-sell",
+    label: "Buy & Sell",
+    title: "Buy & Sell",
+    description:
+      "Find great stuff nearby for way less than retail — and pass it on when you are done.",
+    icon: "storefront" as const,
+  },
+  {
+    id: "jobs-properties",
+    label: "Jobs & Properties",
+    title: "Jobs & Properties",
+    description:
+      "From your first apartment to your next opportunity — discover local listings that move life forward.",
+    icon: "apartment" as const,
+  },
+  {
+    id: "services",
+    label: "Services",
+    title: "Services",
+    description:
+      "From quick fixes to bigger projects, get help from local pros who know their stuff.",
+    icon: "home-repair-service" as const,
+  },
 ] as const;
+
+export const ABOUT_STATS = [
+  { value: "10+", label: "listing categories" },
+  { value: "In-app", label: "chat & offers" },
+  { value: "Local", label: "discovery first" },
+  { value: "Secure", label: "account tools" },
+] as const;
+
+export const ABOUT_TESTIMONIAL = {
+  quote:
+    "Listify makes it easy to buy and sell locally. Posting is quick, messaging is simple, and I can find great deals near me.",
+  author: "Listify community member",
+};

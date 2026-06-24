@@ -17,6 +17,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   type FollowListUser,
+  AuthApiError,
+  getAuthErrorMessage,
   getFollowList,
   toggleFollowUser,
 } from "@/features/auth/services/auth-api";
@@ -25,7 +27,7 @@ import { Image } from "@/lib/nativewind-interop";
 import { showErrorToast } from "@/lib/toast";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { fetchProfile } from "@/store/slices/auth-slice";
+import { fetchProfile, invalidateSession } from "@/store/slices/auth-slice";
 import { FloatingBottomNav } from "@/components/floating-bottom-nav";
 
 type FollowTab = "followers" | "following";
@@ -64,6 +66,9 @@ export function FollowersFollowingScreen() {
   const bottomNavPadding = Math.max(insets.bottom, 8);
   const dispatch = useAppDispatch();
   const currentUser = useAppSelector((s) => s.auth.user);
+  const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
+  const network = useAppSelector((s) => s.network);
+  const isOffline = !network.isConnected || network.isInternetReachable === false;
   const pagerRef = useRef<ScrollView>(null);
   const [activeTab, setActiveTab] = useState<FollowTab>(getTabParam(params.tab));
   const [searchQuery, setSearchQuery] = useState("");
@@ -85,6 +90,16 @@ export function FollowersFollowingScreen() {
   }, [params.tab]);
 
   const loadFollowData = useCallback(async () => {
+    if (!isAuthenticated) {
+      setIsLoading(false);
+      return;
+    }
+
+    if (isOffline) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -106,11 +121,15 @@ export function FollowersFollowingScreen() {
       setFollowersCount(followersResponse.followersCount ?? nextFollowers.length);
       setFollowingCount(followingResponse.followingCount ?? nextFollowing.length);
     } catch (error) {
-      showErrorToast("Followers", error instanceof Error ? error.message : "Failed to load follow data.");
+      const message = getAuthErrorMessage(error);
+      showErrorToast("Followers", message);
+      if (error instanceof AuthApiError && error.status === 401) {
+        dispatch(invalidateSession());
+      }
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [dispatch, isAuthenticated, isOffline]);
 
   useFocusEffect(
     useCallback(() => {

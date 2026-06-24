@@ -9,6 +9,7 @@ import { trackNotificationEvent } from '@/lib/notifications/analytics';
 import { navigateFromNotification } from '@/lib/notifications/deep-link-handler';
 import { normalizeNotificationPayload } from '@/lib/notifications/payload-normalizer';
 import type { RichNotificationPayload } from '@/lib/notifications/types';
+import { devLog } from '@/lib/dev-log';
 
 import { isPersistedNotificationId } from './notification-id';
 import { readCachedNotificationPayload } from './notification-payload-cache';
@@ -106,8 +107,7 @@ export async function handleNotificationInteraction(
   const payload = await resolvePayload(data, notifId);
 
   if (__DEV__) {
-    // eslint-disable-next-line no-console
-    console.info('[Notifications] Interaction', {
+    devLog('[Notifications] Interaction', {
       event: eventLabel(type),
       actionId,
       notifId,

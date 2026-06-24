@@ -4,6 +4,7 @@ import * as Haptics from "expo-haptics";
 import { useCallback, useRef } from "react";
 import { Platform } from "react-native";
 
+import { acquireNavigationLock, isNavigationLocked } from "@/lib/navigation-guard";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { showAuthGate, type AuthGateAction } from "@/store/slices/auth-gate-slice";
 
@@ -94,6 +95,7 @@ export function useTabNavigation(onAuthRequired?: () => void) {
       }
 
       if (isTabRouteActive(pathname, target)) return;
+      if (isNavigationLocked()) return;
 
       const now = Date.now();
       const lastNavigation = lastNavigationRef.current;
@@ -118,7 +120,10 @@ export function useTabNavigation(onAuthRequired?: () => void) {
 
       const tabNavigator = findTabNavigator(navigation as unknown as AnyNavigation);
       if (tabNavigator) {
+        const release = acquireNavigationLock(350);
+        if (!release) return;
         tabNavigator.navigate(screenName);
+        setTimeout(release, 350);
         return;
       }
 

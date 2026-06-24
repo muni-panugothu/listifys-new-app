@@ -20,6 +20,7 @@ import {
   peekPersistedNotificationNavigation,
 } from '@/lib/notifications/pending-notification-storage';
 import type { RichNotificationPayload } from '@/lib/notifications/types';
+import { devLog } from '@/lib/dev-log';
 import { useAppSelector } from '@/store/hooks';
 
 let notifee: any = null;
@@ -47,8 +48,7 @@ export function NotificationNavigationHost() {
     if (!href) return;
 
     if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.info('[Notifications] Flushing navigation:', href);
+      devLog('[Notifications] Flushing navigation:', href);
     }
 
     router.push(href as Href);
@@ -75,8 +75,7 @@ export function NotificationNavigationHost() {
           const data = initial?.notification?.data as RichNotificationPayload | undefined;
           if (!data?.type) return;
           if (__DEV__) {
-            // eslint-disable-next-line no-console
-            console.info('[Notifications] getInitialNotification on resume', data.type);
+            devLog('[Notifications] getInitialNotification on resume', data.type);
           }
           navigateFromNotification(data);
           void flush();
@@ -96,8 +95,7 @@ export function NotificationNavigationHost() {
       if (!href) return;
 
       if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.info('[Notifications] Deep link opened:', url, href);
+        devLog('[Notifications] Deep link opened:', { url, href });
       }
 
       queueNotificationNavigation(href);
@@ -130,8 +128,8 @@ export function NotificationNavigationHost() {
         const data = initial?.notification?.data as RichNotificationPayload | undefined;
 
         if (__DEV__) {
-          // eslint-disable-next-line no-console
-          console.info('[Notifications] getInitialNotification attempt', index, {
+          devLog('[Notifications] getInitialNotification attempt', {
+            index,
             hasData: Boolean(data),
             type: data?.type,
             conversationId: data?.conversationId,
@@ -167,8 +165,7 @@ export function NotificationNavigationHost() {
       const persisted = await peekPersistedNotificationNavigation();
       if (persisted) {
         if (__DEV__) {
-          // eslint-disable-next-line no-console
-          console.info('[Notifications] Found persisted navigation on mount');
+          devLog('[Notifications] Found persisted navigation on mount');
         }
         await flush();
       }

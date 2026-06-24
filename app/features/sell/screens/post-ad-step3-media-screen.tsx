@@ -678,7 +678,9 @@ export function PostAdStep3MediaScreen() {
           "Per Month": "Monthly",
           "Fixed Quote": "fixed",
         };
+        if (experience) listingBody.experience = experience;
         if (serviceArea) listingBody.serviceArea = serviceArea;
+        if (availability) listingBody.availability = availability;
         if (priceUnit) listingBody.priceType = PRICE_UNIT_MAP[priceUnit] ?? priceUnit;
         if (serviceMode) listingBody.serviceType = serviceMode;
         if (responseTime) listingBody.turnaroundTime = responseTime;

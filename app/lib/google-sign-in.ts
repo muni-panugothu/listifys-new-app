@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 
 import type { GoogleClientIds } from "@/features/auth/services/auth-api";
 import { GOOGLE_OAUTH_CONFIG } from "@/lib/google-oauth-config";
+import { devLog, devWarn } from "@/lib/dev-log";
 
 export class GoogleSignInError extends Error {
   cancelled: boolean;
@@ -390,7 +391,7 @@ export async function configureGoogleSignIn() {
     });
 
     if (__DEV__) {
-      console.info("[GoogleSignIn] configured", {
+      devLog("[GoogleSignIn] configured", {
         webClientId: clientIds.web,
         androidClientId: clientIds.android,
         packageName: GOOGLE_OAUTH_CONFIG.packageName,
@@ -467,11 +468,10 @@ async function _attemptGoogleSignIn(module: GoogleModule): Promise<string> {
       const resolvedCode = extractGoogleErrorCode(err);
 
       if (__DEV__) {
-        console.warn("[GoogleSignIn] native sign-in error", {
+        devWarn("[GoogleSignIn] native sign-in error", {
           code: resolvedCode,
           status: describeGoogleSignInStatus(resolvedCode),
           message: err.message,
-          raw: err,
         });
       }
 

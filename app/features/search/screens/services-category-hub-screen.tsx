@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
-  Dimensions,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,9 +13,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ListingItemsGridCard } from "@/components/listing-items-grid-card";
-import { ServiceGridCard } from "@/components/service-grid-card";
+import { ServiceProviderListCard } from "@/components/service-provider-list-card";
 import { VoiceSearchModal } from "@/components/voice-search-modal";
+import { ListifyColors } from "@/constants/listify-theme";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
 import { CATEGORIES } from "@/constants/categories";
 import { ListifyFonts, ListifyTypography } from "@/constants/typography";
@@ -37,13 +36,15 @@ import {
 } from "@/store/slices/location-slice";
 import { FloatingBottomNav } from "@/components/floating-bottom-nav";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { buildListingChatHref } from "@/lib/listing-chat";
+import { getListingSellerId, isOwnListing } from "@/lib/is-own-listing";
+import { showErrorToast } from "@/lib/toast";
+import { useProtectedNavigation } from "@/lib/use-protected-navigation";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const BRAND = "#27BB97";
+
+const BRAND = ListifyColors.primary;
 const BG = "#F6F7F8";
-const GRID_GUTTER = 14;
-const GRID_SIDE_PADDING = 16;
-const CARD_WIDTH = (SCREEN_WIDTH - GRID_SIDE_PADDING * 2 - GRID_GUTTER) / 2;
+const SIDE_PADDING = 16;
 
 const SERVICE_FILTERS = [
   { key: "top_rated",  label: "Top Rated",       icon: "star"         as const },
@@ -54,8 +55,13 @@ const SERVICE_FILTERS = [
 
 const SERVICE_SUBCATEGORIES = [
   "All",
-  ...( CATEGORIES.find((c) => c.slug === "services")?.subcategories ?? []),
+  ...(CATEGORIES.find((c) => c.slug === "services")?.subcategories ?? []),
 ];
+
+function getSectionTitle(subcategory: string) {
+  if (subcategory === "All") return "Available Professionals";
+  return `Available ${subcategory}`;
+}
 
 export function ServicesCategoryHubScreen() {
   const router = useRouter();
@@ -73,6 +79,7 @@ export function ServicesCategoryHubScreen() {
   const shouldApplyLocationFilter = hasLocationCoords || isoCountryCode === "US";
   const canShowDistanceOnCards = useAppSelector(selectCanShowDistanceOnCards);
   const handleBottomTabPress = useTabNavigation();
+  const { navigateProtected } = useProtectedNavigation();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
@@ -216,13 +223,55 @@ export function ServicesCategoryHubScreen() {
     }
   }, []);
 
-  const listingRows = useMemo(() => {
-    const rows: ListingItem[][] = [];
-    for (let i = 0; i < displayListings.length; i += 2) {
-      rows.push(displayListings.slice(i, i + 2));
-    }
-    return rows;
-  }, [displayListings]);
+  const handleMessage = useCallback(
+    (item: ListingItem) => {
+      const sellerId = getListingSellerId(item);
+      if (!sellerId) {
+        showErrorToast("Unavailable", "Seller information is missing for this service.");
+        return;
+      }
+      if (isOwnListing(item, user?.id)) {
+        showErrorToast("Not Allowed", "You cannot message yourself on your own service.");
+        return;
+      }
+
+      const pricing = (item as { pricing?: { basePrice?: number } }).pricing;
+      const providerUser =
+        typeof item.userId === "object" ? item.userId : null;
+      const providerName =
+        providerUser?.name ?? item.sellerName ?? "Provider";
+      const contactImage =
+        providerUser?.profileImage ??
+        providerUser?.googleProfileImage ??
+        providerUser?.avatar ??
+        item.seller?.profileImage ??
+        null;
+
+      navigateProtected(
+        buildListingChatHref({
+          recipientId: sellerId,
+          sellerId,
+          name: providerName,
+          contactImage,
+          productId: item._id,
+          productType: "services",
+          productTitle: item.title ?? item.subcategory ?? "Service",
+          productPrice: pricing?.basePrice ?? item.price,
+          productImage: item.images?.[0] ?? null,
+          currency: item.currency ?? "₹",
+        }),
+        "messages",
+      );
+    },
+    [navigateProtected, user?.id],
+  );
+
+  const listingRows = useMemo(() => displayListings, [displayListings]);
+
+  const sectionTitle = useMemo(
+    () => getSectionTitle(selectedSubcategory),
+    [selectedSubcategory],
+  );
 
   const handleVoiceResult = useCallback((text: string) => {
     setSearchQuery(text);
@@ -300,7 +349,7 @@ export function ServicesCategoryHubScreen() {
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{
-            paddingHorizontal: GRID_SIDE_PADDING,
+            paddingHorizontal: SIDE_PADDING,
             paddingVertical: 10,
             gap: 20,
             alignItems: "center",
@@ -351,7 +400,7 @@ export function ServicesCategoryHubScreen() {
           horizontal
           showsHorizontalScrollIndicator={false}
           className="mb-5"
-          contentContainerStyle={{ paddingHorizontal: GRID_SIDE_PADDING, paddingVertical: 4, gap: 10 }}
+          contentContainerStyle={{ paddingHorizontal: SIDE_PADDING, paddingVertical: 4, gap: 10 }}
         >
           {SERVICE_FILTERS.map((f) => {
             const isActive = f.key === activeFilter;
@@ -431,52 +480,66 @@ export function ServicesCategoryHubScreen() {
             </Text>
           </View>
         ) : (
-          <View className="px-4" style={{ gap: GRID_GUTTER }}>
-            {listingRows.map((row) => (
-              <View key={row.map((i) => i._id).join("-")} className="flex-row" style={{ gap: GRID_GUTTER }}>
-                {row.map((item) => {
-                  const pricing = (item as any).pricing;
-                  const priceVal = pricing?.basePrice ?? item.price ?? null;
-                  const priceType = pricing?.priceType ?? (item as any).priceType ?? undefined;
+          <View className="px-4">
+            <Text
+              className="mb-1 text-[22px] tracking-tight text-[#1A1A1A]"
+              style={{ fontFamily: ListifyFonts.bold }}
+            >
+              {sectionTitle}
+            </Text>
+            {cityName ? (
+              <Text
+                className="mb-4 text-[14px] text-[#6B7280]"
+                style={{ fontFamily: ListifyFonts.regular }}
+              >
+                Near {cityName} · {displayListings.length}{" "}
+                {displayListings.length === 1 ? "professional" : "professionals"}
+              </Text>
+            ) : (
+              <Text
+                className="mb-4 text-[14px] text-[#6B7280]"
+                style={{ fontFamily: ListifyFonts.regular }}
+              >
+                {displayListings.length}{" "}
+                {displayListings.length === 1 ? "professional" : "professionals"} found
+              </Text>
+            )}
 
-                  return (
-                    <ServiceGridCard
-                      key={item._id}
-                      title={item.title}
-                      subcategory={item.subcategory}
-                      price={priceVal}
-                      priceType={priceType}
-                      currency={item.currency}
-                      isoCountryCode={item.countryCode ?? isoCountryCode}
-                      image={item.images?.[0]}
-                      rating={(item as any).stats?.rating ?? null}
-                      reviewCount={(item as any).stats?.reviewCount ?? null}
-                      distanceLabel={canShowDistanceOnCards ? getListingDistanceLabel(
-                        {
-                          _id: item._id,
-                          category: item.category,
-                          distance: item.distance,
-                          coordinates: item.coordinates,
-                          countryCode: item.countryCode,
-                          currency: item.currency,
-                        },
-                        hasLocationCoords
-                          ? { lat: userCoords.lat!, lng: userCoords.lng! }
-                          : null,
-                        isoCountryCode,
-                      ) : undefined}
-                      width={CARD_WIDTH}
-                      isSaved={savedIds.has(item._id)}
-                      onPress={() =>
-                        router.push(`/service-detail?category=services&id=${item._id}` as any)
-                      }
-                      onToggleSave={() => handleToggleSave(item._id)}
-                    />
-                  );
-                })}
-                {row.length === 1 ? <View style={{ width: CARD_WIDTH }} /> : null}
-              </View>
-            ))}
+            <View style={{ gap: 12 }}>
+              {listingRows.map((item) => (
+                <ServiceProviderListCard
+                  key={item._id}
+                  item={item}
+                  isoCountryCode={isoCountryCode}
+                  isSaved={savedIds.has(item._id)}
+                  distanceLabel={
+                    canShowDistanceOnCards
+                      ? getListingDistanceLabel(
+                          {
+                            _id: item._id,
+                            category: item.category,
+                            distance:
+                              typeof item.distance === "number" ? item.distance : null,
+                            coordinates: item.coordinates,
+                            countryCode: item.countryCode,
+                            currency: item.currency,
+                          },
+                          hasLocationCoords
+                            ? { lat: userCoords.lat!, lng: userCoords.lng! }
+                            : null,
+                          isoCountryCode,
+                        )
+                      : undefined
+                  }
+                  onPress={() =>
+                    router.push(`/service-detail?category=services&id=${item._id}` as any)
+                  }
+                  onToggleSave={() => handleToggleSave(item._id)}
+                  onMessage={() => handleMessage(item)}
+                  showMessage={!isOwnListing(item, user?.id)}
+                />
+              ))}
+            </View>
           </View>
         )}
       </ScrollView>

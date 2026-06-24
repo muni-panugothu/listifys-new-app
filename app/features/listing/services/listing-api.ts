@@ -161,8 +161,20 @@ export type ImageUploadResponse = {
 // ── Normalise image URLs in listings ───────────────────────────────────────────
 
 function normaliseListingImages(listing: ListingItem): ListingItem {
+  const userId =
+    listing.userId && typeof listing.userId === "object"
+      ? {
+          ...listing.userId,
+          profileImage: resolveAbsoluteMediaUrl(listing.userId.profileImage) ?? undefined,
+          googleProfileImage:
+            resolveAbsoluteMediaUrl(listing.userId.googleProfileImage) ?? undefined,
+          avatar: resolveAbsoluteMediaUrl(listing.userId.avatar) ?? undefined,
+        }
+      : listing.userId;
+
   return {
     ...listing,
+    userId,
     images: (listing.images || []).map((img) => {
       // Server may return image objects {url, publicId, isPrimary} — extract the URL string
       const rawUrl = typeof img === "string" ? img : ((img as unknown as { url?: string }).url ?? "");
@@ -710,6 +722,8 @@ export type RecentlyViewedItem = {
   viewedLocation?: string;
   /** Listing ISO 3166-1 alpha-2 country code (e.g. "US", "IN"). */
   isoCountryCode?: string;
+  /** GeoJSON point or { lat, lng } — used to show km/mi on home cards. */
+  coordinates?: ListingItem["coordinates"];
 };
 
 const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
@@ -739,6 +753,7 @@ export async function addToRecentlyViewed(
       viewedLocation: locationLabel || undefined,
       countryCode: item.countryCode ?? isoCountryCode ?? undefined,
       isoCountryCode: item.countryCode ?? isoCountryCode ?? undefined,
+      coordinates: item.coordinates,
     });
     await AsyncStorage.setItem(
       RECENTLY_VIEWED_KEY,

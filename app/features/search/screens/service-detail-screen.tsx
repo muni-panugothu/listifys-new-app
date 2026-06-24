@@ -3,25 +3,32 @@ import { LinearGradient } from "expo-linear-gradient";
 import { type Href, useLocalSearchParams, useRouter } from "@/lib/safe-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    Text,
-    View,
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { PortfolioGalleryModal } from "@/components/portfolio-gallery-modal";
+import { ProfileAvatarImage } from "@/components/profile-avatar-image";
+import { ServiceReviewModal } from "@/components/service-review-modal";
+import { ListifyColors } from "@/constants/listify-theme";
+import { ListifyFonts } from "@/constants/typography";
+import { requestJson, resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
 import { fetchListingById } from "@/features/listing/services/listing-api";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { formatPrice } from "@/lib/currency";
+import { formatServiceExperienceLabel } from "@/lib/format-service-experience";
 import { buildListingChatHref } from "@/lib/listing-chat";
 import { getListingSellerId, isOwnListing } from "@/lib/is-own-listing";
 import { Image } from "@/lib/nativewind-interop";
-import { useAppSelector } from "@/store/hooks";
-
- import { showErrorToast } from "@/lib/toast";
+import { showErrorToast } from "@/lib/toast";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { showAuthGate } from "@/store/slices/auth-gate-slice";
 type ApiReviewItem = {
   _id: string;
   rating: number;
@@ -30,11 +37,35 @@ type ApiReviewItem = {
   createdAt: string;
   userId?: {
     name?: string;
+    profileImageUrl?: string;
     profileImage?: string;
     avatar?: string;
     googleProfileImage?: string;
   };
 };
+
+function normalizeReviewItem(review: ApiReviewItem): ApiReviewItem {
+  if (!review.userId || typeof review.userId !== "object") return review;
+
+  const user = review.userId;
+  const profileImageUrl = resolveAbsoluteMediaUrl(
+    user.profileImageUrl ??
+      user.profileImage ??
+      user.googleProfileImage ??
+      user.avatar,
+  );
+
+  return {
+    ...review,
+    userId: {
+      ...user,
+      profileImageUrl: profileImageUrl ?? undefined,
+      profileImage: resolveAbsoluteMediaUrl(user.profileImage) ?? undefined,
+      googleProfileImage: resolveAbsoluteMediaUrl(user.googleProfileImage) ?? undefined,
+      avatar: resolveAbsoluteMediaUrl(user.avatar) ?? undefined,
+    },
+  };
+}
 
 function relativeDate(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -54,11 +85,10 @@ function relativeDate(iso: string): string {
 
 async function fetchReviewsForListing(listingId: string): Promise<ApiReviewItem[]> {
   try {
-    const { requestJson } = await import("@/features/auth/services/auth-api");
     const res = await requestJson<{ success: boolean; data: ApiReviewItem[] }>(
-      `/api/services/reviews/listing/${listingId}?limit=10&sort=-createdAt`,
+      `/api/services/reviews/listing/${listingId}?limit=20&sort=-createdAt`,
     );
-    return res.data ?? [];
+    return (res.data ?? []).map(normalizeReviewItem);
   } catch {
     return [];
   }
@@ -165,7 +195,9 @@ function buildPricingPlans(listing: ListingItem): PricePlan[] {
 
 export function ServiceDetailScreen() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const user = useAppSelector((s) => s.auth.user);
+  const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const params = useLocalSearchParams<{
     id?: string | string[];
     category?: string | string[];
@@ -178,6 +210,8 @@ export function ServiceDetailScreen() {
   const [loading, setLoading] = useState(!!listingId);
   const [reviews, setReviews] = useState<ApiReviewItem[]>([]);
   const [reviewTotal, setReviewTotal] = useState(0);
+  const [portfolioModalVisible, setPortfolioModalVisible] = useState(false);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
 
   const loadListing = useCallback(async () => {
     if (!listingId) return;
@@ -208,9 +242,16 @@ export function ServiceDetailScreen() {
   }, [baseRefresh, loadListing]);
 
   // ── Derived display values ────────────────────────────────────────────────
-  const coverImage = listing?.images?.[0] ?? STATIC_COVER;
+  const listingImages = (listing?.images ?? []).filter(
+    (img) => typeof img === "string" && img.length > 0,
+  );
+  const coverImage = listingImages[0] ?? STATIC_COVER;
   const profileImage =
-    ((listing as any)?.userId as { profileImage?: string } | undefined)?.profileImage ??
+    ((listing as any)?.userId as { profileImage?: string; googleProfileImage?: string; avatar?: string } | undefined)
+      ?.profileImage ??
+    ((listing as any)?.userId as { googleProfileImage?: string } | undefined)?.googleProfileImage ??
+    ((listing as any)?.userId as { avatar?: string } | undefined)?.avatar ??
+    listingImages[0] ??
     STATIC_PROFILE;
 
   const professionalName =
@@ -235,15 +276,46 @@ export function ServiceDetailScreen() {
     (listing as any)?.location?.city ??
     "Location not specified";
 
-  const experienceText = (listing as any)?.experience
-    ? `${(listing as any).experience} Exp.`
-    : "8+ Years Exp.";
+  const experienceText = formatServiceExperienceLabel(listing ?? ({} as ListingItem));
 
   const aboutText =
     listing?.description ??
     "Transforming spaces into curated experiences. I specialize in contemporary Indian aesthetics blended with global minimalism. My focus is on sustainable materials and ergonomic efficiency for modern urban homes.";
 
   const sellerId = listing ? getListingSellerId(listing) : null;
+  const isOwnService = isOwnListing(listing, user?.id);
+
+  const averageRating = useMemo(() => {
+    const statsRating = (listing as { stats?: { rating?: number } } | null)?.stats?.rating;
+    if (typeof statsRating === "number" && statsRating > 0) return statsRating;
+    if (reviews.length === 0) return null;
+    const sum = reviews.reduce((acc, r) => acc + (r.rating ?? 0), 0);
+    return sum / reviews.length;
+  }, [listing, reviews]);
+
+  const handleOpenReview = useCallback(() => {
+    if (isOwnService) {
+      showErrorToast("Not allowed", "You cannot review your own service.");
+      return;
+    }
+    if (!isAuthenticated) {
+      dispatch(
+        showAuthGate({
+          action: "general",
+          redirectTo: listingId ? `/service-detail?category=services&id=${listingId}` : null,
+        }),
+      );
+      return;
+    }
+    setReviewModalVisible(true);
+  }, [dispatch, isAuthenticated, isOwnService, listingId]);
+
+  const handleReviewSubmitted = useCallback(async () => {
+    if (!listingId) return;
+    const fresh = await fetchReviewsForListing(listingId);
+    setReviews(fresh);
+    setReviewTotal(fresh.length);
+  }, [listingId]);
 
   const handleMessageSeller = useCallback(() => {
     if (!listing || !sellerId) return;
@@ -270,9 +342,11 @@ export function ServiceDetailScreen() {
     );
   }, [basePrice, currency, listing, professionalBadge, professionalName, router, sellerId, user]);
 
-  const portfolioItems: PortfolioItem[] = listing?.images?.length
-    ? buildPortfolioItems(listing.images as string[])
+  const portfolioItems: PortfolioItem[] = listingImages.length
+    ? buildPortfolioItems(listingImages)
     : staticPortfolioItems;
+
+  const portfolioUris = portfolioItems.map((item) => item.image);
 
   const pricingPlans: PricePlan[] = listing ? buildPricingPlans(listing) : staticPricingPlans;
 
@@ -345,21 +419,21 @@ export function ServiceDetailScreen() {
             paddingBottom: 120 + footerBottom,
           }}
         >
-        <View className="relative h-64 w-full">
+        <View className="relative h-64 w-full overflow-hidden bg-[#E5E7EB]">
           <Image
             source={coverImage}
             contentFit="cover"
             transition={200}
-            className="h-full w-full"
+            style={{ width: "100%", height: 256 }}
           />
 
           <View className="absolute -bottom-12 left-4">
-            <View className="relative">
+            <View className="relative overflow-hidden rounded-xl border-4 border-white bg-[#F3F4F6]">
               <Image
                 source={profileImage}
                 contentFit="cover"
                 transition={200}
-                className="h-24 w-24 rounded-xl border-4 border-white"
+                style={{ width: 96, height: 96 }}
               />
               <View className="absolute -bottom-1 -right-1 rounded-full border-2 border-white bg-[#27BB97] p-1">
                 <MaterialIcons name="verified" size={16} color="#FFFFFF" />
@@ -379,9 +453,11 @@ export function ServiceDetailScreen() {
               </Text>
             </View>
 
-            <View className="flex-row items-center gap-1 rounded-lg bg-[#E9EFEB] px-2 py-1">
+            <View className="flex-row items-center gap-1 rounded-lg bg-[#E9EFEB] px-2.5 py-1">
               <MaterialIcons name="star" size={18} color="#CBA100" />
-              <Text className="text-[16px] font-bold text-[#161D1A]">4.9</Text>
+              <Text className="text-[16px] font-bold text-[#161D1A]">
+                {averageRating != null ? averageRating.toFixed(1) : "—"}
+              </Text>
             </View>
           </View>
 
@@ -393,12 +469,14 @@ export function ServiceDetailScreen() {
               </Text>
             </View>
 
-            <View className="flex-row items-center gap-1">
-              <MaterialIcons name="work" size={16} color="#6C7A74" />
-              <Text className="text-[12px] font-medium text-[#6C7A74]">
-                {experienceText}
-              </Text>
-            </View>
+            {experienceText ? (
+              <View className="flex-row items-center gap-1">
+                <MaterialIcons name="work" size={16} color="#6C7A74" />
+                <Text className="text-[12px] font-medium text-[#6C7A74]">
+                  {experienceText}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -407,8 +485,11 @@ export function ServiceDetailScreen() {
             <Text className="text-[20px] font-semibold text-[#161D1A]">
               Portfolio
             </Text>
-            <Pressable>
-              <Text className="text-[12px] font-medium text-[#27BB97]">
+            <Pressable onPress={() => setPortfolioModalVisible(true)}>
+              <Text
+                className="text-[12px] font-medium"
+                style={{ color: ListifyColors.primary, fontFamily: ListifyFonts.medium }}
+              >
                 View all
               </Text>
             </Pressable>
@@ -420,13 +501,14 @@ export function ServiceDetailScreen() {
             contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
           >
             {portfolioItems.map((item) => (
-              <Image
-                key={item.id}
-                source={item.image}
-                contentFit="cover"
-                transition={200}
-                className="h-32 w-48 rounded-xl border border-slate-100"
-              />
+              <Pressable key={item.id} onPress={() => setPortfolioModalVisible(true)}>
+                <Image
+                  source={item.image}
+                  contentFit="cover"
+                  transition={200}
+                  style={{ width: 192, height: 128, borderRadius: 12 }}
+                />
+              </Pressable>
             ))}
           </ScrollView>
         </View>
@@ -490,43 +572,57 @@ export function ServiceDetailScreen() {
             <Text className="text-[20px] font-semibold text-[#161D1A]">
               Reviews{reviewTotal > 0 ? ` (${reviewTotal})` : ""}
             </Text>
-            <Pressable>
-              <Text className="text-[12px] font-medium text-[#27BB97]">
-                Read all
-              </Text>
-            </Pressable>
+            {!isOwnService ? (
+              <Pressable onPress={handleOpenReview}>
+                <Text
+                  className="text-[12px] font-medium"
+                  style={{ color: ListifyColors.primary, fontFamily: ListifyFonts.medium }}
+                >
+                  Write a Review
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
 
           {reviews.length === 0 ? (
-            <Text className="text-[13px] text-[#9CA3AF] py-2">
-              No reviews yet. Be the first to review!
-            </Text>
+            <View className="items-center rounded-2xl border border-[#F3F4F6] bg-white py-8">
+              <MaterialIcons name="rate-review" size={40} color="#D1D5DB" />
+              <Text
+                className="mt-3 text-[14px] text-[#9CA3AF]"
+                style={{ fontFamily: ListifyFonts.regular }}
+              >
+                No reviews yet. Be the first to review!
+              </Text>
+              {!isOwnService ? (
+                <Pressable
+                  onPress={handleOpenReview}
+                  className="mt-4 rounded-xl px-5 py-3"
+                  style={{ backgroundColor: ListifyColors.primary }}
+                >
+                  <Text
+                    className="text-[14px] text-white"
+                    style={{ fontFamily: ListifyFonts.semiBold }}
+                  >
+                    Write the first review
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
           ) : (
             <View className="gap-4">
               {reviews.map((item) => {
                 const reviewerName = item.userId?.name ?? "Anonymous";
-                const reviewerAvatar =
-                  item.userId?.profileImage ??
-                  item.userId?.googleProfileImage ??
-                  item.userId?.avatar ??
-                  null;
                 return (
                   <View key={item._id} className="border-b border-slate-100 pb-4">
                     <View className="mb-2 flex-row items-center gap-3">
-                      {reviewerAvatar ? (
-                        <Image
-                          source={reviewerAvatar}
-                          contentFit="cover"
-                          transition={150}
-                          className="h-10 w-10 rounded-full"
+                      <View className="h-10 w-10 overflow-hidden rounded-full">
+                        <ProfileAvatarImage
+                          user={item.userId}
+                          fallbackName={reviewerName}
+                          style={{ width: 40, height: 40 }}
+                          iconSize={20}
                         />
-                      ) : (
-                        <View className="h-10 w-10 items-center justify-center rounded-full bg-[#E9EFEB]">
-                          <Text className="text-[14px] font-bold text-[#27BB97]">
-                            {reviewerName.charAt(0).toUpperCase()}
-                          </Text>
-                        </View>
-                      )}
+                      </View>
 
                       <View>
                         <Text className="text-[14px] font-semibold text-[#161D1A]">
@@ -602,6 +698,24 @@ export function ServiceDetailScreen() {
           </Pressable>
         </View>
       </View>
+
+      <PortfolioGalleryModal
+        visible={portfolioModalVisible}
+        title="Portfolio"
+        images={portfolioUris}
+        onClose={() => setPortfolioModalVisible(false)}
+      />
+
+      {listingId && sellerId ? (
+        <ServiceReviewModal
+          visible={reviewModalVisible}
+          listingId={listingId}
+          providerId={sellerId}
+          providerName={professionalName}
+          onClose={() => setReviewModalVisible(false)}
+          onSubmitted={handleReviewSubmitted}
+        />
+      ) : null}
     </View>
   );
 }

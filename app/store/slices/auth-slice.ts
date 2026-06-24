@@ -2,6 +2,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { type PayloadAction, createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 
 import { LOCATION_STORAGE_KEY } from "@/lib/location-service";
+import { disconnectSocket } from "@/features/messaging/services/socket-service";
+import { signOutGoogleCachedAccount } from "@/lib/google-sign-in";
+import { resetFcmSyncState } from "@/lib/notifications/sync-fcm-token";
 import {
   AuthApiError,
   type AuthUser,
@@ -397,10 +400,6 @@ export const updateUserProfile = createAsyncThunk(
 );
 
 export const logout = createAsyncThunk("auth/logout", async () => {
-  const { disconnectSocket } = await import("@/features/messaging/services/socket-service");
-  const { signOutGoogleCachedAccount } = await import("@/lib/google-sign-in");
-  const { resetFcmSyncState } = await import("@/lib/notifications/sync-fcm-token");
-
   disconnectSocket();
 
   try {
@@ -437,6 +436,13 @@ const authSlice = createSlice({
     setAuthUser(state, action: PayloadAction<AuthUser | null>) {
       state.user = action.payload;
       state.isAuthenticated = !!action.payload;
+    },
+    invalidateSession(state) {
+      state.user = null;
+      state.isAuthenticated = false;
+      state.sessionHydrated = true;
+      state.status = "idle";
+      state.error = null;
     },
     clearResetFlow(state) {
       state.resetEmail = null;
@@ -691,6 +697,6 @@ const authSlice = createSlice({
   },
 });
 
-export const { clearError, resetAuthStatus, setAuthUser, clearResetFlow, clearRegistrationEmail } =
+export const { clearError, resetAuthStatus, setAuthUser, invalidateSession, clearResetFlow, clearRegistrationEmail } =
   authSlice.actions;
 export default authSlice.reducer;

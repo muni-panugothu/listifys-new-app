@@ -14,6 +14,8 @@ import { subscribeRouteTransitions, type Href, Stack, useRouter } from "@/lib/sa
 import { usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Location from "expo-location";
 import "react-native-gesture-handler";
 import "react-native-reanimated";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -28,12 +30,15 @@ import { LocaleProvider } from "@/providers/locale-provider";
 import { TypographyProvider } from "@/providers/typography-provider";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { hideAuthGate } from "@/store/slices/auth-gate-slice";
-import { logout } from "@/store/slices/auth-slice";
+import { logout, invalidateSession } from "@/store/slices/auth-slice";
+import { onSessionInvalidated } from "@/features/auth/services/auth-api";
 import { hydrateAppLocation } from "@/store/slices/location-slice";
 import { store } from "@/store";
 import { NotificationProvider } from "@/providers/notification-provider";
 import { NotificationNavigationHost } from "@/components/notification-navigation-host";
 import { connectSocket, getSocket, disconnectSocket } from "@/features/messaging/services/socket-service";
+import { attachCallListeners } from "@/features/calling/services/call-socket-service";
+import { syncFcmTokenWithServer } from "@/lib/notifications/sync-fcm-token";
 
 export default function RootLayout() {
   return (
@@ -178,10 +183,8 @@ function AppLayout() {
     if (!sessionHydrated || !isAuthenticated) return;
 
     void connectSocket()
-      .then(async () => {
-        const { attachCallListeners } = await import('@/features/calling/services/call-socket-service');
+      .then(() => {
         attachCallListeners();
-        const { syncFcmTokenWithServer } = await import('@/lib/notifications/sync-fcm-token');
         void syncFcmTokenWithServer({ force: true });
       })
       .catch(() => {});
@@ -208,6 +211,14 @@ function AppLayout() {
       socket.off('auth:force_logout', handleForceLogout);
     };
   }, [sessionHydrated, isAuthenticated, dispatch, router]);
+
+  // Keep Redux in sync when token refresh definitively fails in the background.
+  useEffect(() => {
+    return onSessionInvalidated(() => {
+      void AsyncStorage.removeItem("@listify/auth_user").catch(() => {});
+      dispatch(invalidateSession());
+    });
+  }, [dispatch]);
 
   const handleCloseAuthGate = useCallback(() => {
     dispatch(hideAuthGate());

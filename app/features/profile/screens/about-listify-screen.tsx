@@ -1,17 +1,24 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
-import { LinearGradient } from "expo-linear-gradient";
-import { type Href, useRouter } from "@/lib/safe-router";
 import { Image } from "expo-image";
-import { Linking, Pressable, Text, View } from "react-native";
+import { type Href, useRouter } from "@/lib/safe-router";
+import { useState } from "react";
+import {
+  Linking,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  ProfileSectionCard,
-  ProfileSubScreenLayout,
-} from "@/components/profile-sub-screen-layout";
-import {
-  ABOUT_HIGHLIGHTS,
-  ABOUT_SAFETY_TIPS,
+  ABOUT_CATEGORIES,
+  ABOUT_FEATURES,
+  ABOUT_HERO,
+  ABOUT_STATS,
+  ABOUT_TESTIMONIAL,
+  ABOUT_WEB_URL,
   LEGAL_CONTACT_EMAIL,
   SUPPORT_EMAIL,
 } from "@/constants/legal-content";
@@ -19,243 +26,285 @@ import { ListifyColors } from "@/constants/listify-theme";
 import { ListifyFonts } from "@/constants/typography";
 
 const APP_VERSION = Constants.expoConfig?.version ?? "1.0.0";
-const WEBSITE_URL = "https://listifys.com";
 
 export function AboutListifyScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const [activeCategory, setActiveCategory] = useState<
+    (typeof ABOUT_CATEGORIES)[number]["id"]
+  >(ABOUT_CATEGORIES[0].id);
 
   const push = (route: Href) => router.push(route);
+  const selectedCategory =
+    ABOUT_CATEGORIES.find((c) => c.id === activeCategory) ?? ABOUT_CATEGORIES[0];
 
   return (
-    <ProfileSubScreenLayout title="About Listify">
+    <View className="flex-1 bg-white">
       <View
-        className="mb-5 overflow-hidden rounded-2xl"
-        style={{
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.08,
-          shadowRadius: 12,
-          elevation: 4,
+        className="flex-row items-center border-b border-[#E5E7EB] px-4"
+        style={{ paddingTop: insets.top + 6, paddingBottom: 10 }}
+      >
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={12}
+          className="mr-1 h-10 w-10 items-center justify-center"
+          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+        >
+          <MaterialIcons name="arrow-back" size={24} color="#111827" />
+        </Pressable>
+        <Text
+          className="flex-1 text-[17px]"
+          style={{ fontFamily: ListifyFonts.semiBold, color: "#111827" }}
+        >
+          About Listify
+        </Text>
+      </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingBottom: Math.max(insets.bottom, 16) + 32,
         }}
       >
-        <LinearGradient
-          colors={[ListifyColors.primary, ListifyColors.gradientEnd]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          className="items-center px-6 py-8"
-        >
-          <View className="mb-4 h-20 w-20 items-center justify-center rounded-3xl bg-white/95">
-            <Image
-              source={require("@/assets/splashscreenImg/logo.png")}
-              style={{ width: 56, height: 56 }}
-              contentFit="contain"
-            />
-          </View>
+        {/* Hero — OfferUp "Buy. Sell. Connect." */}
+        <View className="items-center px-6 pb-10 pt-10">
+          <Image
+            source={require("@/assets/splashscreenImg/logo.png")}
+            style={{ width: 72, height: 72, marginBottom: 20 }}
+            contentFit="contain"
+          />
           <Text
-            className="text-[24px] text-white"
-            style={{ fontFamily: ListifyFonts.bold }}
+            className="text-center text-[32px] leading-10"
+            style={{ fontFamily: ListifyFonts.bold, color: "#111827" }}
           >
-            Listify
+            {ABOUT_HERO.headline}
           </Text>
           <Text
-            className="mt-1 text-center text-[15px] text-white/90"
-            style={{ fontFamily: ListifyFonts.regular }}
-          >
-            Your local marketplace to buy, sell, and connect
-          </Text>
-          <View className="mt-4 rounded-full bg-white/20 px-4 py-1.5">
-            <Text
-              className="text-[12px] text-white"
-              style={{ fontFamily: ListifyFonts.semiBold }}
-            >
-              Version {APP_VERSION}
-            </Text>
-          </View>
-        </LinearGradient>
-      </View>
-
-      <ProfileSectionCard>
-        <View className="px-4 py-4">
-          <Text
-            className="text-[15px] leading-6"
+            className="mt-4 text-center text-[16px] leading-[26px]"
             style={{ fontFamily: ListifyFonts.regular, color: "#4B5563" }}
           >
-            Listify makes it easy to discover deals near you, list items in minutes, chat with
-            buyers and sellers, and explore services, properties, jobs, and events — all in one
-            app built for local communities across India.
+            {ABOUT_HERO.subheadline}
+          </Text>
+          <Text
+            className="mt-3 text-center text-[15px] leading-[24px]"
+            style={{ fontFamily: ListifyFonts.regular, color: "#6B7280" }}
+          >
+            {ABOUT_HERO.body}
           </Text>
         </View>
-      </ProfileSectionCard>
 
-      <Text
-        className="mb-3 text-[13px] uppercase tracking-wide"
-        style={{ fontFamily: ListifyFonts.semiBold, color: "#9CA3AF" }}
-      >
-        What you can do
-      </Text>
-      <View className="mb-5 flex-row flex-wrap gap-3">
-        {ABOUT_HIGHLIGHTS.map((item) => (
-          <View
-            key={item.title}
-            className="min-w-[46%] flex-1 overflow-hidden rounded-2xl bg-white p-4"
-            style={{
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.04,
-              shadowRadius: 8,
-              elevation: 2,
-            }}
-          >
+        {/* Feature blocks */}
+        <View className="bg-[#F9FAFB] px-5 py-10">
+          {ABOUT_FEATURES.map((feature, index) => (
             <View
-              className="mb-3 h-10 w-10 items-center justify-center rounded-xl"
-              style={{ backgroundColor: "rgba(39,187,151,0.12)" }}
+              key={feature.id}
+              className={`flex-row gap-4 ${index < ABOUT_FEATURES.length - 1 ? "mb-8" : ""}`}
             >
-              <MaterialIcons name={item.icon} size={22} color={ListifyColors.primary} />
-            </View>
-            <Text
-              className="text-[15px]"
-              style={{ fontFamily: ListifyFonts.semiBold, color: "#1A1A1A" }}
-            >
-              {item.title}
-            </Text>
-            <Text
-              className="mt-1 text-[13px] leading-5"
-              style={{ fontFamily: ListifyFonts.regular, color: "#6B7280" }}
-            >
-              {item.description}
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      <ProfileSectionCard title="Safety tips">
-        {ABOUT_SAFETY_TIPS.map((tip, index) => (
-          <View key={tip}>
-            <View className="flex-row items-start gap-3 px-4 py-3.5">
-              <MaterialIcons
-                name="check-circle"
-                size={20}
-                color={ListifyColors.primary}
-                style={{ marginTop: 2 }}
-              />
-              <Text
-                className="flex-1 text-[15px] leading-6"
-                style={{ fontFamily: ListifyFonts.regular, color: "#4B5563" }}
+              <View
+                className="h-12 w-12 items-center justify-center rounded-full"
+                style={{ backgroundColor: "rgba(39,187,151,0.12)" }}
               >
-                {tip}
-              </Text>
+                <MaterialIcons name={feature.icon} size={24} color={ListifyColors.primary} />
+              </View>
+              <View className="flex-1">
+                <Text
+                  className="text-[18px]"
+                  style={{ fontFamily: ListifyFonts.bold, color: "#111827" }}
+                >
+                  {feature.title}
+                </Text>
+                <Text
+                  className="mt-1.5 text-[15px] leading-[24px]"
+                  style={{ fontFamily: ListifyFonts.regular, color: "#4B5563" }}
+                >
+                  {feature.description}
+                </Text>
+              </View>
             </View>
-            {index < ABOUT_SAFETY_TIPS.length - 1 ? (
-              <View className="mx-4 h-px bg-[#F0F0F0]" />
-            ) : null}
-          </View>
-        ))}
-      </ProfileSectionCard>
+          ))}
+        </View>
 
-      <ProfileSectionCard title="Legal & policies">
-        <Pressable
-          onPress={() => push("/privacy-policy")}
-          className="flex-row items-center justify-between px-4 py-3.5"
-          style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
+        {/* Category tabs — OfferUp Buy & Sell / Jobs / Services */}
+        <View className="px-5 py-10">
+          <Text
+            className="text-center text-[22px] leading-8"
+            style={{ fontFamily: ListifyFonts.bold, color: "#111827" }}
+          >
+            Tap into a world of{"\n"}local opportunity
+          </Text>
+          <Text
+            className="mt-2 text-center text-[15px]"
+            style={{ fontFamily: ListifyFonts.regular, color: "#6B7280" }}
+          >
+            Made for everything that moves life forward
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            className="mt-6"
+            contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}
+          >
+            {ABOUT_CATEGORIES.map((category) => {
+              const active = category.id === activeCategory;
+              return (
+                <Pressable
+                  key={category.id}
+                  onPress={() => setActiveCategory(category.id)}
+                  className="rounded-full px-5 py-2.5"
+                  style={{
+                    backgroundColor: active ? ListifyColors.primary : "#F3F4F6",
+                  }}
+                >
+                  <Text
+                    className="text-[14px]"
+                    style={{
+                      fontFamily: ListifyFonts.semiBold,
+                      color: active ? "#FFFFFF" : "#374151",
+                    }}
+                  >
+                    {category.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <View className="mt-6 rounded-2xl border border-[#E5E7EB] bg-white p-5">
+            <MaterialIcons
+              name={selectedCategory.icon}
+              size={32}
+              color={ListifyColors.primary}
+            />
+            <Text
+              className="mt-4 text-[20px]"
+              style={{ fontFamily: ListifyFonts.bold, color: "#111827" }}
+            >
+              {selectedCategory.title}
+            </Text>
+            <Text
+              className="mt-2 text-[15px] leading-[24px]"
+              style={{ fontFamily: ListifyFonts.regular, color: "#4B5563" }}
+            >
+              {selectedCategory.description}
+            </Text>
+          </View>
+        </View>
+
+        {/* Stats row */}
+        <View className="bg-[#111827] px-5 py-10">
+          <Text
+            className="mb-6 text-center text-[20px] text-white"
+            style={{ fontFamily: ListifyFonts.bold }}
+          >
+            Built for local communities
+          </Text>
+          <View className="flex-row flex-wrap justify-between gap-y-6">
+            {ABOUT_STATS.map((stat) => (
+              <View key={stat.label} className="w-[47%] items-center">
+                <Text
+                  className="text-[28px] text-white"
+                  style={{ fontFamily: ListifyFonts.bold }}
+                >
+                  {stat.value}
+                </Text>
+                <Text
+                  className="mt-1 text-center text-[13px] text-white/75"
+                  style={{ fontFamily: ListifyFonts.regular }}
+                >
+                  {stat.label}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Community quote */}
+        <View className="px-6 py-10">
+          <Text
+            className="text-center text-[13px] uppercase tracking-wider"
+            style={{ fontFamily: ListifyFonts.semiBold, color: "#9CA3AF" }}
+          >
+            What our community is saying
+          </Text>
+          <Text
+            className="mt-4 text-center text-[17px] leading-[28px]"
+            style={{ fontFamily: ListifyFonts.regular, color: "#374151" }}
+          >
+            &ldquo;{ABOUT_TESTIMONIAL.quote}&rdquo;
+          </Text>
+          <Text
+            className="mt-4 text-center text-[14px]"
+            style={{ fontFamily: ListifyFonts.semiBold, color: "#6B7280" }}
+          >
+            — {ABOUT_TESTIMONIAL.author}
+          </Text>
+        </View>
+
+        {/* CTA band */}
+        <View
+          className="mx-5 items-center rounded-2xl px-6 py-8"
+          style={{ backgroundColor: "rgba(39,187,151,0.08)" }}
         >
           <Text
-            className="text-[16px]"
-            style={{ fontFamily: ListifyFonts.medium, color: "#1A1A1A" }}
+            className="text-center text-[20px] leading-7"
+            style={{ fontFamily: ListifyFonts.bold, color: "#111827" }}
           >
-            Privacy policy
+            From big dreams to small wins, get more of the good stuff, right where you are.
           </Text>
-          <MaterialIcons name="chevron-right" size={22} color="#C4C4C4" />
-        </Pressable>
-        <View className="mx-4 h-px bg-[#F0F0F0]" />
-        <Pressable
-          onPress={() => push("/terms-of-service")}
-          className="flex-row items-center justify-between px-4 py-3.5"
-          style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
-        >
+        </View>
+
+        {/* Footer — OfferUp company / legal links */}
+        <View className="mt-12 border-t border-[#E5E7EB] px-5 pt-8">
           <Text
-            className="text-[16px]"
-            style={{ fontFamily: ListifyFonts.medium, color: "#1A1A1A" }}
+            className="mb-4 text-[12px] uppercase tracking-wider"
+            style={{ fontFamily: ListifyFonts.semiBold, color: "#9CA3AF" }}
           >
-            Terms of service
+            Company
           </Text>
-          <MaterialIcons name="chevron-right" size={22} color="#C4C4C4" />
-        </Pressable>
-      </ProfileSectionCard>
+          <FooterLink label="Privacy Policy" onPress={() => push("/privacy-policy")} />
+          <FooterLink label="Terms of Service" onPress={() => push("/terms-of-service")} />
+          <FooterLink
+            label="Help & Support"
+            onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
+          />
+          <FooterLink
+            label="Contact"
+            onPress={() => Linking.openURL(`mailto:${LEGAL_CONTACT_EMAIL}`)}
+          />
+          <FooterLink label="Website" onPress={() => Linking.openURL(ABOUT_WEB_URL)} />
 
-      <ProfileSectionCard title="Get in touch">
-        <Pressable
-          onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
-          className="flex-row items-center gap-3 px-4 py-3.5"
-          style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
-        >
-          <MaterialIcons name="support-agent" size={22} color="#6B7280" />
-          <View className="flex-1">
-            <Text
-              className="text-[15px]"
-              style={{ fontFamily: ListifyFonts.medium, color: "#1A1A1A" }}
-            >
-              Support
-            </Text>
-            <Text
-              className="text-[13px]"
-              style={{ fontFamily: ListifyFonts.regular, color: ListifyColors.primary }}
-            >
-              {SUPPORT_EMAIL}
-            </Text>
-          </View>
-        </Pressable>
-        <View className="mx-4 h-px bg-[#F0F0F0]" />
-        <Pressable
-          onPress={() => Linking.openURL(WEBSITE_URL)}
-          className="flex-row items-center gap-3 px-4 py-3.5"
-          style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
-        >
-          <MaterialIcons name="language" size={22} color="#6B7280" />
-          <View className="flex-1">
-            <Text
-              className="text-[15px]"
-              style={{ fontFamily: ListifyFonts.medium, color: "#1A1A1A" }}
-            >
-              Website
-            </Text>
-            <Text
-              className="text-[13px]"
-              style={{ fontFamily: ListifyFonts.regular, color: ListifyColors.primary }}
-            >
-              listifys.com
-            </Text>
-          </View>
-        </Pressable>
-        <View className="mx-4 h-px bg-[#F0F0F0]" />
-        <Pressable
-          onPress={() => Linking.openURL(`mailto:${LEGAL_CONTACT_EMAIL}`)}
-          className="flex-row items-center gap-3 px-4 py-3.5"
-          style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
-        >
-          <MaterialIcons name="gavel" size={22} color="#6B7280" />
-          <View className="flex-1">
-            <Text
-              className="text-[15px]"
-              style={{ fontFamily: ListifyFonts.medium, color: "#1A1A1A" }}
-            >
-              Legal inquiries
-            </Text>
-            <Text
-              className="text-[13px]"
-              style={{ fontFamily: ListifyFonts.regular, color: ListifyColors.primary }}
-            >
-              {LEGAL_CONTACT_EMAIL}
-            </Text>
-          </View>
-        </Pressable>
-      </ProfileSectionCard>
+          <Text
+            className="mt-8 text-center text-[22px]"
+            style={{ fontFamily: ListifyFonts.bold, color: ListifyColors.primary }}
+          >
+            Buy. Sell. Simple.
+          </Text>
+          <Text
+            className="mt-3 text-center text-[12px] text-[#9CA3AF]"
+            style={{ fontFamily: ListifyFonts.regular }}
+          >
+            © {new Date().getFullYear()} Listify · Version {APP_VERSION}
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
 
+function FooterLink({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="border-b border-[#F3F4F6] py-3.5"
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+    >
       <Text
-        className="mt-2 text-center text-[12px] leading-5"
-        style={{ fontFamily: ListifyFonts.regular, color: "#9CA3AF" }}
+        className="text-[15px]"
+        style={{ fontFamily: ListifyFonts.medium, color: "#374151" }}
       >
-        © {new Date().getFullYear()} Listify. All rights reserved.
+        {label}
       </Text>
-    </ProfileSubScreenLayout>
+    </Pressable>
   );
 }

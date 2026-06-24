@@ -1,5 +1,6 @@
 ﻿import { Platform } from "react-native";
 import { requestJson, getAuthApiBaseUrl, getAccessToken, refreshAccessToken } from "@/features/auth/services/auth-api";
+import { devWarn } from "@/lib/dev-log";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -396,8 +397,7 @@ export async function uploadChatAttachment(
 
   if (!res.ok || !json?.attachment) {
     const serverMsg = json?.message || rawText?.slice(0, 200) || `HTTP ${res.status}`;
-    // eslint-disable-next-line no-console
-    console.warn("[chat-api] uploadChatAttachment failed", {
+    devWarn("[chat-api] uploadChatAttachment failed", {
       status: res.status,
       message: serverMsg,
       url: uploadUrl,

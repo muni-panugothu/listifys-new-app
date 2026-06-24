@@ -9,15 +9,18 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { LegalDocument } from "@/constants/legal-content";
+import type { LegalChapter, LegalDocument } from "@/constants/legal-content";
 import { ListifyColors } from "@/constants/listify-theme";
-import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
+
+const PAGE_BG = "#FFFFFF";
+const BODY_COLOR = "#374151";
+const MUTED_COLOR = "#6B7280";
+const BORDER_COLOR = "#E5E7EB";
 
 type LegalDocumentViewProps = {
   document: LegalDocument;
   onBack: () => void;
-  fallbackRoute?: string;
 };
 
 export function LegalDocumentView({ document, onBack }: LegalDocumentViewProps) {
@@ -25,30 +28,35 @@ export function LegalDocumentView({ document, onBack }: LegalDocumentViewProps) 
   const scrollRef = useRef<ScrollView>(null);
   const sectionOffsets = useRef<Record<string, number>>({});
 
-  const scrollToSection = (id: string) => {
+  const scrollToChapter = (id: string) => {
     const y = sectionOffsets.current[id];
     if (y != null) {
-      scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
     }
   };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: APP_SCREEN_BG }}>
+    <View className="flex-1" style={{ backgroundColor: PAGE_BG }}>
       <View
-        className="flex-row items-center px-5"
-        style={{ paddingTop: insets.top + 8, paddingBottom: 12 }}
+        className="flex-row items-center border-b px-4"
+        style={{
+          paddingTop: insets.top + 6,
+          paddingBottom: 10,
+          borderBottomColor: BORDER_COLOR,
+          backgroundColor: PAGE_BG,
+        }}
       >
         <Pressable
           onPress={onBack}
           hitSlop={12}
-          className="mr-2 h-10 w-10 items-center justify-center"
+          className="mr-1 h-10 w-10 items-center justify-center"
           style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
         >
-          <MaterialIcons name="chevron-left" size={32} color="#1A1A1A" />
+          <MaterialIcons name="arrow-back" size={24} color="#111827" />
         </Pressable>
         <Text
-          className="flex-1 text-[22px]"
-          style={{ fontFamily: ListifyFonts.bold, color: "#1A1A1A" }}
+          className="flex-1 text-[17px]"
+          style={{ fontFamily: ListifyFonts.semiBold, color: "#111827" }}
           numberOfLines={1}
         >
           {document.title}
@@ -57,172 +65,170 @@ export function LegalDocumentView({ document, onBack }: LegalDocumentViewProps) 
 
       <ScrollView
         ref={scrollRef}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator
         contentContainerStyle={{
           paddingHorizontal: 20,
-          paddingBottom: Math.max(insets.bottom, 16) + 32,
+          paddingTop: 28,
+          paddingBottom: Math.max(insets.bottom, 20) + 40,
         }}
       >
-        <View
-          className="mb-5 overflow-hidden rounded-2xl bg-white p-5"
-          style={{
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.04,
-            shadowRadius: 8,
-            elevation: 2,
-          }}
+        <Text
+          className="text-[28px] leading-8"
+          style={{ fontFamily: ListifyFonts.bold, color: "#111827" }}
         >
-          <View className="mb-4 self-start rounded-full bg-[#F0FDF9] px-3 py-1.5">
-            <Text
-              className="text-[12px]"
-              style={{ fontFamily: ListifyFonts.semiBold, color: ListifyColors.primary }}
-            >
-              Last updated {document.lastUpdated}
-            </Text>
-          </View>
+          {document.title}
+        </Text>
+        <Text
+          className="mt-3 text-[14px]"
+          style={{ fontFamily: ListifyFonts.regular, color: MUTED_COLOR }}
+        >
+          Last updated: {document.lastUpdated}
+        </Text>
+
+        <View className="my-6 h-px" style={{ backgroundColor: BORDER_COLOR }} />
+
+        {document.intro.split("\n\n").map((block) => (
           <Text
-            className="text-[15px] leading-6"
-            style={{ fontFamily: ListifyFonts.regular, color: "#4B5563" }}
+            key={block.slice(0, 40)}
+            className="mb-4 text-[15px] leading-[26px]"
+            style={{ fontFamily: ListifyFonts.regular, color: BODY_COLOR }}
           >
-            {document.intro}
+            {block}
           </Text>
-        </View>
-
-        {document.sections.length > 4 ? (
-          <View
-            className="mb-5 overflow-hidden rounded-2xl bg-white p-4"
-            style={{
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.04,
-              shadowRadius: 8,
-              elevation: 2,
-            }}
-          >
-            <Text
-              className="mb-3 text-[13px] uppercase tracking-wide"
-              style={{ fontFamily: ListifyFonts.semiBold, color: "#9CA3AF" }}
-            >
-              On this page
-            </Text>
-            {document.sections.map((section, index) => (
-              <Pressable
-                key={section.id}
-                onPress={() => scrollToSection(section.id)}
-                className="flex-row items-center py-2.5"
-                style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-              >
-                <Text
-                  className="mr-3 w-6 text-[13px]"
-                  style={{ fontFamily: ListifyFonts.semiBold, color: ListifyColors.primary }}
-                >
-                  {index + 1}.
-                </Text>
-                <Text
-                  className="flex-1 text-[15px]"
-                  style={{ fontFamily: ListifyFonts.medium, color: "#1A1A1A" }}
-                >
-                  {section.title}
-                </Text>
-                <MaterialIcons name="south" size={16} color="#C4C4C4" />
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-
-        {document.sections.map((section, index) => (
-          <View
-            key={section.id}
-            onLayout={(event) => {
-              sectionOffsets.current[section.id] = event.nativeEvent.layout.y;
-            }}
-            className="mb-4 overflow-hidden rounded-2xl bg-white p-5"
-            style={{
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.04,
-              shadowRadius: 8,
-              elevation: 2,
-            }}
-          >
-            <View className="mb-3 flex-row items-start gap-3">
-              <View
-                className="h-8 w-8 items-center justify-center rounded-xl"
-                style={{ backgroundColor: "rgba(39,187,151,0.12)" }}
-              >
-                <Text
-                  className="text-[13px]"
-                  style={{ fontFamily: ListifyFonts.bold, color: ListifyColors.primary }}
-                >
-                  {index + 1}
-                </Text>
-              </View>
-              <Text
-                className="flex-1 pt-0.5 text-[17px]"
-                style={{ fontFamily: ListifyFonts.semiBold, color: "#1A1A1A" }}
-              >
-                {section.title}
-              </Text>
-            </View>
-
-            {section.paragraphs?.map((paragraph) => (
-              <Text
-                key={paragraph.slice(0, 48)}
-                className="mb-3 text-[15px] leading-6"
-                style={{ fontFamily: ListifyFonts.regular, color: "#4B5563" }}
-              >
-                {paragraph}
-              </Text>
-            ))}
-
-            {section.bullets?.map((bullet) => (
-              <View key={bullet.slice(0, 48)} className="mb-2.5 flex-row items-start gap-2.5">
-                <View
-                  className="mt-2 h-1.5 w-1.5 rounded-full"
-                  style={{ backgroundColor: ListifyColors.primary }}
-                />
-                <Text
-                  className="flex-1 text-[15px] leading-6"
-                  style={{ fontFamily: ListifyFonts.regular, color: "#4B5563" }}
-                >
-                  {bullet}
-                </Text>
-              </View>
-            ))}
-          </View>
         ))}
 
-        <Pressable
-          onPress={() => Linking.openURL(`mailto:${document.contactEmail}`)}
-          className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white p-5"
-          style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
-        >
-          <View className="flex-row items-center gap-3">
-            <View
-              className="h-11 w-11 items-center justify-center rounded-2xl"
-              style={{ backgroundColor: "rgba(39,187,151,0.12)" }}
+        <View className="mb-8 rounded-lg border px-4 py-3" style={{ borderColor: BORDER_COLOR }}>
+          <Text
+            className="mb-2 text-[12px] uppercase tracking-wider"
+            style={{ fontFamily: ListifyFonts.semiBold, color: MUTED_COLOR }}
+          >
+            On this page
+          </Text>
+          {document.chapters.map((chapter) => (
+            <Pressable
+              key={chapter.id}
+              onPress={() => scrollToChapter(chapter.id)}
+              className="py-2"
+              style={({ pressed }) => ({ opacity: pressed ? 0.65 : 1 })}
             >
-              <MaterialIcons name="mail-outline" size={22} color={ListifyColors.primary} />
-            </View>
-            <View className="flex-1">
               <Text
-                className="text-[15px]"
-                style={{ fontFamily: ListifyFonts.semiBold, color: "#1A1A1A" }}
-              >
-                Questions about this document?
-              </Text>
-              <Text
-                className="mt-0.5 text-[14px]"
+                className="text-[14px] leading-5"
                 style={{ fontFamily: ListifyFonts.medium, color: ListifyColors.primary }}
               >
-                {document.contactEmail}
+                {chapter.roman}. {chapter.title}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {document.chapters.map((chapter) => (
+          <ChapterBlock
+            key={chapter.id}
+            chapter={chapter}
+            onLayout={(y) => {
+              sectionOffsets.current[chapter.id] = y;
+            }}
+          />
+        ))}
+
+        <View className="mt-4 border-t pt-8" style={{ borderTopColor: BORDER_COLOR }}>
+          <Text
+            className="text-[20px]"
+            style={{ fontFamily: ListifyFonts.bold, color: "#111827" }}
+          >
+            {document.contactTitle}
+          </Text>
+          {document.contactNote ? (
+            <Text
+              className="mt-3 text-[15px] leading-[26px]"
+              style={{ fontFamily: ListifyFonts.regular, color: BODY_COLOR }}
+            >
+              {document.contactNote}
+            </Text>
+          ) : null}
+          <Pressable
+            onPress={() => Linking.openURL(`mailto:${document.contactEmail}`)}
+            className="mt-3"
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+          >
+            <Text
+              className="text-[15px]"
+              style={{ fontFamily: ListifyFonts.semiBold, color: ListifyColors.primary }}
+            >
+              {document.contactEmail}
+            </Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function ChapterBlock({
+  chapter,
+  onLayout,
+}: {
+  chapter: LegalChapter;
+  onLayout: (y: number) => void;
+}) {
+  return (
+    <View
+      className="mb-10"
+      onLayout={(event) => onLayout(event.nativeEvent.layout.y)}
+    >
+      <Text
+        className="text-[20px] leading-7"
+        style={{ fontFamily: ListifyFonts.bold, color: "#111827" }}
+      >
+        {chapter.roman}. {chapter.title}
+      </Text>
+
+      {chapter.intro ? (
+        <Text
+          className="mt-3 text-[15px] leading-[26px]"
+          style={{ fontFamily: ListifyFonts.regular, color: BODY_COLOR }}
+        >
+          {chapter.intro}
+        </Text>
+      ) : null}
+
+      {chapter.subsections.map((subsection) => (
+        <View key={subsection.id} className="mt-6">
+          <Text
+            className="text-[17px] leading-6"
+            style={{ fontFamily: ListifyFonts.semiBold, color: "#111827" }}
+          >
+            {subsection.label}. {subsection.title}
+          </Text>
+
+          {subsection.paragraphs?.map((paragraph) => (
+            <Text
+              key={paragraph.slice(0, 48)}
+              className="mt-3 text-[15px] leading-[26px]"
+              style={{ fontFamily: ListifyFonts.regular, color: BODY_COLOR }}
+            >
+              {paragraph}
+            </Text>
+          ))}
+
+          {subsection.items?.map((item, index) => (
+            <View key={item.slice(0, 48)} className="mt-3 flex-row items-start gap-2">
+              <Text
+                className="w-5 text-[15px] leading-[26px]"
+                style={{ fontFamily: ListifyFonts.medium, color: BODY_COLOR }}
+              >
+                {index + 1}.
+              </Text>
+              <Text
+                className="flex-1 text-[15px] leading-[26px]"
+                style={{ fontFamily: ListifyFonts.regular, color: BODY_COLOR }}
+              >
+                {item}
               </Text>
             </View>
-            <MaterialIcons name="open-in-new" size={20} color="#9CA3AF" />
-          </View>
-        </Pressable>
-      </ScrollView>
+          ))}
+        </View>
+      ))}
     </View>
   );
 }

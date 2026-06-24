@@ -26,8 +26,8 @@ import { useKeyboardStickyOffset } from "@/components/chat-keyboard-scroll-view"
 import type { CategorySlug } from "@/constants/categories";
 import { ListifyFonts } from "@/constants/typography";
 import { AuthGateBottomSheet } from "@/features/auth/components/auth-gate-bottom-sheet";
-import { AUTH_API_BASE_URL, fetchSellerReviews } from "@/features/auth/services/auth-api";
-import { buildListingChatHref } from "@/lib/listing-chat";
+import { AUTH_API_BASE_URL, fetchSellerReviews, getAuthErrorMessage } from "@/features/auth/services/auth-api";
+import { buildListingChatHref, sendListingOffer } from "@/lib/listing-chat";
 import { showErrorToast } from "@/lib/toast";
 import {
   getSuggestedOfferAmounts,
@@ -309,8 +309,7 @@ export function ListingDetailTemplateScreen() {
     }
     setSendingOffer(true);
     try {
-      const { sendListingOffer } = await import("@/lib/listing-chat");
-      const offerRes = await sendListingOffer(
+      await sendListingOffer(
         {
           recipientId: sellerId,
           sellerId,
@@ -344,7 +343,7 @@ export function ListingDetailTemplateScreen() {
     } catch (e) {
       showErrorToast(
         "Offer Failed",
-        e instanceof Error ? e.message : "Could not send your offer.",
+        getAuthErrorMessage(e),
       );
     } finally {
       setSendingOffer(false);
