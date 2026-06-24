@@ -1,6 +1,7 @@
 import { type Href, useRouter } from "@/lib/safe-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useState } from "react";
+import Constants from "expo-constants";
 import { Linking, Pressable, Text, View } from "react-native";
 
 import {
@@ -29,6 +30,8 @@ import {
 } from "@/lib/notifications/token-manager";
 import { useProtectedNavigation } from "@/lib/use-protected-navigation";
 import { useAppSelector } from "@/store/hooks";
+
+const APP_VERSION = Constants.expoConfig?.version ?? "1.0.0";
 
 export function SettingsScreen() {
   const router = useRouter();
@@ -241,7 +244,7 @@ export function SettingsScreen() {
           iconColor="#6B7280"
           label="About Listify"
           type="navigate"
-          onPress={() => {}}
+          onPress={() => push("/about-listify")}
         />
         <SettingsMenuRow
           icon="policy"
@@ -249,7 +252,7 @@ export function SettingsScreen() {
           iconColor="#6B7280"
           label="Privacy policy"
           type="navigate"
-          onPress={() => {}}
+          onPress={() => push("/privacy-policy")}
           showDivider
         />
         <SettingsMenuRow
@@ -258,7 +261,7 @@ export function SettingsScreen() {
           iconColor="#6B7280"
           label="Terms of service"
           type="navigate"
-          onPress={() => {}}
+          onPress={() => push("/terms-of-service")}
         />
       </ProfileSectionCard>
 
@@ -279,7 +282,7 @@ export function SettingsScreen() {
             className="rounded-lg bg-[#F6F7F8] px-2.5 py-1 text-[12px] text-[#6B7280]"
             style={{ fontFamily: ListifyFonts.semiBold }}
           >
-            1.0.0
+            {APP_VERSION}
           </Text>
         </View>
       </ProfileSectionCard>
