@@ -54,22 +54,22 @@ export function SignInScreen() {
     void configureGoogleSignIn().catch(() => {});
   }, []);
 
-  // Navigate after any successful auth (session restore, social login fallback)
+  // Navigate only after a fresh login on this screen — not stale session state.
   useEffect(() => {
-    if (isAuthenticated) {
-      Keyboard.dismiss();
-      dispatch(hideAuthGate());
-      if (redirectTo && redirectTo.startsWith("/")) {
-        router.replace(redirectTo as Href);
-        return;
-      }
-      router.replace("/(tabs)/home-feed-root" as Href);
+    if (!isAuthenticated || status !== "succeeded") return;
+
+    Keyboard.dismiss();
+    dispatch(hideAuthGate());
+    if (redirectTo && redirectTo.startsWith("/")) {
+      router.replace(redirectTo as Href);
+      return;
     }
+    router.replace("/(tabs)/home-feed-root" as Href);
     // `router` intentionally omitted from deps – its reference changes on every
     // navigation (safe-router rebuilds on pathname), which would cause this
     // effect to re-fire after the user navigates away and bounce them back.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch, isAuthenticated, redirectTo]);
+  }, [dispatch, isAuthenticated, redirectTo, status]);
 
   useEffect(() => {
     if (!error) return;

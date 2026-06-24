@@ -2,6 +2,7 @@ const Notification = require("../models/notification.model");
 const mongoose = require("mongoose");
 const { logger } = require("../utils/logger");
 const { encrypt, decrypt, isEncryptionEnabled } = require("../services/encryption.service");
+const { dispatchInAppNotificationPush } = require("../services/notification-push.service");
 
 // Helper: set no-cache headers on sensitive responses
 const setNoCacheHeaders = (res) => {
@@ -246,7 +247,20 @@ exports.unregisterFcmToken = async (req, res) => {
 };
 
 // ==================== CREATE NOTIFICATION (internal helper) ====================
-exports.createNotification = async ({ recipient, sender, type, message, metadata = {}, allowSelf = false }) => {
+exports.createNotification = async ({
+  recipient,
+  sender,
+  type,
+  message,
+  metadata = {},
+  allowSelf = false,
+  title,
+  imageUrl,
+  iconUrl,
+  senderName,
+  skipPush = false,
+  pushMessage,
+}) => {
   try {
     // Guard against missing recipient/sender
     if (!recipient || !sender) return null;
@@ -266,6 +280,25 @@ exports.createNotification = async ({ recipient, sender, type, message, metadata
     });
 
     logger.info("🔔 Notification created", { type, recipient, sender });
+
+    if (!skipPush) {
+      const pushSent = await dispatchInAppNotificationPush({
+        notificationId: notification._id,
+        recipientId: recipient,
+        notifType: type,
+        message: pushMessage || message,
+        title,
+        imageUrl: imageUrl || metadata?.listingImage || metadata?.imageUrl || null,
+        iconUrl: iconUrl || metadata?.senderPhoto || metadata?.iconUrl || null,
+        metadata,
+        senderName: senderName || metadata?.senderName,
+      });
+
+      if (pushSent) {
+        await Notification.findByIdAndUpdate(notification._id, { $set: { pushSent: true } });
+      }
+    }
+
     return notification;
   } catch (error) {
     logger.error("Create notification error:", error);

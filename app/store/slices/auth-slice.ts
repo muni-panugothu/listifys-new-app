@@ -398,6 +398,9 @@ export const updateUserProfile = createAsyncThunk(
 
 export const logout = createAsyncThunk("auth/logout", async () => {
   const { disconnectSocket } = await import("@/features/messaging/services/socket-service");
+  const { signOutGoogleCachedAccount } = await import("@/lib/google-sign-in");
+  const { resetFcmSyncState } = await import("@/lib/notifications/sync-fcm-token");
+
   disconnectSocket();
 
   try {
@@ -407,6 +410,8 @@ export const logout = createAsyncThunk("auth/logout", async () => {
   } catch {
     // Still clear local session if server logout fails (offline, expired token, etc.)
   } finally {
+    await signOutGoogleCachedAccount();
+    resetFcmSyncState();
     await AsyncStorage.removeItem(USER_STORAGE_KEY);
     await AsyncStorage.removeItem(FLOW_STATE_KEY);
     await AsyncStorage.removeItem(LOCATION_STORAGE_KEY);
@@ -659,18 +664,30 @@ const authSlice = createSlice({
         state.error = action.payload as string;
       });
 
-    // Logout
-    builder.addCase(logout.fulfilled, (state) => {
-      state.user = null;
-      state.isAuthenticated = false;
-      state.sessionHydrated = true;
-      state.status = "idle";
-      state.error = null;
-      state.registrationEmail = null;
-      state.registrationPhone = null;
-      state.resetEmail = null;
-      state.resetToken = null;
-    });
+    // Logout — clear Redux immediately so UI cannot bounce back to home
+    builder
+      .addCase(logout.pending, (state) => {
+        state.user = null;
+        state.isAuthenticated = false;
+        state.sessionHydrated = true;
+        state.status = "idle";
+        state.error = null;
+        state.registrationEmail = null;
+        state.registrationPhone = null;
+        state.resetEmail = null;
+        state.resetToken = null;
+      })
+      .addCase(logout.fulfilled, (state) => {
+        state.user = null;
+        state.isAuthenticated = false;
+        state.sessionHydrated = true;
+        state.status = "idle";
+        state.error = null;
+        state.registrationEmail = null;
+        state.registrationPhone = null;
+        state.resetEmail = null;
+        state.resetToken = null;
+      });
   },
 });
 

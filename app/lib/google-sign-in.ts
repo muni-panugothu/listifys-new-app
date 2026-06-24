@@ -539,6 +539,16 @@ function isRunningInExpoGo(): boolean {
   return Constants.appOwnership === "expo";
 }
 
+export async function signOutGoogleCachedAccount(): Promise<void> {
+  const module = getGoogleModule();
+  if (!module?.GoogleSignin?.signOut) return;
+  try {
+    await module.GoogleSignin.signOut();
+  } catch {
+    // Best effort — local JWT logout must still proceed.
+  }
+}
+
 export async function signInWithGoogleNative(): Promise<string> {
   const started = Date.now();
   const logStep = (step: string) => {

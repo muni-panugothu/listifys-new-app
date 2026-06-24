@@ -11,7 +11,6 @@ const TwilioService = require("../services/twilio.service");
 const TwilioVerify = require("../services/twilio-verify.service");
 const passwordSecurity = require("../utils/passwordSecurity");
 const { createNotification } = require("./notification.controller");
-const { dispatchInAppNotificationPush } = require("../services/notification-push.service");
 const { getIO } = require("../config/socket");
 const deviceService = require("../services/device.service");
 const s3Service = require("../services/s3.service");
@@ -3064,22 +3063,14 @@ exports.toggleFollow = async (req, res) => {
         sender: currentUserId,
         type: "follow",
         message: followMessage,
+        title: "New follower",
+        iconUrl: followerAvatar,
+        senderName: followerName,
         metadata: { followerId: currentUserId, senderName: followerName },
       });
 
-      // Real-time in-app delivery + FCM push (fire-and-forget, never blocks the response).
+      // Real-time in-app delivery (FCM push is sent by createNotification).
       if (notification) {
-        dispatchInAppNotificationPush({
-          notificationId: notification._id,
-          recipientId: targetUserId,
-          notifType: "follow",
-          title: "New follower",
-          message: followMessage,
-          iconUrl: followerAvatar,
-          senderName: followerName,
-          metadata: { followerId: currentUserId, senderName: followerName },
-        }).catch(() => {});
-
         try {
           const io = getIO();
           if (io) {

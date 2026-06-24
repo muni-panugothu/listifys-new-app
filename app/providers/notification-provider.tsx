@@ -110,14 +110,25 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
   useEffect(() => {
     if (!messaging) return;
     try {
-      const unsub = messaging().onNotificationOpenedApp((remoteMessage: any) => {
+      const unsubOpened = messaging().onNotificationOpenedApp((remoteMessage: any) => {
         if (!remoteMessage?.data) return;
         const data = remoteMessage.data as RichNotificationPayload;
         if (data.type !== 'incoming_call' && data.type !== 'silent') {
           navigateFromNotification(data);
         }
       });
-      return unsub;
+
+      // Cold start: app launched from FCM system notification (killed state).
+      void messaging()
+        .getInitialNotification()
+        .then((remoteMessage: any) => {
+          const data = remoteMessage?.data as RichNotificationPayload | undefined;
+          if (!data?.type || data.type === 'silent') return;
+          navigateFromNotification(data);
+        })
+        .catch(() => {});
+
+      return unsubOpened;
     } catch {
       return undefined;
     }

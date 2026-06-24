@@ -5,7 +5,6 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { CommonActions } from "@react-navigation/native";
 
-import { logoutFromServer } from "@/features/auth/services/auth-api";
 import { useAppDispatch } from "@/store/hooks";
 import { logout } from "@/store/slices/auth-slice";
 
@@ -18,12 +17,10 @@ export function LogoutModalScreen() {
   const handleLogout = async () => {
     setLoading(true);
     try {
-      await logoutFromServer();
-    } catch {
-      /* proceed with local logout even if server call fails */
+      await dispatch(logout()).unwrap();
+    } finally {
+      setLoading(false);
     }
-    await dispatch(logout());
-    setLoading(false);
     // Reset the entire navigation stack to only the onboarding screen so no
     // authenticated routes remain accessible via the back gesture/button.
     navigation.dispatch(

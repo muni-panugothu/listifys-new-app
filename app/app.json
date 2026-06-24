@@ -72,7 +72,8 @@
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "extraProguardRules": "-keep class com.google.firebase.** { *; }\n-keep class io.invertase.firebase.** { *; }\n-dontwarn com.google.firebase.**\n-keep class app.notifee.** { *; }"
           }
         }
       ],

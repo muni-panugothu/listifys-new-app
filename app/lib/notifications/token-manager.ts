@@ -17,6 +17,7 @@ try {
 }
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PermissionsAndroid, Platform } from 'react-native';
+import { notificationDebug } from '@/lib/notifications/notification-debug';
 import type { PermissionStatus } from './types';
 
 const TOKEN_CACHE_KEY = '@fcm_token_v2';
@@ -40,19 +41,45 @@ async function ensureAndroidNotificationPermission(): Promise<boolean> {
 
 /** Request notification permission. Returns the resulting status string. */
 export async function requestPermission(): Promise<PermissionStatus> {
+  if (!messaging) return 'unknown';
+
+  // Android 13+ uses POST_NOTIFICATIONS; iOS uses Firebase requestPermission().
+  if (Platform.OS === 'android') {
+    const granted = await ensureAndroidNotificationPermission();
+    return granted ? 'granted' : 'denied';
+  }
+
   try {
     const status = await messaging().requestPermission();
     if (status === messaging.AuthorizationStatus.AUTHORIZED)  return 'granted';
     if (status === messaging.AuthorizationStatus.PROVISIONAL) return 'provisional';
     if (status === messaging.AuthorizationStatus.DENIED)      return 'denied';
     return 'unknown';
-  } catch {
+  } catch (error) {
+    notificationDebug.warn('Permission', 'requestPermission failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return 'unknown';
   }
 }
 
 /** Check current permission without prompting. */
 export async function checkPermission(): Promise<PermissionStatus> {
+  if (!messaging) return 'unknown';
+
+  if (Platform.OS === 'android') {
+    const apiLevel = typeof Platform.Version === 'number' ? Platform.Version : parseInt(String(Platform.Version), 10);
+    if (!apiLevel || apiLevel < 33) return 'granted';
+    try {
+      const granted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+      );
+      return granted ? 'granted' : 'denied';
+    } catch {
+      return 'unknown';
+    }
+  }
+
   try {
     const status = await messaging().hasPermission();
     if (status === messaging.AuthorizationStatus.AUTHORIZED)  return 'granted';
@@ -73,33 +100,40 @@ export async function checkPermission(): Promise<PermissionStatus> {
  */
 export async function getFCMToken(): Promise<string | null> {
   if (!messaging) {
-    if (__DEV__) console.warn('[FCM] Firebase Messaging not available — rebuild native app with google-services.json');
+    notificationDebug.critical(
+      'Token',
+      'Firebase Messaging native module unavailable — rebuild with google-services.json + @react-native-firebase/messaging',
+    );
     return null;
   }
 
   try {
-    const androidOk = await ensureAndroidNotificationPermission();
-    if (!androidOk) {
-      if (__DEV__) console.warn('[FCM] POST_NOTIFICATIONS denied — enable in Settings → Apps → Listifys → Notifications');
-      return null;
-    }
+    const permission = await requestPermission();
+    notificationDebug.info('Permission', 'notification permission', { permission });
 
-    const status = await requestPermission();
-    if (status === 'denied') {
-      if (__DEV__) console.warn('[FCM] Notification permission denied');
+    if (permission === 'denied') {
+      notificationDebug.critical(
+        'Token',
+        'POST_NOTIFICATIONS denied — enable in Settings → Apps → Listifys → Notifications',
+      );
       return null;
     }
 
     const token = await messaging().getToken();
     if (token) {
       await AsyncStorage.setItem(TOKEN_CACHE_KEY, token);
-      if (__DEV__) console.log('[FCM] Device token:', token);
-    } else if (__DEV__) {
-      console.warn('[FCM] messaging().getToken() returned empty');
+      notificationDebug.info('Token', 'FCM token minted', {
+        prefix: token.slice(0, 24),
+        length: token.length,
+      });
+    } else {
+      notificationDebug.critical('Token', 'messaging().getToken() returned empty');
     }
     return token ?? null;
   } catch (error) {
-    if (__DEV__) console.warn('[FCM] getFCMToken failed:', error);
+    notificationDebug.critical('Token', 'getFCMToken failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }

@@ -1,24 +1,19 @@
 import { requestJson } from "@/features/auth/services/auth-api";
 import { connectSocket, getSocket } from "@/features/messaging/services/socket-service";
+import { notificationDebug } from "@/lib/notifications/notification-debug";
 
 async function registerViaSocket(fcmToken: string): Promise<boolean> {
   try {
     const socket = getSocket();
     if (socket?.connected) {
       socket.emit("call:update-fcm-token", { fcmToken });
-      if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.info("[FCM] Token sent via socket");
-      }
+      notificationDebug.info("Register", "token sent via socket");
       return true;
     }
     const connected = await connectSocket();
     if (connected?.connected) {
       connected.emit("call:update-fcm-token", { fcmToken });
-      if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.info("[FCM] Token sent via socket (after connect)");
-      }
+      notificationDebug.info("Register", "token sent via socket after connect");
       return true;
     }
   } catch {
@@ -38,16 +33,12 @@ export async function registerFCMTokenWithServer(fcmToken: string): Promise<bool
       method: "POST",
       body: JSON.stringify({ fcmToken }),
     });
-    if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.info("[FCM] Token saved on server (REST)");
-    }
+    notificationDebug.info("Register", "token saved on server (REST)");
     return true;
   } catch (error) {
-    if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.warn("[FCM] REST token register failed, trying socket:", error);
-    }
+    notificationDebug.warn("Register", "REST token register failed, trying socket", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   return registerViaSocket(fcmToken);

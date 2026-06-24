@@ -8,7 +8,7 @@ import { StatusBar } from 'expo-status-bar'
 import { useEffect, useState } from 'react'
 import { showErrorToast } from '@/lib/toast'
 import { reportGoogleSignInFailure } from '@/lib/auth-error-display'
-import { useAppDispatch, useAppSelector } from '@/store/hooks'
+import { useAppDispatch } from '@/store/hooks'
 import { googleLogin } from '@/store/slices/auth-slice'
 import { completeOnboarding } from '@/store/slices/onboarding-slice'
 import {
@@ -36,9 +36,7 @@ const App = () => {
   const insets = useSafeAreaInsets()
   const bgSize = useFullScreenBackgroundSize()
   const dispatch = useAppDispatch()
-  const { isAuthenticated, sessionHydrated } = useAppSelector((s) => s.auth)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
-  const hasMountedRef = React.useRef(false)
 
   const markOnboardingComplete = async () => {
     try {
@@ -52,16 +50,6 @@ const App = () => {
     await markOnboardingComplete()
     router.replace('/(tabs)/home-feed-root' as Href)
   }
-
-  useEffect(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true
-      return
-    }
-    if (isAuthenticated && sessionHydrated) {
-      router.replace('/(tabs)/home-feed-root' as Href)
-    }
-  }, [isAuthenticated, sessionHydrated])
 
   useEffect(() => {
     void configureGoogleSignIn().catch(() => {})
@@ -169,7 +157,7 @@ const App = () => {
             onPress={() => {
               void (async () => {
                 await markOnboardingComplete()
-                router.push('/sign-in' as Href)
+                router.replace('/sign-in' as Href)
               })()
             }}
           >

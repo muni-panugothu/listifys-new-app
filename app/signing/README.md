@@ -6,6 +6,52 @@ Fresh keystores live in this folder (gitignored). Run from `app/`:
 npm run android:sha1
 ```
 
+## Firebase Cloud Messaging (push notifications)
+
+Push uses **@react-native-firebase/messaging** + **Notifee** (not expo-notifications).
+
+### Why dev works but release APK/AAB does not
+
+Release builds are signed with a **different certificate** than debug. Firebase must know every SHA-1 used to sign the app.
+
+1. Run verification (from `app/`):
+
+```bash
+npm run android:verify-firebase
+```
+
+2. In [Firebase Console](https://console.firebase.google.com/) → Project **listifys** → Project settings → Android app `com.listifys.app`:
+
+| Certificate | SHA-1 |
+|-------------|-------|
+| Debug (`signing/debug.keystore`) | `C7:6E:C1:CB:3F:6B:0D:F8:B2:DC:DF:E3:78:0D:04:A0:48:72:D3:5F` |
+| Release (`signing/release.keystore`) | `33:F2:F5:19:E2:E0:DE:92:77:F9:0A:2C:62:C5:67:C0:CD:D8:12:79` |
+| **Play App Signing** (if on Play Store) | Play Console → Setup → App signing → **App signing key certificate** |
+
+3. Download a fresh `google-services.json` and replace `app/google-services.json`.
+
+4. Rebuild and reinstall (uninstall old app first):
+
+```bash
+eas build --profile preview --platform android
+```
+
+5. Sign in, allow notifications, then test from server:
+
+```bash
+cd ../server && node scripts/test-fcm-push.js <userId>
+```
+
+### Release logcat
+
+Preview/production builds set `EXPO_PUBLIC_NOTIFICATION_DEBUG=1`. After install:
+
+```bash
+adb logcat | findstr Notifications
+```
+
+Look for `[Notifications:Token]`, `[Notifications:Sync]`, `[Notifications:Register]`.
+
 ## Google Cloud Console (project Listifys / 582870381419)
 
 Open **APIs & Services → Credentials → Android client** for `com.listifys.app`.

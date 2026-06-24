@@ -40,6 +40,7 @@ module.exports = {
   plugins: [
     "@react-native-firebase/app",
     "@react-native-firebase/messaging",
+    "./plugins/with-fcm-android.js",
     ...((appJson.expo.plugins || []).map((plugin) => {
     if (plugin === "@react-native-google-signin/google-signin") {
       const clientIdForScheme = iosClientId || webClientId;

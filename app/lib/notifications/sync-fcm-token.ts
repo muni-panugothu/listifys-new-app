@@ -1,6 +1,7 @@
 import { getFCMToken } from "@/lib/notifications/token-manager";
 import { getCachedPushEnabled } from "@/lib/notifications/push-preference";
 import { registerFCMTokenWithServer } from "@/lib/notifications/register-fcm-server";
+import { notificationDebug } from "@/lib/notifications/notification-debug";
 
 let syncInFlight: Promise<boolean> | null = null;
 let lastSyncedToken: string | null = null;
@@ -19,31 +20,32 @@ export async function syncFcmTokenWithServer(options?: {
   const run = async (): Promise<boolean> => {
     const pushOn = await getCachedPushEnabled();
     if (!pushOn) {
-      if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.info("[FCM] Push disabled in preferences — skipping token sync");
-      }
+      notificationDebug.info("Sync", "push disabled in preferences — skipping");
       return false;
     }
 
     const token = await getFCMToken();
     if (!token) {
-      if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          "[FCM] No device token. Allow notifications for Listifys in system settings, then reopen the app.",
-        );
-      }
+      notificationDebug.critical(
+        "Sync",
+        "no FCM token — check notification permission and Firebase SHA-1 in google-services.json",
+      );
       return false;
     }
 
     if (!options?.force && token === lastSyncedToken) {
+      notificationDebug.info("Sync", "token unchanged — skip server register");
       return true;
     }
 
     const saved = await registerFCMTokenWithServer(token);
     if (saved) {
       lastSyncedToken = token;
+      notificationDebug.info("Sync", "token registered on server", {
+        prefix: token.slice(0, 24),
+      });
+    } else {
+      notificationDebug.critical("Sync", "server rejected FCM token registration");
     }
     return saved;
   };

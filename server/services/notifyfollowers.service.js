@@ -2,7 +2,6 @@ const User = require("../models/user.model.js");
 const { createNotification } = require("../controllers/notification.controller.js");
 const { getIO } = require("../config/socket");
 const { decrypt } = require("./encryption.service.js");
-const { dispatchInAppNotificationPush } = require("./notification-push.service");
 const { logger } = require("../utils/logger");
 
 /**
@@ -41,6 +40,11 @@ async function notifyFollowersOfNewListing(sellerId, listing, listingType) {
         sender: sellerId,
         type: "new_listing",
         message,
+        pushMessage: pushBody,
+        title: `🆕 New from ${sellerName}`,
+        imageUrl: listingImage,
+        iconUrl: seller.profileImage || seller.googleProfileImage || seller.avatar || null,
+        senderName: sellerName,
         metadata: {
           listingId: listing._id,
           listingType,
@@ -52,25 +56,6 @@ async function notifyFollowersOfNewListing(sellerId, listing, listingType) {
       });
 
       if (notification) {
-        await dispatchInAppNotificationPush({
-          notificationId: notification._id,
-          recipientId: followerId,
-          notifType: "new_listing",
-          title: `🆕 New from ${sellerName}`,
-          message: pushBody,
-          imageUrl: listingImage,
-          iconUrl: seller.profileImage || seller.googleProfileImage || seller.avatar || null,
-          metadata: {
-            listingId: listing._id,
-            listingType,
-            listingTitle: listing.title,
-            listingImage,
-            sellerId,
-            sellerName,
-          },
-          senderName: sellerName,
-        }).catch(() => {});
-
         if (io) {
           const populated = await notification.populate(
             "sender",

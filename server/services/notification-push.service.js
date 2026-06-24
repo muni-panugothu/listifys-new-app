@@ -166,18 +166,53 @@ async function dispatchPushToUser(userId, payload, { transactional = true, force
     const user = await User.findById(userId)
       .select('fcmToken preferences')
       .lean();
-    if (!user?.fcmToken) return false;
+
+    if (!user?.fcmToken) {
+      logger.info('[NotificationPush] Skipped — recipient has no FCM token', {
+        userId,
+        type: payload?.type,
+        hint: 'Recipient must open the app, sign in, and allow notifications',
+      });
+      return false;
+    }
 
     // Master switch: if the user has disabled push notifications, never send.
     // `forceEngagement` may bypass engagement-specific gating below, but it
     // can NEVER override the master push preference — the user opted out.
-    if (!prefEnabled(user.preferences, 'pushNotifications')) return false;
-
-    if (!forceEngagement) {
-      if (!transactional && !prefEnabled(user.preferences, 'engagementNotifications')) return false;
+    if (!prefEnabled(user.preferences, 'pushNotifications')) {
+      logger.info('[NotificationPush] Skipped — push disabled in user preferences', {
+        userId,
+        type: payload?.type,
+      });
+      return false;
     }
 
-    await sendRichNotification(user.fcmToken, payload);
+    if (!forceEngagement) {
+      if (!transactional && !prefEnabled(user.preferences, 'engagementNotifications')) {
+        logger.info('[NotificationPush] Skipped — engagement notifications disabled', {
+          userId,
+          type: payload?.type,
+        });
+        return false;
+      }
+    }
+
+    const result = await sendRichNotification(user.fcmToken, payload);
+    if (!result?.success) {
+      logger.warn('[NotificationPush] FCM send failed', {
+        userId,
+        type: payload?.type,
+        error: result?.error,
+        code: result?.code,
+      });
+      return false;
+    }
+
+    logger.info('[NotificationPush] FCM push sent', {
+      userId,
+      type: payload?.type,
+      messageId: result.messageId,
+    });
     return true;
   } catch (err) {
     logger.warn('[NotificationPush] dispatch failed', { userId, err: err.message });
