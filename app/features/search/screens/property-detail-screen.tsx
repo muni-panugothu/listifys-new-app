@@ -145,6 +145,7 @@ export function PropertyDetailScreen() {
 
   const topBarHeight = insets.top + 64;
   const footerBottomPadding = Math.max(insets.bottom, 10);
+  const isOwn = isOwnListing(listing, user?.id);
 
   // ── Auth Gate ─────────────────────────────────────────────────────────
   const [authGateVisible, setAuthGateVisible] = useState(false);
@@ -339,7 +340,7 @@ export function PropertyDetailScreen() {
         }
         contentContainerStyle={{
           paddingTop: topBarHeight,
-          paddingBottom: 112 + footerBottomPadding,
+          paddingBottom: isOwn ? 24 + footerBottomPadding : 112 + footerBottomPadding,
         }}
       >
         {/* Image Gallery */}
@@ -521,7 +522,8 @@ export function PropertyDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Footer */}
+      {/* Footer — hidden on own listings */}
+      {!isOwn ? (
       <View
         className="absolute inset-x-0 bottom-0 z-50 border-t border-[#BBCAC3]/20 bg-white/90 px-4"
         style={{ paddingTop: 12, paddingBottom: footerBottomPadding }}
@@ -531,10 +533,6 @@ export function PropertyDetailScreen() {
             onPress={() => {
               if (sellerId) {
                 requireAuth("message", () => {
-                   if (isOwnListing(listing, user?.id)) {
-                     showErrorToast("Not Allowed", "You can't message yourself on your own listing.");
-                     return;
-                   }
                   router.push(
                     buildListingChatHref({
                       recipientId: sellerId,
@@ -551,18 +549,13 @@ export function PropertyDetailScreen() {
                 });
               }
             }}
-            disabled={isOwnListing(listing, user?.id)}
             className="h-12 flex-1 items-center justify-center rounded-xl border border-[#BBCAC3]"
-            style={({ pressed }) => ({ opacity: isOwnListing(listing, user?.id) ? 0.5 : (pressed ? 0.8 : 1) })}
+            style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
           >
-            <Text className="text-[16px] font-semibold text-[#161D1A]" style={{ opacity: isOwnListing(listing, user?.id) ? 0.5 : 1 }}>Contact Seller</Text>
+            <Text className="text-[16px] font-semibold text-[#161D1A]">Contact Seller</Text>
           </Pressable>
           <Pressable
             onPress={() => {
-              if (isOwnListing(listing, user?.id)) {
-                showErrorToast("Not Available", "You cannot make an offer on your own listing.");
-                return;
-              }
               if (!sellerId) {
                 showErrorToast("Unavailable", "Seller information is missing for this listing.");
                 return;
@@ -583,6 +576,7 @@ export function PropertyDetailScreen() {
           </Pressable>
         </View>
       </View>
+      ) : null}
 
       {/* Make Offer Bottom Sheet */}
       <Modal

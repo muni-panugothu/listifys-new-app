@@ -12,8 +12,10 @@ import {
 } from "@react-navigation/native";
 import { subscribeRouteTransitions, type Href, Stack, useRouter } from "@/lib/safe-router";
 import { usePathname } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { StatusBar, setStatusBarBackgroundColor, setStatusBarStyle, setStatusBarTranslucent } from "expo-status-bar";
+import * as SystemUI from "expo-system-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import "react-native-gesture-handler";
@@ -108,6 +110,16 @@ function AppLayout() {
   const loadTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const loaderStartedAtRef = useRef<number | null>(null);
   const [pageLoading, setPageLoading] = useState(false);
+
+  // Dark status-bar icons on light backgrounds (battery, Wi‑Fi, signal visible).
+  useEffect(() => {
+    setStatusBarStyle("dark");
+    if (Platform.OS === "android") {
+      setStatusBarBackgroundColor("#FFFFFF", false);
+      setStatusBarTranslucent(false);
+      void SystemUI.setBackgroundColorAsync("#FFFFFF");
+    }
+  }, []);
 
   const clearLoaderTimers = useCallback(() => {
     clearTimeout(loadTimerRef.current);
@@ -458,7 +470,7 @@ function AppLayout() {
         <PageTransitionLoader visible={pageLoading} />
         {/* Global real-time network status banner (offline / slow / back-online) */}
         <NetworkStatusLayer />
-        <StatusBar style="auto" />
+        <StatusBar style="dark" backgroundColor="#FFFFFF" translucent={false} />
       </ThemeProvider>
     </SafeAreaProvider>
   );

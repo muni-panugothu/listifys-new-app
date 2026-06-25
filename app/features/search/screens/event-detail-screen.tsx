@@ -128,6 +128,8 @@ export function EventDetailScreen() {
     : "";
 
   const topBarHeight = insets.top + 64;
+  const footerBottomPadding = Math.max(insets.bottom, 12);
+  const isOwn = isOwnListing(listing, user?.id);
 
   if (loading) {
     return (
@@ -181,7 +183,7 @@ export function EventDetailScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#27BB97"]} tintColor="#27BB97" progressViewOffset={topBarHeight} />}
-        contentContainerStyle={{ paddingTop: topBarHeight, paddingBottom: 96 + Math.max(insets.bottom, 16) }}
+        contentContainerStyle={{ paddingTop: topBarHeight, paddingBottom: isOwn ? 24 + footerBottomPadding : 96 + footerBottomPadding }}
       >
         {/* Event Poster — swipeable gallery */}
         {images.length > 0 ? (
@@ -346,12 +348,13 @@ export function EventDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Footer */}
+      {/* Footer — hidden on own listings */}
+      {!isOwn ? (
       <View
         className="absolute inset-x-0 bottom-0 z-50 border-t border-[#BBCAC3]/20 bg-white/95 px-4"
         style={{
           paddingTop: 12,
-          paddingBottom: Math.max(insets.bottom, 12),
+          paddingBottom: footerBottomPadding,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: -4 },
           shadowOpacity: 0.05,
@@ -371,10 +374,6 @@ export function EventDetailScreen() {
               onPress={() => {
                 if (!sellerId) return;
                 requireAuth("message", () => {
-                   if (isOwnListing(listing, user?.id)) {
-                     showErrorToast("Not Allowed", "You can't message yourself on your own event.");
-                     return;
-                   }
                   router.push(
                     buildListingChatHref({
                       recipientId: sellerId,
@@ -390,11 +389,10 @@ export function EventDetailScreen() {
                   );
                 });
               }}
-              disabled={isOwnListing(listing, user?.id)}
               className="h-12 w-12 items-center justify-center rounded-xl border-2 border-[#BBCAC3]/50 bg-white"
-              style={({ pressed }) => ({ opacity: isOwnListing(listing, user?.id) ? 0.5 : (pressed ? 0.7 : 1) })}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
             >
-              <MaterialIcons name="chat" size={20} color={isOwnListing(listing, user?.id) ? "#9CA3AF" : "#161D1A"} />
+              <MaterialIcons name="chat" size={20} color="#161D1A" />
             </Pressable>
             <Pressable
               onPress={() => {
@@ -415,15 +413,15 @@ export function EventDetailScreen() {
                   );
                 });
               }}
-              disabled={isOwnListing(listing, user?.id)}
               className="h-12 items-center justify-center rounded-xl px-6"
-              style={({ pressed }) => ({ backgroundColor: isOwnListing(listing, user?.id) ? "#D1D5DB" : "#27BB97", opacity: isOwnListing(listing, user?.id) ? 0.6 : (pressed ? 0.85 : 1) })}
+              style={({ pressed }) => ({ backgroundColor: "#27BB97", opacity: pressed ? 0.85 : 1 })}
             >
               <Text className="text-[16px] font-semibold text-white">Book Now</Text>
             </Pressable>
           </View>
         </View>
       </View>
+      ) : null}
 
       {/* Auth Gate for guest users */}
       <AuthGateBottomSheet

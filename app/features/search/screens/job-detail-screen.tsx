@@ -149,6 +149,8 @@ export function JobDetailScreen() {
   };
 
   const topBarHeight = insets.top + 56;
+  const footerBottomPadding = Math.max(insets.bottom, 16);
+  const isOwn = isOwnListing(listing, user?.id);
 
   if (loading) {
     return (
@@ -206,7 +208,7 @@ export function JobDetailScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#27BB97"]} tintColor="#27BB97" progressViewOffset={topBarHeight} />
         }
-        contentContainerStyle={{ paddingTop: topBarHeight, paddingBottom: 100 + Math.max(insets.bottom, 16) }}
+        contentContainerStyle={{ paddingTop: topBarHeight, paddingBottom: isOwn ? 24 + footerBottomPadding : 100 + footerBottomPadding }}
       >
         {/* Hero */}
         {images.length > 0 ? (
@@ -453,11 +455,12 @@ export function JobDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* FOOTER */}
+      {/* FOOTER — hidden on own listings */}
+      {!isOwn ? (
       <View
         className="absolute inset-x-0 bottom-0 z-50 border-t border-[#BBCAC3]/20 bg-white/95 px-4"
         style={{
-          paddingBottom: Math.max(insets.bottom, 16),
+          paddingBottom: footerBottomPadding,
           paddingTop: 12,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: -2 },
@@ -528,6 +531,7 @@ export function JobDetailScreen() {
           </Pressable>
         </View>
       </View>
+      ) : null}
 
       {/* Auth Gate for guest users */}
       <AuthGateBottomSheet

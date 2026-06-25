@@ -416,7 +416,7 @@ export function ServiceDetailScreen() {
           }
           contentContainerStyle={{
             paddingTop: topBarHeight,
-            paddingBottom: 120 + footerBottom,
+            paddingBottom: isOwnService ? 24 + footerBottom : 120 + footerBottom,
           }}
         >
         <View className="relative">
@@ -673,6 +673,7 @@ export function ServiceDetailScreen() {
       </ScrollView>
       )}
 
+      {!isOwnService ? (
       <View
         className="absolute inset-x-0 bottom-0 z-50 border-t border-slate-100 bg-white/90 px-4"
         style={{
@@ -690,24 +691,22 @@ export function ServiceDetailScreen() {
 
           <Pressable
             onPress={handleMessageSeller}
-            disabled={isOwnListing(listing, user?.id)}
             className="flex-2 overflow-hidden rounded-lg"
-            style={({ pressed }) => ({ opacity: isOwnListing(listing, user?.id) ? 0.5 : (pressed ? 0.92 : 1) })}
+            style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}
           >
             <LinearGradient
-              colors={isOwnListing(listing, user?.id) ? ["#9CA3AF", "#6B7280"] : ["#27BB97", "#1E9E7E"]}
+              colors={["#27BB97", "#1E9E7E"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               className="h-12 flex-row items-center justify-center gap-2"
             >
-              <Text className="text-[18px] font-semibold text-white" style={{ opacity: isOwnListing(listing, user?.id) ? 0.6 : 1 }}>
-                {isOwnListing(listing, user?.id) ? "Your Service" : "Message"}
-              </Text>
-              <MaterialIcons name="chat" size={20} color="#FFFFFF" style={{ opacity: isOwnListing(listing, user?.id) ? 0.6 : 1 }} />
+              <Text className="text-[18px] font-semibold text-white">Message</Text>
+              <MaterialIcons name="chat" size={20} color="#FFFFFF" />
             </LinearGradient>
           </Pressable>
         </View>
       </View>
+      ) : null}
 
       <PortfolioGalleryModal
         visible={portfolioModalVisible}

@@ -421,6 +421,7 @@ export function ListingDetailTemplateScreen() {
 
   const footerInsetPadding = Math.max(insets.bottom, 12);
   const headerHeight = insets.top + 56;
+  const isOwn = isOwnListing(listing, user?.id);
 
   const handleImageScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -594,7 +595,7 @@ export function ListingDetailTemplateScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1A1A1A" />
         }
-        contentContainerStyle={{ paddingBottom: 100 + footerInsetPadding }}
+        contentContainerStyle={{ paddingBottom: isOwn ? 24 + footerInsetPadding : 100 + footerInsetPadding }}
       >
         {/* Main image — swipeable carousel */}
         <View className="mt-4 px-4">
@@ -842,7 +843,8 @@ export function ListingDetailTemplateScreen() {
         </View>
       </ScrollView>
 
-      {/* Bottom bar — OfferUp style: save · message · make offer */}
+      {/* Bottom bar — OfferUp style: save · message · make offer (hidden on own listings) */}
+      {!isOwn ? (
       <View
         className="absolute inset-x-0 bottom-0 z-50 border-t border-[#F0F0F0] bg-white px-4"
         style={{ paddingTop: 12, paddingBottom: footerInsetPadding }}
@@ -862,13 +864,12 @@ export function ListingDetailTemplateScreen() {
 
           <Pressable
             onPress={handleMessageSeller}
-            disabled={isOwnListing(listing, user)}
             className="h-12 flex-1 items-center justify-center rounded-2xl border border-[#E5E7EB] bg-white"
-            style={({ pressed }) => ({ opacity: isOwnListing(listing, user) ? 0.5 : (pressed ? 0.85 : 1) })}
+            style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
           >
             <Text
               className="text-[14px] text-[#1A1A1A]"
-              style={{ fontFamily: ListifyFonts.semiBold, opacity: isOwnListing(listing, user) ? 0.5 : 1 }}
+              style={{ fontFamily: ListifyFonts.semiBold }}
             >
               Message
             </Text>
@@ -895,6 +896,7 @@ export function ListingDetailTemplateScreen() {
           </Pressable>
         </View>
       </View>
+      ) : null}
 
       {/* Make Offer bottom sheet */}
       <Modal

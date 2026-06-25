@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/splashscreenImg/logo.png",
     "scheme": "listifyapp",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
@@ -29,6 +29,11 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.listifys.app",
+      "androidStatusBar": {
+        "barStyle": "dark-content",
+        "backgroundColor": "#FFFFFF",
+        "translucent": false
+      },
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.CAMERA",
