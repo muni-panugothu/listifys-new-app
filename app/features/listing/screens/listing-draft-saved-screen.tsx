@@ -40,7 +40,7 @@ export function ListingDraftSavedScreen() {
         <View className="flex-row items-center gap-2">
           <MaterialIcons name="storefront" size={24} color="#27BB97" />
           <Text className="text-[20px] font-black tracking-tight text-[#27BB97]">
-            Listify
+            Listifys
           </Text>
         </View>
         <Pressable className="rounded-full p-2">

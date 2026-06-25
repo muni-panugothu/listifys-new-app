@@ -166,7 +166,7 @@ export function SecurityAlertScreen() {
             style={{ fontFamily: ListifyFonts.regular }}
             className="text-sm text-zinc-400 text-center leading-5"
           >
-            A new sign-in to your Listify account was detected from an{" "}
+            A new sign-in to your Listifys account was detected from an{" "}
             {isNewDevice ? "unrecognized device" : "unusual location"}.
           </Text>
         </View>

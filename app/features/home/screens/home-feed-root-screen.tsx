@@ -943,7 +943,7 @@ export function HomeFeedRootScreen() {
               Login Required
             </Text>
             <Text className="text-[14px] text-center text-[#6C7A74] leading-5">
-              Please sign in to post your products and start selling on Listify.
+              Please sign in to post your products and start selling on Listifys.
             </Text>
           </View>
           <Pressable

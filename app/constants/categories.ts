@@ -14,7 +14,7 @@ export type CategorySlug =
   | "jobs"
   | "sports"
   | "collectibles"
-  | "pets"
+  | "pets supplies"
   | "books"
   | "beauty"
   | "others"
@@ -227,8 +227,8 @@ export const CATEGORIES: CategoryConfig[] = [
     ],
   },
   {
-    slug: "pets",
-    name: "Pets",
+    slug: "pets supplies",
+    name: "Pets Supplies",
     icon: "pets",
     apiPath: "/api/pets",
     subcategories: [
@@ -442,22 +442,22 @@ export const FORSALE_SUBCATEGORY_TO_CATEGORY: Record<string, string> = {
   "Memorabilia": "Collectibles",
   "Art & Prints": "Collectibles",
   "Other Collectibles": "Collectibles",
-  "Dogs": "Pets",
-  "Cats": "Pets",
-  "Birds": "Pets",
-  "Fish & Aquarium": "Pets",
-  "Small Animals": "Pets",
-  "Reptiles": "Pets",
-  "Pet Supplies": "Pets",
-  "Pet Services": "Pets",
-  "Pet Food & Treats": "Pets",
-  "Pet Accessories": "Pets",
-  "Pet Grooming": "Pets",
+  "Dogs": "Pets Supplies",
+  "Cats": "Pets Supplies & Services",
+  "Birds": "Pets Supplies & Services  ",
+  "Fish & Aquarium": "Pets Supplies & Services",
+  "Small Animals": "Pets Supplies & Services",
+  "Reptiles": "Pets Supplies & Services",
+  "Pet Supplies": "Pets Supplies & Services",
+  "Pet Services": "Pets Supplies & Services",
+  "Pet Food & Treats": "Pets Supplies & Services",
+  "Pet Accessories": "Pets Supplies & Services",
+  "Pet Grooming": "Pets Supplies & Services",
   "Pet Health & Vet": "Pets",
-  "Pet Cages & Kennels": "Pets",
-  "Aquarium Supplies": "Pets",
-  "Pet Clothing": "Pets",
-  "Other Pets": "Pets",
+  "Pet Cages & Kennels": "Pets Supplies & Services",
+  "Aquarium Supplies": "Pets Supplies & Services",
+  "Pet Clothing": "Pets Supplies & Services",
+  "Other Pets": "Pets Supplies & Services",
   "Makeup": "Beauty",
   "Skincare": "Beauty",
   "Hair Care": "Beauty",

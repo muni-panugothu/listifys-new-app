@@ -88,7 +88,7 @@ export function LocationPermissionSheet({
 
   const body = isServicesDisabled
     ? Platform.OS === "android"
-      ? "Your device's GPS is turned off. Tap below to enable Location Services so Listify can find listings near you."
+      ? "Your device's GPS is turned off. Tap below to enable Location Services so Listifys can find listings near you."
       : "Your device's Location Services are disabled. Go to Settings → Privacy & Security → Location Services to turn them on."
     : Platform.OS === "android"
     ? "Location access is blocked. Tap 'Open Settings', then go to Permissions → Location and select 'Allow'."

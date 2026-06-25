@@ -11,6 +11,13 @@ import { showErrorToast } from "@/lib/toast";
 import { getMileageUnitForCountry } from "@/lib/listing-distance";
 
 import { CATEGORY_MAP } from "@/constants/categories";
+import { getAdPlaceholders, MOBILE_DEVICE_SUBCATEGORIES } from "@/constants/post-form-placeholders";
+import {
+  isEventDateTodayOrFuture,
+  isValidEventTime,
+  normalizeEventTime,
+  parseEventDateInput,
+} from "@/lib/post-form-validators";
 import { deleteListing } from "@/features/listing/services/listing-api";
 import {
   CONDITION_OPTIONS,
@@ -73,7 +80,8 @@ const OCCUPANCY_OPTIONS = ["Single", "Shared", "Any"];
 const WARRANTY_OPTIONS = ["Under Warranty", "Expired", "No Warranty"];
 const ENERGY_RATING_OPTIONS = ["1 Star", "2 Star", "3 Star", "4 Star", "5 Star"];
 const TV_AUDIO_SUBCATEGORIES = ["TVs, Video - Audio", "Hard Disks, Printers & Monitors"];
-const COMPUTER_SUBCATEGORIES = ["Computers & Laptops", "Computer Accessories", "Hard Disks, Printers & Monitors"];
+const COMPUTER_LAPTOP_SUBCATEGORIES = ["Computers & Laptops"];
+const MONITOR_PRINTER_SUBCATEGORIES = ["Hard Disks, Printers & Monitors"];
 const APPLIANCE_SUBCATEGORIES = ["Kitchen & Other Appliances", "Fridges", "Washing Machines", "ACs"];
 const CAMERA_SUBCATEGORIES = ["Cameras & Lenses"];
 
@@ -172,7 +180,7 @@ function ChipRow({ options, selected, onToggle }: { options: string[]; selected:
 }
 
 /** Text input field with icon */
-function IconField({ icon, value, onChangeText, placeholder, numeric, maxLength, dateExpiry }: {
+function IconField({ icon, value, onChangeText, placeholder, numeric, maxLength, dateExpiry, onBlur }: {
   icon: React.ComponentProps<typeof MaterialIcons>["name"];
   value: string;
   onChangeText: (v: string) => void;
@@ -180,6 +188,7 @@ function IconField({ icon, value, onChangeText, placeholder, numeric, maxLength,
   numeric?: boolean;
   maxLength?: number;
   dateExpiry?: boolean;
+  onBlur?: () => void;
 }) {
   const handleChange = (v: string) => {
     if (numeric) {
@@ -204,6 +213,7 @@ function IconField({ icon, value, onChangeText, placeholder, numeric, maxLength,
       <TextInput
         value={value}
         onChangeText={handleChange}
+        onBlur={onBlur}
         keyboardType={numeric || dateExpiry ? "numeric" : "default"}
         maxLength={dateExpiry ? 7 : maxLength}
         placeholder={placeholder}
@@ -239,208 +249,6 @@ function Label({ text, required }: { text: string; required?: boolean }) {
   );
 }
 
-// ── Context-aware placeholders (category + subcategory → smart hints) ─────────
-type PlaceholderPair = { title: string; description: string };
-const AD_PLACEHOLDERS: Record<string, Record<string, PlaceholderPair> & { _default: PlaceholderPair }> = {
-  vehicles: {
-    Cars: {
-      title: "e.g. 2022 Maruti Swift VXi — 15,000 km, 1st owner",
-      description: "Include model year, fuel type, km driven, service history, any modifications, and reason for selling.",
-    },
-    Motorcycles: {
-      title: "e.g. Royal Enfield Classic 350 BS6 2021 — 8,000 km",
-      description: "Mention engine CC, km driven, service records, modifications, and current condition.",
-    },
-    Bicycles: {
-      title: "e.g. Hero Sprint Pro 21-speed Mountain Bike — Like New",
-      description: "Include brand, gear count, frame size, accessories included, and any repairs done.",
-    },
-    Scooters: {
-      title: "e.g. Honda Activa 6G 2023 — Single Owner, Full Insurance",
-      description: "Mention year, mileage, insurance validity, service history, and accessories.",
-    },
-    _default: {
-      title: "e.g. Hyundai i20 2021 — Petrol, 20,000 km, 1 Owner",
-      description: "Describe fuel type, km driven, ownership history, condition, and any extras included.",
-    },
-  },
-  mobiles: {
-    "Mobile Phones": {
-      title: "e.g. iPhone 14 Pro Max 256GB Deep Purple — Battery 96%",
-      description: "Include storage, color, battery health %, accessories in box, and any scratches or issues.",
-    },
-    Tablets: {
-      title: "e.g. Samsung Galaxy Tab S8 128GB — Wi-Fi, 6 months old",
-      description: "Mention storage, connectivity (Wi-Fi / 5G), screen condition, accessories, and purchase year.",
-    },
-    Accessories: {
-      title: "e.g. Apple AirPods Pro 2nd Gen — Original Box Included",
-      description: "Include compatibility, original accessories, usage duration, and any defects.",
-    },
-    "Chargers & Cables": {
-      title: "e.g. 65W USB-C Fast Charger — Compatible with Samsung, OnePlus",
-      description: "Mention watt rating, connector type, cable length, compatible brands, and condition.",
-    },
-    "Earphones & Headphones": {
-      title: "e.g. Sony WH-1000XM5 Noise-Cancelling Headphones — Like New",
-      description: "Include connectivity (wired/wireless), noise cancellation, battery life, and what's in the box.",
-    },
-    _default: {
-      title: "e.g. Samsung Galaxy S23 Ultra 256GB — Excellent Condition",
-      description: "Describe storage, color, battery health, accessories included, and purchase date.",
-    },
-  },
-  electronics: {
-    Televisions: {
-      title: "e.g. Sony 55-inch 4K OLED Smart TV — 1 Year Old",
-      description: "Include screen size, resolution, smart features, remote included, and any issues.",
-    },
-    Laptops: {
-      title: "e.g. MacBook Pro 14-inch M2 — 16GB RAM, 512GB SSD",
-      description: "Specify processor, RAM, storage, battery cycles, screen condition, and charger included.",
-    },
-    Cameras: {
-      title: "e.g. Sony Alpha A7III Mirrorless Camera Body — 10k Shutter Count",
-      description: "Include shutter count, accessories, lenses included, sensor condition, and original box.",
-    },
-    "Air Conditioners": {
-      title: "e.g. Voltas 1.5 Ton 5-Star Inverter AC — 2 Years Old",
-      description: "Mention tonnage, star rating, installation age, and service history.",
-    },
-    _default: {
-      title: "e.g. LG 8kg Front Load Washing Machine — Excellent Condition",
-      description: "Include brand, model, age, condition, features, and reason for selling.",
-    },
-  },
-  properties: {
-    "For Rent": {
-      title: "e.g. 2BHK Furnished Flat for Rent — Near Metro, Hyderabad",
-      description: "Mention BHK, furnishing, floor, nearby landmarks, amenities, and preferred tenant.",
-    },
-    "For Sale": {
-      title: "e.g. 3BHK Apartment for Sale — Gated Society, 1200 sqft",
-      description: "Include area in sqft, floor, amenities, possession status, loan eligibility, and location.",
-    },
-    "PG / Hostel": {
-      title: "e.g. Single Room PG for Girls — AC, Meals Included, Banjara Hills",
-      description: "Specify room type, gender preference, meals, curfew, amenities, and nearby transport.",
-    },
-    _default: {
-      title: "e.g. 2BHK Semi-Furnished Flat — Banjara Hills, Hyderabad",
-      description: "Describe size, furnishing status, floor, amenities, and any nearby highlights.",
-    },
-  },
-  jobs: {
-    "Full-Time": {
-      title: "e.g. Senior React Native Developer — Remote, 5+ yrs, ₹15–20 LPA",
-      description: "Include role responsibilities, required skills, experience range, salary, and perks.",
-    },
-    "Part-Time": {
-      title: "e.g. Part-Time Content Writer — Work from Home, Flexible Hours",
-      description: "Describe tasks, required skills, work hours per week, and payment terms.",
-    },
-    Internship: {
-      title: "e.g. Marketing Intern — 3-Month Paid Internship, Hyderabad",
-      description: "Specify duration, stipend, skills required, learning outcomes, and location.",
-    },
-    _default: {
-      title: "e.g. Field Sales Executive — FMCG, 2+ yrs Experience",
-      description: "Include key responsibilities, qualifications, CTC, location, and how to apply.",
-    },
-  },
-  services: {
-    Plumbing: {
-      title: "e.g. Expert Plumber — Pipe Fitting, Leak Repair, Available 24/7",
-      description: "Describe services offered, years of experience, service area, and pricing.",
-    },
-    Electrician: {
-      title: "e.g. Licensed Electrician — Wiring, Repair, Home Automation",
-      description: "List services, certifications, area covered, and emergency availability.",
-    },
-    Cleaning: {
-      title: "e.g. Professional Home Deep Cleaning — Hyderabad, ₹999 onwards",
-      description: "Mention what's included, frequency options, equipment used, and service guarantee.",
-    },
-    _default: {
-      title: "e.g. Professional Home Painting — Interior & Exterior",
-      description: "Describe your service, experience, area coverage, pricing, and contact availability.",
-    },
-  },
-  furniture: {
-    Sofas: {
-      title: "e.g. 3-Seater L-Shaped Sofa — Grey Fabric, 2 Years Old",
-      description: "Include dimensions, fabric type, colour, age, condition, and if dismantling is needed for delivery.",
-    },
-    Beds: {
-      title: "e.g. King-Size Wooden Bed with Storage — Teak Wood",
-      description: "Specify wood type, size, storage options, mattress included, and assembly status.",
-    },
-    _default: {
-      title: "e.g. IKEA Dining Table 4-Seater — White, Mint Condition",
-      description: "Include dimensions, material, colour, age, and delivery or pickup info.",
-    },
-  },
-  fashion: {
-    Footwear: {
-      title: "e.g. Nike Air Max 270 — Size UK 9, Black, Worn Twice",
-      description: "Mention size, colour, how many times worn, original box, and any sole wear.",
-    },
-    "Men's Clothing": {
-      title: "e.g. Zara Slim-Fit Chinos — Size 32, Navy Blue, Brand New",
-      description: "Include brand, size, colour, material, condition (worn/new), and wash instructions.",
-    },
-    "Women's Clothing": {
-      title: "e.g. Fabindia Cotton Salwar Suit — Size M, Unstitched",
-      description: "Describe fabric, size, colour, stitched/unstitched, condition, and occasion.",
-    },
-    _default: {
-      title: "e.g. Levi's 511 Slim Jeans — Size 32×30, Dark Blue",
-      description: "Specify brand, size, colour, condition, and times worn.",
-    },
-  },
-  events: {
-    _default: {
-      title: "e.g. Tech Summit 2026 — Networking & Innovation Conference",
-      description: "Mention date, venue, agenda, speakers, ticket price, and how to register.",
-    },
-  },
-  sports: {
-    _default: {
-      title: "e.g. Yonex Arcsaber 11 Badminton Racket — 3U, Excellent Grip",
-      description: "Include brand, sport, condition, accessories included, and any string/wear details.",
-    },
-  },
-  books: {
-    _default: {
-      title: "e.g. Clean Code by Robert C. Martin — 2nd Edition, Like New",
-      description: "Include author, edition, pages marked or highlighted, and current condition.",
-    },
-  },
-  pets: {
-    _default: {
-      title: "e.g. 3-Month-Old Golden Retriever Puppy — Vaccinated, Dewormed",
-      description: "Include breed, age, vaccination status, diet, temperament, and pickup location.",
-    },
-  },
-  collectibles: {
-    _default: {
-      title: "e.g. 1971 Indian 2-Paisa Coin — Uncirculated Condition",
-      description: "Describe year, condition, any certificates of authenticity, provenance, and rarity.",
-    },
-  },
-  _default: {
-    _default: {
-      title: "e.g. Brand new item — great condition",
-      description: "Describe what you're selling, its condition, age, and any extras included.",
-    },
-  },
-} as const;
-
-function getAdPlaceholders(category: string, subcategory: string): PlaceholderPair {
-  const catMap = (AD_PLACEHOLDERS as Record<string, Record<string, PlaceholderPair> & { _default: PlaceholderPair }>)[category];
-  if (!catMap) return AD_PLACEHOLDERS._default._default;
-  return catMap[subcategory] ?? catMap._default;
-}
 function LabelPill({ text, required }: { text: string; required?: boolean }) {
   return (
     <Text
@@ -545,7 +353,7 @@ export function PostAdStep2DetailsScreen() {
   const isFashion = category === "fashion";
   const isSports = category === "sports";
   const isCollectible = category === "collectibles";
-  const isPet = category === "pets";
+  const isPet = category === "pets supplies";
   const isBook = category === "books";
   const isBeauty = category === "beauty";
   const isToy = category === "toys";
@@ -554,9 +362,26 @@ export function PostAdStep2DetailsScreen() {
 
   // Electronics subcategory-specific
   const showTvFields = isElectronics && TV_AUDIO_SUBCATEGORIES.includes(subcategory);
-  const showComputerFields = isElectronics && COMPUTER_SUBCATEGORIES.includes(subcategory);
+  const showComputerFields = isElectronics && COMPUTER_LAPTOP_SUBCATEGORIES.includes(subcategory);
+  const showMonitorFields = isElectronics && MONITOR_PRINTER_SUBCATEGORIES.includes(subcategory);
   const showApplianceFields = isElectronics && APPLIANCE_SUBCATEGORIES.includes(subcategory);
   const showCameraFields = isElectronics && CAMERA_SUBCATEGORIES.includes(subcategory);
+
+  const isMobileDevice = isMobile && MOBILE_DEVICE_SUBCATEGORIES.has(subcategory);
+  const isMobileAccessory = isMobile && !isMobileDevice;
+
+  const adPlaceholders = useMemo(
+    () => getAdPlaceholders(category, subcategory),
+    [category, subcategory],
+  );
+
+  const eventDatePlaceholder = useMemo(() => {
+    const today = new Date();
+    const day = today.getDate();
+    const month = today.toLocaleString("en-IN", { month: "short" });
+    const year = today.getFullYear();
+    return `e.g. ${day} ${month} ${year}`;
+  }, []);
 
   // Vehicle subcategory-specific
   const isCar = isVehicle && subcategory === "Cars";
@@ -620,6 +445,44 @@ export function PostAdStep2DetailsScreen() {
         "Use MM/YYYY format (e.g. 12/2026). Month must be 01–12.",
       );
       return;
+    }
+
+    if (isEvent) {
+      if (!eventDate.trim()) {
+        showErrorToast("Event date required", "Enter the event date (today or a future date).");
+        return;
+      }
+      const parsedDate = parseEventDateInput(eventDate);
+      if (!parsedDate) {
+        showErrorToast(
+          "Invalid event date",
+          "Use a valid date like 25 Dec 2026, 25/12/2026, or 2026-12-25. Past dates are not allowed.",
+        );
+        return;
+      }
+      if (!isEventDateTodayOrFuture(parsedDate)) {
+        showErrorToast("Past date not allowed", "Event date must be today or a future date.");
+        return;
+      }
+      if (!eventTime.trim()) {
+        showErrorToast("Event time required", "Enter the event start time.");
+        return;
+      }
+      if (!isValidEventTime(eventTime)) {
+        showErrorToast(
+          "Invalid event time",
+          "Use 12-hour time with AM/PM (e.g. 7:00 PM) or 24-hour format (e.g. 19:00).",
+        );
+        return;
+      }
+      if (!organizer.trim()) {
+        showErrorToast("Organizer required", "Enter who is organizing this event.");
+        return;
+      }
+      if (!venue.trim()) {
+        showErrorToast("Venue required", "Enter where the event will take place.");
+        return;
+      }
     }
 
     router.push("/post-ad-step3-media");
@@ -745,7 +608,7 @@ export function PostAdStep2DetailsScreen() {
               value={title}
               onChangeText={(v) => dispatch(setTitle(v))}
               maxLength={70}
-              placeholder={getAdPlaceholders(category, subcategory).title}
+              placeholder={adPlaceholders.title}
               placeholderTextColor="#94A3B8"
               className="h-12 rounded-lg border border-slate-200 bg-white px-4 text-[14px] text-[#161D1A]"
               style={{ paddingVertical: 0 }}
@@ -758,7 +621,7 @@ export function PostAdStep2DetailsScreen() {
             <TextInput
               value={description}
               onChangeText={(v) => dispatch(setDescription(v))}
-              placeholder={getAdPlaceholders(category, subcategory).description}
+              placeholder={adPlaceholders.description}
               placeholderTextColor="#94A3B8"
               multiline
               numberOfLines={4}
@@ -766,7 +629,7 @@ export function PostAdStep2DetailsScreen() {
               className="min-h-30 rounded-lg border border-slate-200 bg-white p-4 text-[14px] text-[#161D1A]"
             />
             <Text className="mt-1 px-1 text-[11px] text-[#6C7A74]">
-              Mention key selling points like brand, age, and condition details.
+              {adPlaceholders.hint ?? "Mention key selling points like brand, age, and condition details."}
             </Text>
           </View>
 
@@ -978,6 +841,12 @@ export function PostAdStep2DetailsScreen() {
                     <PillRow options={ENERGY_RATING_OPTIONS} value={energyRating} onSelect={(v) => dispatch(setEnergyRating(v))} />
                   </View>
                 </>
+              )}
+              {showMonitorFields && (
+                <View className="mb-6">
+                  <Label text="Screen Size / Specs" />
+                  <IconField icon="desktop-windows" value={screenSize} onChangeText={(v) => dispatch(setScreenSize(v))} placeholder='e.g. 24" monitor / 1TB HDD' />
+                </View>
               )}
               {showCameraFields && (
                 <View className="mb-6 flex-row gap-4">
@@ -1196,15 +1065,31 @@ export function PostAdStep2DetailsScreen() {
               <View className="mb-6 flex-row gap-4">
                 <View className="flex-1">
                   <Label text="Event Date" required />
+<<<<<<< HEAD
                   <IconField icon="event" value={eventDate} onChangeText={(v) => dispatch(setEventDate(v))} placeholder="e.g. 26 Jun - 28 Jun 2026" />
+=======
+                  <IconField icon="event" value={eventDate} onChangeText={(v) => dispatch(setEventDate(v))} placeholder={eventDatePlaceholder} />
+>>>>>>> 2b9c1a773761504b9fa3a18d9eee86d0359a8752
                 </View>
                 <View className="flex-1">
                   <Label text="Event Time" required />
-                  <IconField icon="access-time" value={eventTime} onChangeText={(v) => dispatch(setEventTime(v))} placeholder="e.g. 7:00 PM" />
+                  <IconField
+                    icon="access-time"
+                    value={eventTime}
+                    onChangeText={(v) => dispatch(setEventTime(v))}
+                    onBlur={() => {
+                      if (eventTime.trim()) {
+                        dispatch(setEventTime(normalizeEventTime(eventTime)));
+                      }
+                    }}
+                    placeholder="e.g. 7:00 PM"
+                  />
                 </View>
               </View>
+              <Text className="mb-6 px-1 text-[11px] text-[#6C7A74]">
+                Event date must be today or later. Use formats like {eventDatePlaceholder.replace("e.g. ", "")} or 25/12/2026. Time: 7:00 PM or 19:00.
+              </Text>
               <View className="mb-6">
-                <Label text="Organizer" required />
                 <IconField icon="person" value={organizer} onChangeText={(v) => dispatch(setOrganizer(v))} placeholder="e.g. EventBrite Inc." />
               </View>
               <View className="mb-6">
@@ -1212,10 +1097,6 @@ export function PostAdStep2DetailsScreen() {
                 <IconField icon="place" value={venue} onChangeText={(v) => dispatch(setVenue(v))} placeholder="e.g. HICC, Hyderabad" />
               </View>
               <View className="mb-6 flex-row gap-4">
-                <View className="flex-1">
-                  <Label text="Tickets Available" />
-                  <IconField icon="confirmation-number" value={ticketsAvailable} onChangeText={(v) => dispatch(setTicketsAvailable(v))} placeholder="e.g. 500" numeric />
-                </View>
                 <View className="flex-1">
                   <Label text="Age Restriction" />
                   <IconField icon="no-accounts" value={ageRestriction} onChangeText={(v) => dispatch(setAgeRestriction(v))} placeholder="e.g. 18+" />
@@ -1231,7 +1112,7 @@ export function PostAdStep2DetailsScreen() {
           {/* ═══════════════════════════════════════════════════════════════
               MOBILES FIELDS
              ═══════════════════════════════════════════════════════════════ */}
-          {isMobile && (
+          {isMobile && isMobileDevice && (
             <>
               <View className="mb-6 flex-row gap-4">
                 <View className="flex-1">
@@ -1270,6 +1151,56 @@ export function PostAdStep2DetailsScreen() {
               <View className="mb-6">
                 <Label text="Color" />
                 <IconField icon="palette" value={color} onChangeText={(v) => dispatch(setColor(v))} placeholder="e.g. Space Black" />
+              </View>
+            </>
+          )}
+
+          {isMobile && isMobileAccessory && (
+            <>
+              <View className="mb-6 flex-row gap-4">
+                <View className="flex-1">
+                  <Label text="Brand" required />
+                  <IconField icon="branding-watermark" value={brand} onChangeText={(v) => dispatch(setBrand(v))} placeholder="e.g. Spigen, Anker, Boat" />
+                </View>
+                <View className="flex-1">
+                  <Label text={subcategory === "Cases & Covers" ? "Compatible Phone" : "Model / Spec"} required />
+                  <IconField
+                    icon="info-outline"
+                    value={productModel}
+                    onChangeText={(v) => dispatch(setModel(v))}
+                    placeholder={
+                      subcategory === "Cases & Covers"
+                        ? "e.g. iPhone 15 Pro"
+                        : subcategory === "Chargers & Cables"
+                          ? "e.g. 65W USB-C"
+                          : subcategory === "Power Banks"
+                            ? "e.g. 20000mAh"
+                            : subcategory === "Memory Cards & Storage"
+                              ? "e.g. 128GB microSD"
+                              : "e.g. Galaxy S24 / Watch 6"
+                    }
+                  />
+                </View>
+              </View>
+              {(subcategory === "Cases & Covers" || subcategory === "Screen Guards & Protectors") && (
+                <View className="mb-6">
+                  <Label text="Material / Type" />
+                  <IconField icon="layers" value={material} onChangeText={(v) => dispatch(setMaterial(v))} placeholder="e.g. TPU back cover / tempered glass" />
+                </View>
+              )}
+              {(subcategory === "Power Banks" || subcategory === "Memory Cards & Storage") && (
+                <View className="mb-6">
+                  <Label text="Capacity" />
+                  <IconField icon="straighten" value={capacity || storage} onChangeText={(v) => dispatch(setCapacity(v))} placeholder="e.g. 20000mAh / 128GB" />
+                </View>
+              )}
+              <View className="mb-6">
+                <LabelPill text="Warranty" />
+                <PillRow options={WARRANTY_OPTIONS} value={warranty} onSelect={(v) => dispatch(setWarranty(v))} />
+              </View>
+              <View className="mb-6">
+                <Label text="Color" />
+                <IconField icon="palette" value={color} onChangeText={(v) => dispatch(setColor(v))} placeholder="e.g. Black, Clear, Blue" />
               </View>
             </>
           )}

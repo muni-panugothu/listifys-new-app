@@ -143,7 +143,7 @@ export function ResetOtpVerificationScreen() {
         </Pressable>
 
         <Text className="text-xl font-black tracking-tight text-[#27BB97]">
-          Listify
+            Listifys
         </Text>
 
         <View className="h-10 w-10" />

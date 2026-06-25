@@ -37,7 +37,7 @@ export const PRIVACY_POLICY: LegalDocument = {
   contactNote:
     "If you would like to provide feedback about this Privacy Policy, or if you have any questions, please contact us.",
   intro:
-    "This Privacy Policy explains how information about you is collected, used, disclosed, and otherwise processed by Listify (“we”, “us”, or “our”). This policy applies when you use our mobile applications, website, and related online services (collectively, the “Listify Service”).\n\nWe may change this Privacy Policy from time to time. If we make changes, we will revise the date at the top of this policy. If we make material changes, we will provide more prominent notice within the app. We encourage you to review this policy whenever you use Listify.",
+    "This Privacy Policy explains how information about you is collected, used, disclosed, and otherwise processed by Listifys (“we”, “us”, or “our”). This policy applies when you use our mobile applications, website, and related online services (collectively, the “Listifys Service”).\n\nWe may change this Privacy Policy from time to time. If we make changes, we will revise the date at the top of this policy. If we make material changes, we will provide more prominent notice within the app. We encourage you to review this policy whenever you use Listifys.",
   chapters: [
     {
       id: "collect",
@@ -49,13 +49,13 @@ export const PRIVACY_POLICY: LegalDocument = {
           label: "A",
           title: "Information you provide to us",
           paragraphs: [
-            "Listify collects information you provide when you register, create listings, message other users, or contact support, including:",
+            "Listifys collects information you provide when you register, create listings, message other users, or contact support, including:",
           ],
           items: [
             "Your name, email address, phone number, and profile photo.",
             "Your account password (stored in encrypted form).",
             "Listing details: photos, titles, descriptions, prices, and categories.",
-            "Messages, offers, and reviews you send through Listify.",
+            "Messages, offers, and reviews you send through Listifys.",
             "Government ID or verification documents, if you choose to verify your account.",
             "Any other information you choose to provide.",
           ],
@@ -64,7 +64,7 @@ export const PRIVACY_POLICY: LegalDocument = {
           id: "collect-b",
           label: "B",
           title: "Information we collect automatically",
-          paragraphs: ["When you access Listify, we automatically collect information such as:"],
+          paragraphs: ["When you access Listifys, we automatically collect information such as:"],
           items: [
             "Device information: hardware model, operating system, app version, and unique device identifiers.",
             "Log data: IP address, access times, pages or screens viewed, and general usage activity.",
@@ -77,7 +77,7 @@ export const PRIVACY_POLICY: LegalDocument = {
           label: "C",
           title: "Information from third parties",
           paragraphs: [
-            "We may receive information from sign-in providers (such as Google), payment processors, analytics partners, and fraud-prevention services to secure accounts and improve Listify.",
+            "We may receive information from sign-in providers (such as Google), payment processors, analytics partners, and fraud-prevention services to secure accounts and improve Listifys.",
           ],
         },
       ],
@@ -92,12 +92,12 @@ export const PRIVACY_POLICY: LegalDocument = {
           label: "A",
           title: "Purposes of use",
           items: [
-            "Verify your account and provide access to the Listify Service.",
+            "Verify your account and provide access to the Listifys Service.",
             "Connect buyers and sellers, enable chat, offers, and notifications.",
             "Detect and prevent fraud, abuse, and security incidents.",
             "Personalize listings, search results, and recommendations.",
             "Send service messages, security alerts, and promotional communications (where permitted).",
-            "Improve, analyze, and develop Listify features.",
+            "Improve, analyze, and develop Listifys features.",
             "Comply with legal obligations and enforce our Terms of Service.",
           ],
         },
@@ -106,7 +106,7 @@ export const PRIVACY_POLICY: LegalDocument = {
           label: "B",
           title: "Location of processing",
           paragraphs: [
-            "Listify is operated from India. By using the service, you consent to the processing and transfer of information in accordance with this policy and applicable law.",
+            "Listifys is operated from India. By using the service, you consent to the processing and transfer of information in accordance with this policy and applicable law.",
           ],
         },
       ],
@@ -122,9 +122,9 @@ export const PRIVACY_POLICY: LegalDocument = {
           title: "Business disclosures",
           items: [
             "With other users when you post listings, send messages, or make your profile public.",
-            "With vendors and service providers who help us operate Listify (hosting, email, SMS, maps, analytics, push notifications).",
+            "With vendors and service providers who help us operate Listifys (hosting, email, SMS, maps, analytics, push notifications).",
             "When required by law, regulation, legal process, or governmental request.",
-            "To protect the rights, property, and safety of Listify, our users, or the public.",
+            "To protect the rights, property, and safety of Listifys, our users, or the public.",
             "In connection with a merger, acquisition, or sale of assets, with notice where required.",
             "With your consent or at your direction.",
           ],
@@ -134,7 +134,7 @@ export const PRIVACY_POLICY: LegalDocument = {
           label: "B",
           title: "Security",
           paragraphs: [
-            "Listify takes reasonable measures to help protect information from loss, theft, misuse, and unauthorized access. No method of transmission or storage is completely secure.",
+            "Listifys takes reasonable measures to help protect information from loss, theft, misuse, and unauthorized access. No method of transmission or storage is completely secure.",
           ],
         },
       ],
@@ -183,7 +183,7 @@ export const TERMS_OF_SERVICE: LegalDocument = {
   contactTitle: "Questions and Comments",
   contactNote: "For questions about these Terms, please contact us.",
   intro:
-    "These Terms of Service (“Terms”) govern your access to and use of the Listify mobile application and related services (the “Listify Service”). By creating an account or using Listify, you agree to these Terms and our Privacy Policy.\n\nWe may update these Terms from time to time. Continued use of Listify after changes become effective constitutes acceptance of the updated Terms.",
+    "These Terms of Service (“Terms”) govern your access to and use of the Listifys mobile application and related services (the “Listifys Service”). By creating an account or using Listifys, you agree to these Terms and our Privacy Policy.\n\nWe may update these Terms from time to time. Continued use of Listifys after changes become effective constitutes acceptance of the updated Terms.",
   chapters: [
     {
       id: "agreement",
@@ -195,7 +195,7 @@ export const TERMS_OF_SERVICE: LegalDocument = {
           label: "A",
           title: "Acceptance",
           paragraphs: [
-            "By using Listify, you agree to be bound by these Terms. If you do not agree, you may not use the service.",
+            "By using Listifys, you agree to be bound by these Terms. If you do not agree, you may not use the service.",
           ],
         },
         {
@@ -205,7 +205,7 @@ export const TERMS_OF_SERVICE: LegalDocument = {
           items: [
             "You must be at least 18 years old.",
             "You must provide accurate registration information.",
-            "You may not use Listify for unlawful, fraudulent, or abusive purposes.",
+            "You may not use Listifys for unlawful, fraudulent, or abusive purposes.",
           ],
         },
       ],
@@ -213,14 +213,14 @@ export const TERMS_OF_SERVICE: LegalDocument = {
     {
       id: "marketplace",
       roman: "II",
-      title: "The Listify Marketplace",
+      title: "The Listifys Marketplace",
       subsections: [
         {
           id: "marketplace-a",
           label: "A",
           title: "Our role",
           paragraphs: [
-            "Listify is a platform that helps users discover, buy, and sell locally. Unless we state otherwise, Listify is not a party to transactions between users and does not take title to items listed on the service.",
+            "Listifys is a platform that helps users discover, buy, and sell locally. Unless we state otherwise, Listifys is not a party to transactions between users and does not take title to items listed on the service.",
           ],
         },
         {
@@ -231,7 +231,7 @@ export const TERMS_OF_SERVICE: LegalDocument = {
             "You may list only items or services you have the right to offer.",
             "Prohibited items include illegal goods, weapons, drugs, stolen property, and counterfeit products.",
             "Listings must be accurate — photos, prices, and descriptions must reflect the actual item.",
-            "Harassment, spam, scraping, and attempts to circumvent Listify systems are not allowed.",
+            "Harassment, spam, scraping, and attempts to circumvent Listifys systems are not allowed.",
           ],
         },
         {
@@ -254,7 +254,7 @@ export const TERMS_OF_SERVICE: LegalDocument = {
           label: "A",
           title: "License you grant",
           paragraphs: [
-            "You retain ownership of content you post. You grant Listify a non-exclusive, worldwide license to host, display, and distribute your content solely to operate and promote the service.",
+            "You retain ownership of content you post. You grant Listifys a non-exclusive, worldwide license to host, display, and distribute your content solely to operate and promote the service.",
           ],
         },
         {
@@ -277,7 +277,7 @@ export const TERMS_OF_SERVICE: LegalDocument = {
           label: "A",
           title: "Disclaimers",
           paragraphs: [
-            "Listify is provided “as is” without warranties of any kind. We do not guarantee uninterrupted service or the accuracy of user-generated content.",
+            "Listifys is provided “as is” without warranties of any kind. We do not guarantee uninterrupted service or the accuracy of user-generated content.",
           ],
         },
         {
@@ -285,7 +285,7 @@ export const TERMS_OF_SERVICE: LegalDocument = {
           label: "B",
           title: "Limitation of liability",
           paragraphs: [
-            "To the fullest extent permitted by law, Listify is not liable for indirect or consequential damages. Our total liability is limited to the greater of fees you paid us in the past 12 months or ₹1,000.",
+            "To the fullest extent permitted by law, Listifys is not liable for indirect or consequential damages. Our total liability is limited to the greater of fees you paid us in the past 12 months or ₹1,000.",
           ],
         },
         {
@@ -305,8 +305,8 @@ export const TERMS_OF_SERVICE: LegalDocument = {
 export const ABOUT_HERO = {
   headline: "Buy. Sell. Connect.",
   subheadline:
-    "Listify brings people together in an easy-to-use mobile app to get more of what they need, right where they are.",
-  body: "From finding that perfect chair to hiring someone for a quick repair, Listify helps you get more done locally.",
+    "Listifys brings people together in an easy-to-use mobile app to get more of what they need, right where they are.",
+  body: "From finding that perfect chair to hiring someone for a quick repair, Listifys helps you get more done locally.",
 };
 
 export const ABOUT_FEATURES = [
@@ -321,7 +321,7 @@ export const ABOUT_FEATURES = [
     id: "exchange",
     title: "Stress-free exchange",
     description:
-      "Check seller profiles, chat in-app before you meet, and negotiate offers without leaving Listify.",
+      "Check seller profiles, chat in-app before you meet, and negotiate offers without leaving Listifys.",
     icon: "handshake" as const,
   },
   {
@@ -376,6 +376,6 @@ export const ABOUT_STATS = [
 
 export const ABOUT_TESTIMONIAL = {
   quote:
-    "Listify makes it easy to buy and sell locally. Posting is quick, messaging is simple, and I can find great deals near me.",
-  author: "Listify community member",
+    "Listifys makes it easy to buy and sell locally. Posting is quick, messaging is simple, and I can find great deals near me.",
+  author: "Listifys community member",
 };

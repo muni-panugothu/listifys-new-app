@@ -334,7 +334,7 @@ const ENTITY_LABELS: Record<string, string> = {
   forsale: "For Sale",
   sports: "Sports",
   collectibles: "Collectibles",
-  pets: "Pets",
+  "pets supplies": "Pets Supplies",
   books: "Books",
   beauty: "Beauty",
   toys: "Toys",

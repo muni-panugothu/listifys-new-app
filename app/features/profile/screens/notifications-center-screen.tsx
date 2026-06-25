@@ -166,7 +166,7 @@ function NotificationRow({
   const body =
     item.message?.trim() ||
     item.title?.trim() ||
-    "You have a new notification on Listify.";
+    "You have a new notification on Listifys.";
   const timeLabel = formatRelativeTime(item.createdAt);
   const swipeRef = useRef<Swipeable>(null);
   const [rowHeight, setRowHeight] = useState(0);

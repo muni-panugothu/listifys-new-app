@@ -29,6 +29,8 @@ type SellFlowLayoutProps = {
   onPrimaryPress?: () => void;
   primaryDisabled?: boolean;
   primaryLoading?: boolean;
+  /** Keeps taps on list rows working while the subcategory search keyboard is open. */
+  keyboardPersistTaps?: "always" | "handled" | "never";
 };
 
 export function SellSectionCard({
@@ -84,6 +86,7 @@ export function SellFlowLayout({
   onPrimaryPress,
   primaryDisabled = false,
   primaryLoading = false,
+  keyboardPersistTaps = "handled",
 }: SellFlowLayoutProps) {
   const insets = useSafeAreaInsets();
   const showFooter = Boolean(primaryLabel && onPrimaryPress);
@@ -129,6 +132,7 @@ export function SellFlowLayout({
       <KeyboardFormScroll
         bottomOffset={showFooter ? footerBottomPad + 72 : 24}
         keyboardVerticalOffset={insets.top}
+        keyboardShouldPersistTaps={keyboardPersistTaps}
         contentContainerStyle={{
           paddingHorizontal: 20,
         }}

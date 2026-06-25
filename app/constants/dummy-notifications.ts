@@ -10,7 +10,7 @@ export const DUMMY_NOTIFICATIONS: NotificationItem[] = [
     type: "like",
     title: "",
     message:
-      "Someone liked your listing on Listify. Check it out and chat with them!",
+      "Someone liked your listing on Listifys. Check it out and chat with them!",
     read: false,
     createdAt: hoursAgo(2),
   },
@@ -19,7 +19,7 @@ export const DUMMY_NOTIFICATIONS: NotificationItem[] = [
     type: "category",
     title: "",
     message:
-      "🎯 New category alert! We've added Electronics to Listify – explore top picks now",
+      "🎯 New category alert! We've added Electronics to Listifys – explore top picks now",
     read: false,
     createdAt: hoursAgo(5),
   },
@@ -28,7 +28,7 @@ export const DUMMY_NOTIFICATIONS: NotificationItem[] = [
     type: "welcome",
     title: "",
     message:
-      "Welcome to Listify! 🎉 Start listing, browsing, and connecting today",
+      "Welcome to Listifys! 🎉 Start listing, browsing, and connecting today",
     read: true,
     createdAt: daysAgo(3),
   },
@@ -37,7 +37,7 @@ export const DUMMY_NOTIFICATIONS: NotificationItem[] = [
     type: "location",
     title: "",
     message:
-      "Listify alert: A new listing just appeared near you – tap to view and connect",
+      "Listifys alert: A new listing just appeared near you – tap to view and connect",
     read: true,
     createdAt: daysAgo(5),
   },

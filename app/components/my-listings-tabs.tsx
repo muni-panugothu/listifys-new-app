@@ -30,7 +30,7 @@ export const FILTER_CATEGORY_MAP: Record<
     "fashion",
     "sports",
     "collectibles",
-    "pets",
+    "pets supplies",
     "toys",
     "books",
     "beauty",

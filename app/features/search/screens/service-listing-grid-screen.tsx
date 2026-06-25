@@ -150,7 +150,7 @@ export function ServiceListingGridScreen() {
           <View className="flex-row items-center gap-4">
             <MaterialIcons name="storefront" size={24} color="#27BB97" />
             <Text className="text-[20px] font-black tracking-tight text-[#27BB97]">
-              Listify
+              Listifys
             </Text>
           </View>
 
