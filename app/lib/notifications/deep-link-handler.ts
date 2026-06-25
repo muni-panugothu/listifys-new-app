@@ -25,7 +25,36 @@ export function navigateFromNotification(payload: RichNotificationPayload): void
     return;
   }
 
+  // Fire-and-forget preload: warm the detail cache for listing-type notifications
+  // so the target screen renders instantly (cache-hit) instead of waiting on the
+  // network. Safe to call without auth — the API will simply 401 and the screen
+  // falls back to the normal loading flow.
+  void preloadForNotification(normalized);
+
   queueNotificationNavigation(href);
+}
+
+/**
+ * Background warm-up. Fetches listing detail BEFORE the user lands on the
+ * target screen. Result is dropped into the same client cache the detail
+ * screens read from, so first paint comes from cache.
+ */
+async function preloadForNotification(payload: RichNotificationPayload): Promise<void> {
+  try {
+    if (!payload.listingId) return;
+    // Lazy-load to avoid pulling listing-api at notification handler init time.
+    const { fetchListingById } = await import('@/features/listing/services/listing-api');
+    const slug = (payload.listingType ?? 'electronics') as
+      | 'electronics'
+      | 'properties'
+      | 'jobs'
+      | 'events'
+      | 'services'
+      | 'vehicles';
+    await fetchListingById(slug as never, payload.listingId);
+  } catch {
+    // Preload is best-effort.
+  }
 }
 
 function mergeChatParams(payload: RichNotificationPayload): Record<string, string> {

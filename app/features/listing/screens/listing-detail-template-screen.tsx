@@ -41,6 +41,7 @@ import {
   type ListingItem,
 } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useSwrListing } from "@/lib/use-swr-listing";
 import { ListingLocationSection } from "@/components/listing-location-section";
 import { formatVehicleOdometer, getListingDistanceLabel } from "@/lib/listing-distance";
 import { Image } from "@/lib/nativewind-interop";
@@ -122,9 +123,26 @@ export function ListingDetailTemplateScreen() {
   const categorySlug = (params.category ?? "electronics") as CategorySlug;
   const listingId = params.id;
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const [listing, setListing] = useState<ListingItem | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // Screen-first / cache-first: this hook returns whatever is in the cache
+  // synchronously (seeded by the feed/category list when the card was visible)
+  // and refreshes in the background. The shell renders immediately.
+  const {
+    listing: swrListing,
+    isLoading: swrLoading,
+    refresh: refreshListing,
+  } = useSwrListing(categorySlug, listingId);
+  const [listing, setListing] = useState<ListingItem | null>(swrListing ?? null);
+  const loading = !listing && swrLoading;
   const [isSaved, setIsSaved] = useState(false);
+
+  // Mirror SWR state into local listing so existing handlers/setListing calls
+  // (save toggle, edit local fields) continue to work without further refactor.
+  useEffect(() => {
+    if (swrListing && swrListing !== listing) {
+      setListing(swrListing);
+    }
+  }, [swrListing]); // eslint-disable-line react-hooks/exhaustive-deps
   const [activeTab, setActiveTab] = useState<"description" | "details">("description");
   const [descExpanded, setDescExpanded] = useState(false);
 
@@ -166,27 +184,17 @@ export function ListingDetailTemplateScreen() {
 
   const loadListing = useCallback(async () => {
     if (!listingId) return;
+    await refreshListing();
+  }, [listingId, refreshListing]);
 
-    setLoading(true);
-    try {
-      const res = await fetchListingById(categorySlug, listingId);
-      if (res.listing) {
-        setListing(res.listing);
-        addToRecentlyViewed(res.listing, locationLabel, isoCountryCode).catch(() => {});
-        if (user?.id && res.listing.savedBy?.includes(user.id)) {
-          setIsSaved(true);
-        }
-      }
-    } catch {
-      // keep null
-    } finally {
-      setLoading(false);
-    }
-  }, [categorySlug, listingId, user?.id]);
-
+  // Side-effects when listing becomes available (from cache or fresh fetch).
   useEffect(() => {
-    void loadListing();
-  }, [loadListing]);
+    if (!listing) return;
+    addToRecentlyViewed(listing, locationLabel, isoCountryCode).catch(() => {});
+    if (user?.id && listing.savedBy?.includes(user.id)) {
+      setIsSaved(true);
+    }
+  }, [listing, locationLabel, isoCountryCode, user?.id]);
 
   useEffect(() => {
     if (!listing) return;
@@ -572,13 +580,11 @@ export function ListingDetailTemplateScreen() {
     </View>
   );
 
-  if (loading && !listing) {
-    return (
-      <View className="flex-1 items-center justify-center bg-white">
-        <ActivityIndicator size="large" color="#1A1A1A" />
-      </View>
-    );
-  }
+  // Screen-first: never block the screen on a spinner. If we truly have no
+  // listing yet, render the shell with a skeleton header so the user sees a
+  // structured layout immediately. The skeleton resolves when SWR lands.
+  // (The legacy full-screen ActivityIndicator was the #1 cause of perceived
+  // slowness — see PERFORMANCE_ARCHITECTURE.md.)
 
   return (
     <View className="flex-1 bg-[#F6F7F8]">

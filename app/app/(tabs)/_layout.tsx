@@ -9,8 +9,9 @@ export default function MainTabsLayout() {
       screenOptions={{
         headerShown: false,
         animation: "fade",
-        lazy: false,
+        lazy: true,
         sceneStyle: { backgroundColor: "#F6F7F8" },
+        freezeOnBlur: true,
       }}
     >
       <Tabs.Screen name="home-feed-root" />

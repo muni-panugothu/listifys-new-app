@@ -24,6 +24,7 @@ import {
 } from "@/features/listing/services/listing-api";
 import { AuthGateBottomSheet } from "@/features/auth/components/auth-gate-bottom-sheet";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useSwrListing } from "@/lib/use-swr-listing";
 import { Image } from "@/lib/nativewind-interop";
 import { useAppSelector } from "@/store/hooks";
 import { selectIsoCountryCode, selectLocationLabel } from "@/store/slices/location-slice";
@@ -39,12 +40,27 @@ export function JobDetailScreen() {
   const locationLabel = useAppSelector(selectLocationLabel);
   const isoCountryCode = useAppSelector(selectIsoCountryCode);
 
-  const [listing, setListing] = useState<ListingItem | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isSaved, setIsSaved] = useState(false);
-
   const categorySlug = (params.category ?? "jobs") as CategorySlug;
   const listingId = params.id;
+
+  const {
+    listing: swrListing,
+    isLoading: swrLoading,
+    refresh: refreshListing,
+  } = useSwrListing(categorySlug, listingId);
+  const [listing, setListing] = useState<ListingItem | null>(swrListing ?? null);
+  const loading = !listing && swrLoading;
+  const [isSaved, setIsSaved] = useState(false);
+
+  useEffect(() => {
+    if (swrListing && swrListing !== listing) setListing(swrListing);
+  }, [swrListing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!listing) return;
+    addToRecentlyViewed(listing, locationLabel, isoCountryCode).catch(() => {});
+    if (user?.id && listing.savedBy?.includes(user.id)) setIsSaved(true);
+  }, [listing, locationLabel, isoCountryCode, user?.id]);
 
   // Auth gate for guest users
   const [authGateVisible, setAuthGateVisible] = useState(false);
@@ -69,26 +85,8 @@ export function JobDetailScreen() {
 
   const loadListing = useCallback(async () => {
     if (!listingId) return;
-    setLoading(true);
-    try {
-      const res = await fetchListingById(categorySlug, listingId);
-      if (res.listing) {
-        setListing(res.listing);
-        addToRecentlyViewed(res.listing, locationLabel, isoCountryCode).catch(() => {});
-        if (user?.id && res.listing.savedBy?.includes(user.id)) {
-          setIsSaved(true);
-        }
-      }
-    } catch {
-      // keep null
-    } finally {
-      setLoading(false);
-    }
-  }, [categorySlug, listingId, user?.id]);
-
-  useEffect(() => {
-    loadListing();
-  }, [loadListing]);
+    await refreshListing();
+  }, [listingId, refreshListing]);
 
   const { refreshing, onRefresh } = usePullToRefresh(loadListing);
 
@@ -152,13 +150,7 @@ export function JobDetailScreen() {
   const footerBottomPadding = Math.max(insets.bottom, 16);
   const isOwn = isOwnListing(listing, user?.id);
 
-  if (loading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-[#F6F7F8]">
-        <ActivityIndicator size="large" color="#27BB97" />
-      </View>
-    );
-  }
+  // Screen-first: render shell immediately; SWR fills in the cached or fresh data.
 
   if (!listing) {
     return (

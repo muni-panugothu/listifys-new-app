@@ -52,7 +52,14 @@ export function JobListingCard({
         <View className="mb-3 flex-row items-start gap-3">
           <View className="h-12 w-12 overflow-hidden rounded-xl bg-[#F3F4F6]">
             {companyLogo ? (
-              <Image source={companyLogo} contentFit="cover" className="h-full w-full" />
+              <Image
+                source={companyLogo}
+                contentFit="cover"
+                transition={120}
+                cachePolicy="memory-disk"
+                recyclingKey={companyLogo}
+                className="h-full w-full"
+              />
             ) : (
               <View className="h-full w-full items-center justify-center">
                 <MaterialIcons name="business" size={22} color="#9CA3AF" />

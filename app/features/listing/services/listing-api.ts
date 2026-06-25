@@ -14,7 +14,7 @@ import {
   resolveAbsoluteMediaUrl,
 } from "@/features/auth/services/auth-api";
 import type { CategorySlug } from "@/constants/categories";
-import { cacheKeys, invalidateCache, withCache } from "@/lib/cache";
+import { cacheKeys, invalidateCache, seedListingsBatch, withCache } from "@/lib/cache";
 import { getListingSellerId } from "@/lib/is-own-listing";
 
 import Constants from "expo-constants";
@@ -190,7 +190,7 @@ function normaliseListingImages(listing: ListingItem): ListingItem {
 }
 
 function normaliseFeedResponse(data: FeedResponse): FeedResponse {
-  return {
+  const normalised: FeedResponse = {
     ...data,
     categories: Object.fromEntries(
       Object.entries(data.categories ?? {}).map(([category, categoryData]) => [
@@ -202,6 +202,20 @@ function normaliseFeedResponse(data: FeedResponse): FeedResponse {
       ]),
     ),
   };
+
+  // Promote every listing into the detail cache so tapping a card opens an
+  // already-warm detail screen. Detail screen still revalidates in background.
+  const seedPairs: Array<{ category: string; listing: ListingItem }> = [];
+  for (const [category, bucket] of Object.entries(normalised.categories ?? {})) {
+    for (const item of bucket?.listings ?? []) {
+      seedPairs.push({ category, listing: item });
+    }
+  }
+  if (seedPairs.length > 0) {
+    seedListingsBatch(seedPairs, 120_000);
+  }
+
+  return normalised;
 }
 
 const HOME_FEED_CACHE_KEY = "@listify/home_feed_cache";
@@ -394,6 +408,11 @@ export async function fetchCategoryListings(
         `${categoryApiBase(categorySlug)}${qs ? `?${qs}` : ""}`,
       );
       data.listings = (data.listings || []).map(normaliseListingImages);
+      // Seed detail cache for every card in the category list.
+      seedListingsBatch(
+        (data.listings ?? []).map((listing) => ({ category: categorySlug, listing })),
+        120_000,
+      );
       return data;
     },
     60_000,

@@ -1,5 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import Animated, {
   interpolate,
@@ -55,7 +55,7 @@ export function getListingGridCarouselHeight(width: number) {
   return width + 12 + CAROUSEL_TITLE_HEIGHT + 10 + 24 + 16;
 }
 
-export function ListingItemsGridCard({
+function ListingItemsGridCardImpl({
   title,
   subtitle,
   price,
@@ -222,3 +222,6 @@ export function ListingItemsGridCard({
     </Pressable>
   );
 }
+
+// Memoized: avoids re-rendering every grid card when only one row's state changes.
+export const ListingItemsGridCard = memo(ListingItemsGridCardImpl);

@@ -326,17 +326,30 @@ export function ChatConversationScreen() {
     }
   }, [messages.length, loading, scrollToBottom]);
 
-  // ── Bootstrap ──────────────────────────────────────────────────────────────
+  // ── Bootstrap (screen-first, parallel) ─────────────────────────────────────
+  // 1) Socket connect is fire-and-forget — most calls are no-ops since the
+  //    app-start handshake already ran. The bootstrap never `awaits` it.
+  // 2) When the screen opens with a known conversationId we fire
+  //    getConversation + listThreads in parallel via Promise.all.
+  // 3) The first message page is fetched as soon as the active thread is
+  //    known — but we never block the screen on it; the FlatList renders
+  //    with whatever we have and the spinner is only shown when nothing
+  //    useful (no header subject, no messages) is available yet.
   useEffect(() => {
     let cancelled = false;
+
+    // Fire socket connection in background — never await it on the open path.
+    connectSocket().catch(() => {});
+
     (async () => {
-      setLoading(true);
       try {
-        // 1. Get or create conversation
         let convId = params.conversationId;
         let bootstrapThread: ProductThread | null = null;
 
         if (!convId && params.recipientId) {
+          // First-time chat from a listing: must round-trip to create the
+          // conversation. Show shell immediately (header rendered from
+          // route params like productTitle / recipientName).
           const res = await getOrCreateConversation({
             recipientId:   params.recipientId,
             productId:     params.productId,
@@ -350,42 +363,42 @@ export function ChatConversationScreen() {
           convId           = res.conversation._id;
           bootstrapThread  = res.thread;
           setConversation(res.conversation);
-        } else if (convId) {
-          const convRes = await getConversation(convId);
-          if (cancelled) return;
-          setConversation(convRes.conversation);
         }
 
-        if (!convId) return;
+        if (!convId) {
+          setLoading(false);
+          return;
+        }
 
-        // 2. Load all threads
-        const threadsRes = await listThreads(convId, "all");
+        // Parallel: load conversation + threads simultaneously.
+        const [convRes, threadsRes] = await Promise.all([
+          bootstrapThread
+            ? Promise.resolve({ conversation: null as Conversation | null })
+            : getConversation(convId).catch(() => ({ conversation: null as Conversation | null })),
+          listThreads(convId, "all").catch(() => ({ threads: [] as ProductThread[] })),
+        ]);
         if (cancelled) return;
-        const allThreads = threadsRes.threads;
+
+        if (convRes.conversation) setConversation(convRes.conversation);
+        const allThreads = threadsRes.threads ?? [];
         setThreads(allThreads);
         dispatch(setActiveConversation(convId));
 
-        // 3. Determine which thread to open
         let initialThread: ProductThread | null = null;
         if (bootstrapThread) {
           initialThread = bootstrapThread;
         } else if (params.productId) {
           initialThread = allThreads.find((t) => String(t.product.productId) === params.productId) ?? allThreads[0] ?? null;
         } else {
-          // Open most-recently-active thread
           initialThread = allThreads.sort(
             (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
           )[0] ?? null;
         }
 
         if (initialThread) {
+          // openThread loads messages — once it resolves we drop the spinner.
           await openThread(initialThread, convId, false);
         }
-
-        // 4. Socket
-        await connectSocket().catch((err) => {
-          console.warn("[Chat] Socket connect failed", err);
-        });
         joinConversation(convId);
       } catch (e) {
         console.warn("[Chat] Bootstrap error", e);
@@ -402,11 +415,12 @@ export function ChatConversationScreen() {
   }, []);
 
   // ── Open a thread (load its messages) ─────────────────────────────────────
+  // Removed the awaited `connectSocket()` — it duplicated work already done in
+  // the bootstrap effect and added perceived latency to every thread switch.
   const openThread = useCallback(async (thread: ProductThread, convId?: string, animate = true) => {
     setActiveThreadSt(thread);
     dispatch(setActiveThread(thread._id));
     try {
-      await connectSocket().catch(() => {});
       const activeConvId = convId ?? conversation?._id;
       if (activeConvId) {
         joinConversation(activeConvId);
@@ -1313,7 +1327,19 @@ export function ChatConversationScreen() {
     router.push(href);
   }, [router]);
 
-  if (loading) {
+  // Screen-first: only show the legacy full-screen spinner when we have
+  // literally nothing to render yet (no route params for the header AND no
+  // conversation loaded). In every other case the shell renders immediately —
+  // header from params, composer disabled while activeThread resolves,
+  // messages list showing a small in-place indicator if still empty.
+  const hasShellSeed = Boolean(
+    conversation ||
+      activeThread ||
+      params.productTitle ||
+      params.name ||
+      params.recipientId,
+  );
+  if (loading && !hasShellSeed) {
     return (
       <View style={{ flex: 1, backgroundColor: CHAT_BG, alignItems: "center", justifyContent: "center", paddingTop: insets.top }}>
         <ActivityIndicator color={BRAND} />

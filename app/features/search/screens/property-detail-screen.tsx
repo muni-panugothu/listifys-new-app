@@ -27,6 +27,7 @@ import {
   type ListingItem,
 } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useSwrListing } from "@/lib/use-swr-listing";
 import { ListingLocationSection } from "@/components/listing-location-section";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
 import { Image } from "@/lib/nativewind-interop";
@@ -54,36 +55,37 @@ export function PropertyDetailScreen() {
   const isoCountryCode = useAppSelector(selectIsoCountryCode);
   const canShowDistanceOnCards = useAppSelector(selectCanShowDistanceOnCards);
 
-  const [listing, setListing] = useState<ListingItem | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isSaved, setIsSaved] = useState(false);
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
-
   const categorySlug = (params.category ?? "properties") as CategorySlug;
   const listingId = params.id;
 
-  const loadListing = useCallback(async () => {
-    if (!listingId) return;
-    setLoading(true);
-    try {
-      const res = await fetchListingById(categorySlug, listingId);
-      if (res.listing) {
-        setListing(res.listing);
-        addToRecentlyViewed(res.listing, locationLabel, isoCountryCode).catch(() => {});
-        if (user?.id && res.listing.savedBy?.includes(user.id)) {
-          setIsSaved(true);
-        }
-      }
-    } catch {
-      // keep null
-    } finally {
-      setLoading(false);
-    }
-  }, [categorySlug, listingId, user?.id]);
+  const {
+    listing: swrListing,
+    isLoading: swrLoading,
+    refresh: refreshListing,
+  } = useSwrListing(categorySlug, listingId);
+  const [listing, setListing] = useState<ListingItem | null>(swrListing ?? null);
+  const loading = !listing && swrLoading;
+  const [isSaved, setIsSaved] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   useEffect(() => {
-    loadListing();
-  }, [loadListing]);
+    if (swrListing && swrListing !== listing) {
+      setListing(swrListing);
+    }
+  }, [swrListing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!listing) return;
+    addToRecentlyViewed(listing, locationLabel, isoCountryCode).catch(() => {});
+    if (user?.id && listing.savedBy?.includes(user.id)) {
+      setIsSaved(true);
+    }
+  }, [listing, locationLabel, isoCountryCode, user?.id]);
+
+  const loadListing = useCallback(async () => {
+    if (!listingId) return;
+    await refreshListing();
+  }, [listingId, refreshListing]);
 
   const { refreshing, onRefresh } = usePullToRefresh(loadListing);
 
@@ -264,13 +266,9 @@ export function PropertyDetailScreen() {
     }
   }, [listing, offerAmount, sendingOffer, categorySlug, closeOfferSheet]);
 
-  if (loading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-[#F6F7F8]">
-        <ActivityIndicator size="large" color="#27BB97" />
-      </View>
-    );
-  }
+  // Screen-first: never block the screen on a spinner. SWR returns cached data
+  // synchronously when available; otherwise the shell renders with skeletons
+  // that disappear as the listing resolves.
 
   if (!listing) {
     return (

@@ -17,7 +17,6 @@ import * as SystemUI from "expo-system-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Location from "expo-location";
 import "react-native-gesture-handler";
 import "react-native-reanimated";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -92,6 +91,12 @@ const SKIP_LOADER_PATHS = new Set([
   '/active-call',
 ]);
 
+// Loader was adding perceived latency on every navigation by fading a full-screen
+// overlay over the destination. We now only show it for navigations that take
+// longer than this threshold (network-bound replace flows). Most native
+// transitions complete in ~250-300ms, so 350ms keeps the loader invisible for
+// snappy flows while still catching truly slow ones.
+const LOADER_DEFER_MS = 350;
 const LOADER_FAILSAFE_MS = 1200;
 
 function AppLayout() {
@@ -121,8 +126,11 @@ function AppLayout() {
     }
   }, []);
 
+  const deferTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
   const clearLoaderTimers = useCallback(() => {
     clearTimeout(loadTimerRef.current);
+    clearTimeout(deferTimerRef.current);
   }, []);
 
   const startPageLoader = useCallback((nextPath: string | null) => {
@@ -130,13 +138,17 @@ function AppLayout() {
 
     clearLoaderTimers();
     loaderStartedAtRef.current = Date.now();
-    setPageLoading(true);
 
-    // Safety net for unexpected interrupted navigations.
-    loadTimerRef.current = setTimeout(() => {
-      setPageLoading(false);
-      loaderStartedAtRef.current = null;
-    }, LOADER_FAILSAFE_MS);
+    // Defer making the loader visible — most navigations complete inside the
+    // native transition (~250–300ms) and don't need a loader at all. Only show
+    // it if the destination hasn't taken focus yet after LOADER_DEFER_MS.
+    deferTimerRef.current = setTimeout(() => {
+      setPageLoading(true);
+      loadTimerRef.current = setTimeout(() => {
+        setPageLoading(false);
+        loaderStartedAtRef.current = null;
+      }, LOADER_FAILSAFE_MS);
+    }, LOADER_DEFER_MS);
   }, [clearLoaderTimers]);
 
   const finishPageLoader = useCallback(() => {
@@ -147,7 +159,6 @@ function AppLayout() {
 
   useEffect(() => {
     const unsubscribe = subscribeRouteTransitions(({ nextPath, action }) => {
-      // Back navigation already has a slide-out animation — no loader needed.
       if (action === 'back') return;
       startPageLoader(nextPath);
     });
@@ -158,13 +169,10 @@ function AppLayout() {
   useEffect(() => {
     if (prevPathRef.current !== pathname) {
       prevPathRef.current = pathname;
-      if (pageLoading) {
-        finishPageLoader();
-      }
+      finishPageLoader();
     }
-  }, [finishPageLoader, pageLoading, pathname]);
+  }, [finishPageLoader, pathname]);
 
-  // Clean up safety-net timer on unmount
   useEffect(() => clearLoaderTimers, [clearLoaderTimers]);
 
   useEffect(() => {

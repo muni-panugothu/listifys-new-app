@@ -21,9 +21,11 @@ export * from "expo-router";
  */
 
 // Time after a same-route nav during which the identical route is blocked.
-const SAME_ROUTE_GUARD_MS = 800;
-// Time the global lock is held after a nav fires (matches transition duration).
-const NAV_LOCK_RELEASE_MS = 350;
+// Short enough that real user taps survive; long enough to swallow double-fires.
+const SAME_ROUTE_GUARD_MS = 250;
+// Time the global lock is held after a nav fires. Long enough to bridge the
+// native transition frame, short enough that listing→listing chains feel fluid.
+const NAV_LOCK_RELEASE_MS = 120;
 
 let lastNavigation = { key: "", at: 0 };
 
@@ -57,6 +59,24 @@ function hrefToPath(href: Href): string | null {
 
   const pathname = (href as { pathname?: unknown }).pathname;
   return typeof pathname === "string" ? pathname : null;
+}
+
+/**
+ * Extract a params signature from an href. Used so listing→listing pushes
+ * (same pathname, different `id`) are NOT dropped by the same-pathname guard.
+ */
+function hrefToSearch(href: Href): string | null {
+  if (typeof href === "string") {
+    const q = href.split("?")[1];
+    if (!q) return null;
+    return q.split("#")[0] ?? null;
+  }
+
+  const params = (href as { params?: unknown }).params;
+  if (params && typeof params === "object" && Object.keys(params).length > 0) {
+    return stableParamsString(params as Record<string, unknown>);
+  }
+  return null;
 }
 
 function isValidHref(href: unknown): href is Href {
@@ -113,11 +133,14 @@ export function useRouter() {
 
       const key = `push:${hrefToKey(href)}`;
       const nextPath = hrefToPath(href);
+      const nextSearch = hrefToSearch(href);
 
-      // Layer 1: drop if user is already on the destination.
-      if (nextPath && nextPath === pathname) return;
+      // Layer 1: drop ONLY if user is on the EXACT same route (path + params).
+      // Different params on the same pathname (e.g. /listing-detail?id=A vs ?id=B)
+      // must be allowed — this is core marketplace navigation.
+      if (nextPath && nextPath === pathname && !nextSearch) return;
 
-      // Layer 2: drop same route within debounce window.
+      // Layer 2: drop same key within debounce window.
       if (isDuplicateKey(key)) return;
 
       // Layer 3: drop any nav while another is in flight.
@@ -143,8 +166,9 @@ export function useRouter() {
 
       const key = `replace:${hrefToKey(href)}`;
       const nextPath = hrefToPath(href);
+      const nextSearch = hrefToSearch(href);
 
-      if (nextPath && nextPath === pathname) return;
+      if (nextPath && nextPath === pathname && !nextSearch) return;
       if (isDuplicateKey(key)) return;
 
       const release = acquireNavigationLock(NAV_LOCK_RELEASE_MS);
@@ -184,12 +208,11 @@ export function useRouter() {
       }
 
       const nextPath = hrefToPath(href);
-      const release = acquireNavigationLock(600);
-      // Always navigate — even if lock was held, auth must win.
+      const release = acquireNavigationLock(300);
       notifyRouteTransition("replace", nextPath);
       router.replace(href);
       if (release) {
-        setTimeout(release, 600);
+        setTimeout(release, 300);
       }
     },
     [router],

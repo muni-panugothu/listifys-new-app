@@ -65,7 +65,7 @@ export function SafeButton({
   variant = "primary",
   loading = false,
   disabled = false,
-  cooldownMs = 700,
+  cooldownMs = 250,
   sharedKey,
   fullWidth = true,
   leftIcon,

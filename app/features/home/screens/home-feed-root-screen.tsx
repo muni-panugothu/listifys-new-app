@@ -307,33 +307,46 @@ export function HomeFeedRootScreen() {
     sessionHydrated,
   ]);
 
+  // Cooldown so the multiple triggers below (location change, app foreground,
+  // focus, online recovery) collapse into at most one real fetch every 30s.
+  const lastFeedFetchAtRef = useRef(0);
+  const FEED_REFETCH_COOLDOWN_MS = 30_000;
+  const maybeRefetchFeed = useCallback(() => {
+    const now = Date.now();
+    if (now - lastFeedFetchAtRef.current < FEED_REFETCH_COOLDOWN_MS) return;
+    lastFeedFetchAtRef.current = now;
+    loadFeed({ allowCacheFallback: false }).catch(() => {});
+  }, [loadFeed]);
+
   useEffect(() => {
     if (!locationHydrated) return;
+    // Coord changes are an explicit signal — always honor immediately and
+    // reset the cooldown.
+    lastFeedFetchAtRef.current = Date.now();
     loadFeed({ allowCacheFallback: false }).catch(() => {});
   }, [locationHydrated, locationCoords.lat, locationCoords.lng, loadFeed]);
 
   useEffect(() => {
     if (!sessionHydrated) return;
-
     const sub = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active") {
-        loadFeed({ allowCacheFallback: false }).catch(() => {});
-      }
+      if (nextState === "active") maybeRefetchFeed();
     });
-
     return () => sub.remove();
-  }, [loadFeed, sessionHydrated]);
+  }, [maybeRefetchFeed, sessionHydrated]);
 
   useEffect(() => {
     if (!isOffline && isUsingCachedFeed) {
+      // Online recovery — bypass cooldown.
+      lastFeedFetchAtRef.current = Date.now();
       loadFeed({ allowCacheFallback: false }).catch(() => {});
     }
   }, [isOffline, isUsingCachedFeed, loadFeed]);
 
-  // Refresh feed + recently viewed + unread counts when screen is focused
+  // On focus we ALWAYS refresh side data (recently viewed, unread counts)
+  // but the feed itself respects the cooldown.
   useFocusEffect(
     useCallback(() => {
-      loadFeed({ allowCacheFallback: false }).catch(() => {});
+      maybeRefetchFeed();
       getRecentlyViewed(shouldApplyLocationFilter ? effectiveCountryCode : null).then(setRecentlyViewed).catch(() => {});
       getNotificationUnreadCount()
         .then((r) => setNotificationUnreadCount(r.unreadCount ?? 0))
@@ -341,7 +354,7 @@ export function HomeFeedRootScreen() {
       getChatUnreadCount()
         .then((r) => setChatUnreadCount(r.unreadCount ?? 0))
         .catch(() => {});
-    }, [effectiveCountryCode, loadFeed, shouldApplyLocationFilter]),
+    }, [effectiveCountryCode, maybeRefetchFeed, shouldApplyLocationFilter]),
   );
 
   const handleRefresh = useCallback(async () => {

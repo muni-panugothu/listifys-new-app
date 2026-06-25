@@ -20,7 +20,7 @@ import {
   refreshAccessToken,
   resolveAbsoluteMediaUrl,
 } from "@/features/auth/services/auth-api";
-import { getCached, setCache } from "@/lib/cache";
+import { getCached, seedListingsBatch, setCache } from "@/lib/cache";
 
 type ExpoDeviceModule = {
   brand?: string | null;
@@ -261,6 +261,17 @@ export async function searchListings(
         results: (res.results || []).map(normaliseImages),
       };
       setCache(cacheKey, normalized, SEARCH_CACHE_TTL_MS);
+      // Seed every search result into the detail cache so a tap opens an
+      // already-warm detail screen.
+      seedListingsBatch(
+        (normalized.results ?? [])
+          .filter((r) => r && (r as { _id?: string })._id)
+          .map((r) => ({
+            category: ((r as { category?: string }).category ?? "electronics"),
+            listing: r as unknown as { _id: string },
+          })),
+        120_000,
+      );
       return normalized;
     })
     .finally(() => {

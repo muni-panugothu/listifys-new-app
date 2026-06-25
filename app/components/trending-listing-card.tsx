@@ -1,5 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import Animated, {
   interpolate,
@@ -40,7 +40,7 @@ function formatPrice(
   return libFormatPrice(price, currency, isoCountryCode);
 }
 
-export function TrendingListingCard({
+function TrendingListingCardImpl({
   title,
   price,
   currency,
@@ -101,7 +101,14 @@ export function TrendingListingCard({
           elevation: 5,
         }}
       >
-        <Image source={image} contentFit="cover" transition={200} className="h-full w-full" />
+        <Image
+          source={image}
+          contentFit="cover"
+          transition={120}
+          cachePolicy="memory-disk"
+          recyclingKey={typeof image === "string" ? image : undefined}
+          className="h-full w-full"
+        />
         <ListingTimeBadge date={createdAt} />
         <AnimatedPressable
           onPress={(e) => {
@@ -173,3 +180,7 @@ export function TrendingListingCard({
     </Pressable>
   );
 }
+
+// Memoized: scrolling the home feed should not re-render every card when an
+// unrelated piece of state (e.g. unread counts) updates.
+export const TrendingListingCard = memo(TrendingListingCardImpl);

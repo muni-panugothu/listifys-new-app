@@ -54,12 +54,13 @@ export function NotificationNavigationHost() {
     router.push(href as Href);
   }, [canNavigate, router]);
 
+  // Flush as soon as navigation is ready — no artificial debounce.
+  // The splash screen already routed to the notification target if there was
+  // one queued at cold start; this effect handles the remaining background /
+  // warm-start cases where the queue fills after canNavigate becomes true.
   useEffect(() => {
     if (!canNavigate) return;
-    const timer = setTimeout(() => {
-      void flush();
-    }, 50);
-    return () => clearTimeout(timer);
+    void flush();
   }, [canNavigate, flush]);
 
   useEffect(() => subscribePendingNotificationNavigation(() => {
@@ -112,13 +113,17 @@ export function NotificationNavigationHost() {
     return () => sub.remove();
   }, [canNavigate, handleDeepLink]);
 
-  // Cold start: read Notifee initial notification once navigation is ready (with retries).
+  // Cold start: read Notifee initial notification once navigation is ready.
+  // Shortened the retry schedule from [0, 150, 400, 800, 1500] (up to 2.85s)
+  // to [0, 200] (up to 200ms). The notifee payload is reliably available by
+  // the time canNavigate is true; the long retry was masking the auth/nav
+  // hydration delay we already fixed elsewhere.
   useEffect(() => {
     if (!canNavigate || !notifee || initialCheckedRef.current) return;
     initialCheckedRef.current = true;
 
     let cancelled = false;
-    const delays = [0, 150, 400, 800, 1500];
+    const delays = [0, 200];
 
     const checkInitial = async (index: number) => {
       if (cancelled || index >= delays.length) return;
@@ -126,15 +131,6 @@ export function NotificationNavigationHost() {
       try {
         const initial = await notifee.getInitialNotification();
         const data = initial?.notification?.data as RichNotificationPayload | undefined;
-
-        if (__DEV__) {
-          devLog('[Notifications] getInitialNotification attempt', {
-            index,
-            hasData: Boolean(data),
-            type: data?.type,
-            conversationId: data?.conversationId,
-          });
-        }
 
         if (data?.type) {
           navigateFromNotification(data);
@@ -147,7 +143,7 @@ export function NotificationNavigationHost() {
 
       setTimeout(() => {
         void checkInitial(index + 1);
-      }, delays[index] ?? 500);
+      }, delays[index] ?? 200);
     };
 
     void checkInitial(0);

@@ -24,7 +24,7 @@ type Unsubscribe = () => void;
 
 // ── Global navigation lock ────────────────────────────────────────────────────
 
-const NAV_LOCK_AUTO_RELEASE_MS = 1200; // failsafe in case release() is never called
+const NAV_LOCK_AUTO_RELEASE_MS = 400; // failsafe in case release() is never called
 let navLockedUntil = 0;
 let navLockToken = 0;
 

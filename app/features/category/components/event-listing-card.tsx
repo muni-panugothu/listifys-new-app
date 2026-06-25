@@ -62,6 +62,9 @@ export function EventListingCard({
           <Image
             source={event.images[0]}
             contentFit="cover"
+            transition={120}
+            cachePolicy="memory-disk"
+            recyclingKey={event.images[0]}
             className="h-full w-full"
           />
         ) : (

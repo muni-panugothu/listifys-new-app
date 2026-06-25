@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef } from "react";
 
 import { cooldown as guardCooldown, isNavigationLocked } from "@/lib/navigation-guard";
 
-const DEFAULT_COOLDOWN_MS = 600;
+// Tuned for OfferUp/Instagram feel: long enough to swallow accidental double-fires
+// from a single physical tap, short enough that intentional rapid taps work.
+const DEFAULT_COOLDOWN_MS = 180;
 
 type SafePressOptions = {
   /** Time window after a fire during which subsequent taps are ignored. */
@@ -13,8 +15,10 @@ type SafePressOptions = {
    */
   sharedKey?: string;
   /**
-   * If true, taps are ignored while a navigation is locked. Default true.
-   * Set false for non-navigation actions (e.g. toggle save).
+   * If true, taps are ignored while a navigation is locked. Default FALSE.
+   * Only enable for destructive / network-mutating actions. For pure navigation
+   * we let safe-router's own lock decide — gating taps adds perceived latency
+   * because the user's tap appears to do nothing during the transition window.
    */
   respectNavigationLock?: boolean;
 };
@@ -34,7 +38,7 @@ export function useSafePress<Args extends unknown[]>(
   const {
     cooldownMs = DEFAULT_COOLDOWN_MS,
     sharedKey,
-    respectNavigationLock = true,
+    respectNavigationLock = false,
   } = options;
 
   const inFlightRef = useRef(false);
@@ -80,11 +84,12 @@ export function useSafePress<Args extends unknown[]>(
           inFlightRef.current = false;
         });
       } else {
-        // Sync handler: release after the cooldown so we still block
-        // taps within the next frame.
-        setTimeout(() => {
+        // Sync handler: release on next frame so the cooldown alone gates
+        // subsequent taps. Holding inFlight for the entire cooldown made
+        // navigation buttons feel dead for 600ms after every tap.
+        Promise.resolve().then(() => {
           inFlightRef.current = false;
-        }, cooldownMs);
+        });
       }
     },
     [cooldownMs, respectNavigationLock, sharedKey],

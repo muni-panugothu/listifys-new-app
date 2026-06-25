@@ -10,6 +10,11 @@ import { store } from "@/store";
 import { getAccessToken, getRefreshToken, restoreTokens } from "@/features/auth/services/auth-api";
 import { restoreSession } from "@/store/slices/auth-slice";
 import { checkOnboarding } from "@/store/slices/onboarding-slice";
+import {
+  hasPendingNotificationNavigation,
+  takePendingNotificationNavigation,
+} from "@/lib/notifications/pending-notification-navigation";
+import { consumePersistedNotificationNavigation } from "@/lib/notifications/pending-notification-storage";
 
 const HOME_ROUTE = "/(tabs)/home-feed-root" as Href;
 
@@ -34,24 +39,37 @@ export function SplashScreen() {
           restoreSession.fulfilled.match(sessionResult) &&
           sessionResult.payload.isAuthenticated;
 
-        finishNavigation(authenticated);
+        await finishNavigation(authenticated);
       } catch {
         if (cancelled) return;
         await restoreTokens().catch(() => {});
         const hasTokens = Boolean(getAccessToken() || getRefreshToken());
-        finishNavigation(hasTokens);
+        await finishNavigation(hasTokens);
       }
     };
 
-    const finishNavigation = (authenticated: boolean) => {
+    const finishNavigation = async (authenticated: boolean) => {
       if (hasNavigatedRef.current) return;
       hasNavigatedRef.current = true;
 
-      const onboardingCompleted =
-        store.getState().onboarding.hasCompletedOnboarding === true;
-
       if (authenticated) {
-        router.replace(HOME_ROUTE);
+        // Cold-start notification routing: if the user launched the app by
+        // tapping a notification (or via a deep link queued by the notifee
+        // background handler), navigate STRAIGHT to that target — don't bounce
+        // through HOME first. Saves an entire route transition (~300–400ms)
+        // and avoids loading home-feed data the user isn't going to look at.
+        let target: Href | null = null;
+        if (hasPendingNotificationNavigation()) {
+          target = takePendingNotificationNavigation();
+        }
+        if (!target) {
+          try {
+            target = await consumePersistedNotificationNavigation();
+          } catch {
+            target = null;
+          }
+        }
+        router.replace(target ?? HOME_ROUTE);
         return;
       }
 

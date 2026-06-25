@@ -56,6 +56,9 @@ export function ProfileAvatarImage({
     <Image
       source={uri || DEFAULT_PROFILE_AVATAR_URI}
       contentFit="cover"
+      transition={120}
+      cachePolicy="memory-disk"
+      recyclingKey={uri || DEFAULT_PROFILE_AVATAR_URI}
       className={className}
       style={style}
       onError={() => setLoadFailed(true)}

@@ -21,6 +21,7 @@ import { requestJson, resolveAbsoluteMediaUrl } from "@/features/auth/services/a
 import { fetchListingById } from "@/features/listing/services/listing-api";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useSwrListing } from "@/lib/use-swr-listing";
 import { formatPrice } from "@/lib/currency";
 import { formatServiceExperienceLabel } from "@/lib/format-service-experience";
 import { buildListingChatHref } from "@/lib/listing-chat";
@@ -206,34 +207,47 @@ export function ServiceDetailScreen() {
 
   const listingId = parseParam(params.id, "");
 
-  const [listing, setListing] = useState<ListingItem | null>(null);
-  const [loading, setLoading] = useState(!!listingId);
+  const {
+    listing: swrListing,
+    isLoading: swrLoading,
+    refresh: refreshListing,
+  } = useSwrListing("services", listingId);
+  const [listing, setListing] = useState<ListingItem | null>(swrListing ?? null);
+  const loading = !listing && swrLoading;
   const [reviews, setReviews] = useState<ApiReviewItem[]>([]);
   const [reviewTotal, setReviewTotal] = useState(0);
   const [portfolioModalVisible, setPortfolioModalVisible] = useState(false);
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
 
-  const loadListing = useCallback(async () => {
+  useEffect(() => {
+    if (swrListing && swrListing !== listing) setListing(swrListing);
+  }, [swrListing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reviews are non-blocking — fetched in parallel after first render.
+  useEffect(() => {
     if (!listingId) return;
-    setLoading(true);
-    try {
-      const [listingRes, reviewsRes] = await Promise.all([
-        fetchListingById("services", listingId),
-        fetchReviewsForListing(listingId),
-      ]);
-      if (listingRes.listing) setListing(listingRes.listing);
-      setReviews(reviewsRes);
-      setReviewTotal(reviewsRes.length);
-    } catch {
-      // silently fallback to static display
-    } finally {
-      setLoading(false);
-    }
+    let cancelled = false;
+    fetchReviewsForListing(listingId)
+      .then((res) => {
+        if (cancelled) return;
+        setReviews(res);
+        setReviewTotal(res.length);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [listingId]);
 
-  useEffect(() => {
-    loadListing();
-  }, [loadListing]);
+  const loadListing = useCallback(async () => {
+    if (!listingId) return;
+    await refreshListing();
+    try {
+      const reviewsRes = await fetchReviewsForListing(listingId);
+      setReviews(reviewsRes);
+      setReviewTotal(reviewsRes.length);
+    } catch {}
+  }, [listingId, refreshListing]);
 
   const { refreshing, onRefresh: baseRefresh } = usePullToRefresh();
   const onRefresh = useCallback(() => {
