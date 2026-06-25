@@ -91,7 +91,7 @@ export function EventsListingScreen() {
       location: locationForApi,
       lat: hasLocationCoords ? userCoords.lat! : undefined,
       lng: hasLocationCoords ? userCoords.lng! : undefined,
-      radius: hasLocationCoords ? 100 : undefined,
+      radius: hasLocationCoords ? 500 : undefined,
       countryCode: shouldApplyCountryFilter ? isoCountryCode : undefined,
       sort: hasLocationCoords ? "nearest" : "newest",
       limit: 30,

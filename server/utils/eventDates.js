@@ -20,41 +20,102 @@ function parseFlexibleDate(input) {
   const parsed = Date.parse(str);
   if (!Number.isNaN(parsed)) return new Date(parsed);
 
+  // "26 Jun" or "26 jun 2026" without strict ISO
+  const dm = str.match(/^(\d{1,2})\s+([a-z]{3,})(?:\s+(\d{4}))?$/i);
+  if (dm) {
+    const year = dm[3] ? Number(dm[3]) : new Date().getFullYear();
+    const retry = Date.parse(`${dm[1]} ${dm[2]} ${year}`);
+    if (!Number.isNaN(retry)) return new Date(retry);
+  }
+
   return null;
 }
 
+/** UTC noon for a calendar day — avoids timezone shifting stored dates. */
+function normalizeToCalendarDate(input) {
+  const parsed = input instanceof Date ? input : parseFlexibleDate(input);
+  if (!parsed || Number.isNaN(parsed.getTime())) return null;
+  return new Date(
+    Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0),
+  );
+}
+
+function calendarDayFromStored(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0, 0));
+}
+
 function startOfDay(date) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
+  const d = calendarDayFromStored(date) ?? new Date(date);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
 
 function endOfDay(date) {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
+  const d = calendarDayFromStored(date) ?? new Date(date);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
 }
 
-/** YYYY-MM-DD in local timezone */
+/** YYYY-MM-DD using UTC calendar components */
 function dateKey(date) {
-  const d = startOfDay(date);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  const d = calendarDayFromStored(date) ?? new Date(date);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 
 function parseDateKey(key) {
   const [y, m, d] = String(key).split("-").map(Number);
   if (!y || !m || !d) return null;
-  return startOfDay(new Date(y, m - 1, d));
+  return new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0));
+}
+
+/** Parse "26 to 28 Jun", "26 Jun - 28 Jun 2026", etc. */
+function parseDateRangeFromText(text) {
+  if (!text || !String(text).trim()) return { start: null, end: null };
+
+  const str = String(text).trim();
+  const rangeMatch = str.match(/^(.+?)\s*(?:–|—|-|to)\s*(.+)$/i);
+  if (rangeMatch) {
+    let startPart = rangeMatch[1].trim();
+    const endPart = rangeMatch[2].trim();
+
+    // "26 to 28 Jun 2026" → borrow month/year for the start day
+    if (/^\d{1,2}$/.test(startPart)) {
+      const endParsed = parseFlexibleDate(endPart);
+      if (endParsed) {
+        const monthYear = endPart.replace(/^\d{1,2}\s*/, "").trim();
+        if (monthYear) startPart = `${startPart} ${monthYear}`;
+      }
+    }
+
+    const start = parseFlexibleDate(startPart);
+    const end = parseFlexibleDate(endPart) ?? start;
+    return { start, end };
+  }
+
+  const single = parseFlexibleDate(str);
+  return { start: single, end: single };
 }
 
 function getEventRange(event) {
   if (!event) return null;
 
-  let start = event.startDate ? new Date(event.startDate) : parseFlexibleDate(event.eventDate);
-  let end = event.endDate ? new Date(event.endDate) : start;
+  let start = event.startDate ? calendarDayFromStored(event.startDate) : null;
+  let end = event.endDate ? calendarDayFromStored(event.endDate) : null;
+
+  if (!start && event.eventDate) {
+    const range = parseDateRangeFromText(event.eventDate);
+    start = normalizeToCalendarDate(range.start);
+    end = normalizeToCalendarDate(range.end);
+  }
+
+  if (!start) {
+    start = normalizeToCalendarDate(parseFlexibleDate(event.eventDate));
+    end = end ?? start;
+  }
 
   if (!start || Number.isNaN(start.getTime())) return null;
   if (!end || Number.isNaN(end.getTime())) end = start;
@@ -114,12 +175,19 @@ function buildUpcomingFilter(now = new Date()) {
 }
 
 function resolveEventDatesFromBody(body) {
-  const start =
-    parseFlexibleDate(body.startDate) ??
-    parseFlexibleDate(body.eventDate);
-  const end =
-    parseFlexibleDate(body.endDate) ??
-    start;
+  let start = normalizeToCalendarDate(body.startDate);
+  let end = normalizeToCalendarDate(body.endDate);
+
+  if ((!start || !end) && body.eventDate) {
+    const range = parseDateRangeFromText(body.eventDate);
+    start = start ?? normalizeToCalendarDate(range.start);
+    end = end ?? normalizeToCalendarDate(range.end);
+  }
+
+  if (!start) {
+    start = normalizeToCalendarDate(parseFlexibleDate(body.eventDate));
+  }
+  if (!end) end = start;
 
   return {
     startDate: start,
@@ -129,6 +197,8 @@ function resolveEventDatesFromBody(body) {
 
 module.exports = {
   parseFlexibleDate,
+  parseDateRangeFromText,
+  normalizeToCalendarDate,
   startOfDay,
   endOfDay,
   dateKey,

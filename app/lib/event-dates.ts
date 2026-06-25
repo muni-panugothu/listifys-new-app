@@ -26,45 +26,86 @@ export function parseFlexibleDate(input: unknown): Date | null {
   const parsed = Date.parse(str);
   if (!Number.isNaN(parsed)) return new Date(parsed);
 
+  const dm = str.match(/^(\d{1,2})\s+([a-z]{3,})(?:\s+(\d{4}))?$/i);
+  if (dm) {
+    const year = dm[3] ? Number(dm[3]) : new Date().getFullYear();
+    const retry = Date.parse(`${dm[1]} ${dm[2]} ${year}`);
+    if (!Number.isNaN(retry)) return new Date(retry);
+  }
+
   return null;
 }
 
+/** UTC noon for a calendar day — avoids timezone shifting stored dates. */
+export function normalizeToCalendarDate(input: unknown): Date | null {
+  const parsed = input instanceof Date ? input : parseFlexibleDate(input);
+  if (!parsed || Number.isNaN(parsed.getTime())) return null;
+  return new Date(
+    Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0),
+  );
+}
+
+function calendarDayFromStored(value: string | Date): Date | null {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0, 0));
+}
+
 export function startOfDay(date: Date): Date {
+  const d = calendarDayFromStored(date) ?? date;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+}
+
+export function endOfDay(date: Date): Date {
+  const d = calendarDayFromStored(date) ?? date;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
+}
+
+/** YYYY-MM-DD for UI date strip (user's local calendar day). */
+export function dateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** Parse YYYY-MM-DD as a timezone-neutral calendar day (UTC noon). */
+export function parseDateKey(key: string): Date | null {
+  const [y, m, d] = String(key).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0));
+}
+
+/** Local midnight — for building the date strip from today. */
+export function localStartOfDay(date: Date): Date {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   return d;
 }
 
-export function endOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
-
-/** YYYY-MM-DD in local timezone */
-export function dateKey(date: Date): string {
-  const d = startOfDay(date);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-export function parseDateKey(key: string): Date | null {
-  const [y, m, d] = String(key).split("-").map(Number);
-  if (!y || !m || !d) return null;
-  return startOfDay(new Date(y, m - 1, d));
-}
-
 export function getEventRange(event: EventDateFields): { start: Date; end: Date } | null {
-  let start = event.startDate ? new Date(event.startDate) : parseFlexibleDate(event.eventDate);
-  let end = event.endDate ? new Date(event.endDate) : start;
+  let start = event.startDate ? calendarDayFromStored(event.startDate) : null;
+  let end = event.endDate ? calendarDayFromStored(event.endDate) : null;
+
+  if (!start && event.eventDate) {
+    const range = parseDateRangeFromText(event.eventDate);
+    start = normalizeToCalendarDate(range.start);
+    end = normalizeToCalendarDate(range.end);
+  }
+
+  if (!start) {
+    start = normalizeToCalendarDate(parseFlexibleDate(event.eventDate));
+    end = end ?? start;
+  }
 
   if (!start || Number.isNaN(start.getTime())) return null;
   if (!end || Number.isNaN(end.getTime())) end = start;
   if (end < start) end = start;
 
-  return { start: startOfDay(start), end: endOfDay(end) };
+  return {
+    start: startOfDay(start),
+    end: endOfDay(end),
+  };
 }
 
 export function eventOccursOnDate(event: EventDateFields, day: Date): boolean {
@@ -75,18 +116,30 @@ export function eventOccursOnDate(event: EventDateFields, day: Date): boolean {
   return range.start <= dayEnd && range.end >= dayStart;
 }
 
-/** Parse "27 Jun 2025 - 30 Jun 2025" style ranges from free-text eventDate. */
+/** Parse "26 to 28 Jun", "26 Jun - 28 Jun 2026", etc. */
 export function parseDateRangeFromText(text?: string): { start: Date | null; end: Date | null } {
   if (!text?.trim()) return { start: null, end: null };
 
-  const parts = text.split(/\s*(?:–|—|-|to)\s*/i).map((p) => p.trim()).filter(Boolean);
-  if (parts.length >= 2) {
-    const start = parseFlexibleDate(parts[0]);
-    const end = parseFlexibleDate(parts[parts.length - 1]);
+  const str = text.trim();
+  const rangeMatch = str.match(/^(.+?)\s*(?:–|—|-|to)\s*(.+)$/i);
+  if (rangeMatch) {
+    let startPart = rangeMatch[1].trim();
+    const endPart = rangeMatch[2].trim();
+
+    if (/^\d{1,2}$/.test(startPart)) {
+      const endParsed = parseFlexibleDate(endPart);
+      if (endParsed) {
+        const monthYear = endPart.replace(/^\d{1,2}\s*/, "").trim();
+        if (monthYear) startPart = `${startPart} ${monthYear}`;
+      }
+    }
+
+    const start = parseFlexibleDate(startPart);
+    const end = parseFlexibleDate(endPart) ?? start;
     return { start, end };
   }
 
-  const single = parseFlexibleDate(text);
+  const single = parseFlexibleDate(str);
   return { start: single, end: single };
 }
 
@@ -151,7 +204,7 @@ export function buildDateStripItems(
 ): DateStripItem[] {
   const minDays = opts.minDays ?? 14;
   const maxDays = opts.maxDays ?? 60;
-  const today = startOfDay(new Date());
+  const today = localStartOfDay(new Date());
 
   let lastEventDay = today;
   for (const [key, count] of Object.entries(counts)) {

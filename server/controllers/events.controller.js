@@ -823,12 +823,7 @@ exports.getEventCalendarSummary = async (req, res) => {
 
     const filter = {
       status: "active",
-      startDate: { $exists: true, $ne: null, $lte: endOfDay(windowEnd) },
-      $or: [
-        { endDate: { $gte: now } },
-        { endDate: null },
-        { endDate: { $exists: false } },
-      ],
+      ...buildUpcomingFilter(),
     };
 
     if (subcategory && subcategory !== "All") {
@@ -843,6 +838,7 @@ exports.getEventCalendarSummary = async (req, res) => {
     const events = await Event.find(filter, {
       startDate: 1,
       endDate: 1,
+      eventDate: 1,
     }).lean();
 
     const counts = {};
@@ -911,16 +907,12 @@ exports.getUpcomingEvents = async (req, res) => {
 
     const filter = { status: "active" };
     const andClauses = [buildUpcomingFilter()];
+    const day = date ? parseDateKey(String(date)) : null;
 
     const sub = subcategory || category;
     if (sub && sub !== "All") {
       const cats = String(sub).split(",").map((c) => c.trim());
       filter.subcategory = { $in: cats };
-    }
-
-    if (date) {
-      const dayFilter = buildDayOverlapFilter(String(date));
-      if (dayFilter) andClauses.push(dayFilter);
     }
 
     filter.$and = andClauses;
@@ -949,39 +941,68 @@ exports.getUpcomingEvents = async (req, res) => {
       ? { startDate: 1, createdAt: -1 }
       : buildSortOption(sort || "newest", !!(lat && lng), !!search);
 
+    const fetchLimit = day ? Math.min(300, safeLimit * 10) : safeLimit + 1;
     let listings = await Event.find(filter, LIST_PROJECTION)
       .sort(sortOption)
-      .skip(skip)
-      .limit(safeLimit + 1)
+      .skip(day ? 0 : skip)
+      .limit(fetchLimit)
       .populate("seller", "name profileImage")
       .lean();
 
-    const hasMore = listings.length > safeLimit;
-    if (hasMore) listings = listings.slice(0, safeLimit);
+    listings = listings.filter((e) => !isEventExpired(e));
 
-    // Legacy events without structured dates: include when filtering by date if text matches
-    if (date) {
-      const day = parseDateKey(String(date));
-      if (day) {
-        const legacyFilter = {
-          status: "active",
-          $or: [{ startDate: null }, { startDate: { $exists: false } }],
-        };
-        if (filter.subcategory) legacyFilter.subcategory = filter.subcategory;
-        const legacy = await Event.find(legacyFilter, LIST_PROJECTION)
+    let hasMore = false;
+    if (day) {
+      listings = listings.filter((e) => eventOccursOnDate(e, day));
+      hasMore = listings.length > skip + safeLimit;
+      listings = listings.slice(skip, skip + safeLimit);
+
+      // Wide fallback when geo/structured filters hid text-dated events
+      if (listings.length === 0 && skip === 0) {
+        const fallbackFilter = { status: "active", eventDate: { $exists: true, $ne: "" } };
+        if (filter.subcategory) fallbackFilter.subcategory = filter.subcategory;
+        const fallback = await Event.find(fallbackFilter, LIST_PROJECTION)
           .sort({ createdAt: -1 })
-          .limit(100)
+          .limit(200)
           .populate("seller", "name profileImage")
           .lean();
-        const legacyOnDay = legacy.filter((e) => eventOccursOnDate(e, day));
-        const seen = new Set(listings.map((l) => String(l._id)));
-        for (const item of legacyOnDay) {
-          if (!seen.has(String(item._id))) listings.push(item);
+        listings = fallback.filter((e) => eventOccursOnDate(e, day) && !isEventExpired(e));
+        hasMore = false;
+      }
+    } else {
+      hasMore = listings.length > safeLimit;
+      if (hasMore) listings = listings.slice(0, safeLimit);
+    }
+
+    // Legacy events without structured dates: include when filtering by date if text matches
+    if (day) {
+      const legacyFilter = {
+        status: "active",
+        $or: [{ startDate: null }, { startDate: { $exists: false } }],
+      };
+      if (filter.subcategory) legacyFilter.subcategory = filter.subcategory;
+      const legacy = await Event.find(legacyFilter, LIST_PROJECTION)
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .populate("seller", "name profileImage")
+        .lean();
+      const legacyOnDay = legacy.filter((e) => eventOccursOnDate(e, day) && !isEventExpired(e));
+      const seen = new Set(listings.map((l) => String(l._id)));
+    for (const item of legacyOnDay) {
+      if (!seen.has(String(item._id))) {
+        listings.push(item);
+        // Backfill structured dates from eventDate text for future queries
+        const resolved = resolveEventDatesFromBody(item);
+        if (resolved.startDate && !item.startDate) {
+          void Event.updateOne(
+            { _id: item._id },
+            { $set: { startDate: resolved.startDate, endDate: resolved.endDate } },
+          );
         }
       }
     }
+    }
 
-    listings = listings.filter((e) => !isEventExpired(e));
     listings.forEach(normaliseImages);
 
     res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=120");

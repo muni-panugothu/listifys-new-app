@@ -7,12 +7,12 @@ import { Platform } from "react-native";
 
 import {
   AUTH_API_BASE_URL,
+  AuthApiError,
   getAccessToken,
-  getApiClientHeaders,
-  refreshAccessToken,
   requestJson,
   resolveAbsoluteMediaUrl,
 } from "@/features/auth/services/auth-api";
+import { authenticatedMultipartPost } from "@/lib/authenticated-multipart";
 import type { CategorySlug } from "@/constants/categories";
 import { cacheKeys, invalidateCache, seedListingsBatch, withCache } from "@/lib/cache";
 import { getListingSellerId } from "@/lib/is-own-listing";
@@ -636,53 +636,42 @@ export type ModerationResponse = {
 export async function checkImageModeration(
   imageUris: string[],
 ): Promise<ModerationResponse> {
-  const formData = new FormData();
-  for (const uri of imageUris) {
-    const filename = uri.split("/").pop() || `image_${Date.now()}.jpg`;
-    const match = /\.(\w+)$/.exec(filename);
-    const ext = match ? match[1] : "jpg";
-    const mimeType = `image/${ext === "jpg" ? "jpeg" : ext}`;
+  const buildFormData = () => {
+    const formData = new FormData();
+    for (const uri of imageUris) {
+      const filename = uri.split("/").pop() || `image_${Date.now()}.jpg`;
+      const match = /\.(\w+)$/.exec(filename);
+      const ext = match ? match[1] : "jpg";
+      const mimeType = `image/${ext === "jpg" ? "jpeg" : ext}`;
 
-    formData.append("images", {
-      uri: Platform.OS === "android" ? uri : uri.replace("file://", ""),
-      name: filename,
-      type: mimeType,
-    } as unknown as Blob);
-  }
-
-  const token = getAccessToken();
-  const mobileHeaders = getApiClientHeaders(
-    token ? { Authorization: `Bearer ${token}` } : {},
-  );
-  delete (mobileHeaders as Record<string, string>)["Content-Type"];
-
-  const response = await fetch(`${AUTH_API_BASE_URL}/api/moderation/check-images`, {
-    method: "POST",
-    credentials: Platform.OS === "web" ? "include" : "omit",
-    headers: mobileHeaders,
-    body: formData,
-  });
-
-  if (response.status === 401) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      const retryToken = getAccessToken();
-      const retryHeaders = getApiClientHeaders(
-        retryToken ? { Authorization: `Bearer ${retryToken}` } : {},
-      );
-      delete (retryHeaders as Record<string, string>)["Content-Type"];
-      const retryResponse = await fetch(`${AUTH_API_BASE_URL}/api/moderation/check-images`, {
-        method: "POST",
-        credentials: Platform.OS === "web" ? "include" : "omit",
-        headers: retryHeaders,
-        body: formData,
-      });
-      const data = await retryResponse.json();
-      return data as ModerationResponse;
+      formData.append("images", {
+        uri: Platform.OS === "android" ? uri : uri.replace("file://", ""),
+        name: filename,
+        type: mimeType,
+      } as unknown as Blob);
     }
+    return formData;
+  };
+
+  const response = await authenticatedMultipartPost(
+    `${AUTH_API_BASE_URL}/api/moderation/check-images`,
+    buildFormData,
+  );
+
+  const data = await response.json().catch(() => ({
+    success: false,
+    overallDecision: "allow",
+    results: [],
+  }));
+
+  if (!response.ok) {
+    throw new AuthApiError(
+      (data as { message?: string })?.message || "Image moderation check failed",
+      response.status,
+      data,
+    );
   }
 
-  const data = await response.json().catch(() => ({ success: false, overallDecision: "allow", results: [] }));
   return data as ModerationResponse;
 }
 
@@ -711,33 +700,16 @@ export async function uploadListingImages(
 
   const url = `${AUTH_API_BASE_URL}${categoryApiBase(categorySlug)}/upload-images`;
 
-  const doUpload = async () => {
-    const token = getAccessToken();
-    const uploadHeaders = getApiClientHeaders(
-      token ? { Authorization: `Bearer ${token}` } : {},
-    );
-    delete (uploadHeaders as Record<string, string>)["Content-Type"];
-    return fetch(url, {
-      method: "POST",
-      credentials: Platform.OS === "web" ? "include" : "omit",
-      headers: uploadHeaders,
-      body: buildFormData(),
-    });
-  };
-
-  let response = await doUpload();
-
-  // Auto-refresh on 401 and retry once (mirrors requestJson behaviour)
-  if (response.status === 401) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      response = await doUpload();
-    }
-  }
+  const response = await authenticatedMultipartPost(url, buildFormData);
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.message || "Image upload failed");
+    const message =
+      (data as { message?: string })?.message ||
+      (response.status === 401
+        ? "Your session expired. Please sign in again."
+        : "Image upload failed");
+    throw new AuthApiError(message, response.status, data);
   }
 
   // Server returns "imageUrls"; normalise to "images" for our type

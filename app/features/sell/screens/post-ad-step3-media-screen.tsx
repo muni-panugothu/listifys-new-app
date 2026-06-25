@@ -34,9 +34,10 @@ import { PhoneInputWithCountry } from "@/components/phone-input-with-country";
 import { GooglePlacesInput, type PlacesSelectResult } from "@/components/google-places-input";
 import { useLocale } from "@/providers/locale-provider";
 import { getMileageUnitForCountry } from "@/lib/listing-distance";
-import { dateKey, parseDateRangeFromText } from "@/lib/event-dates";
+import { dateKey, normalizeToCalendarDate, parseDateRangeFromText } from "@/lib/event-dates";
 import { getCurrencyCodeFromCountry } from "@/lib/currency";
 import { validateListingContactPhone } from "@/lib/phone-validation";
+import { AuthApiError } from "@/features/auth/services/auth-api";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { refreshDeviceLocation, selectLocationCoords, setLocationDirect } from "@/store/slices/location-slice";
 import { showAuthGate } from "@/store/slices/auth-gate-slice";
@@ -90,7 +91,11 @@ function isAuthFailureMessage(message: string) {
     normalized.includes("sign in") ||
     normalized.includes("unauthorized") ||
     normalized.includes("authentication") ||
-    normalized.includes("not authenticated")
+    normalized.includes("not authenticated") ||
+    normalized.includes("session expired") ||
+    normalized.includes("token expired") ||
+    normalized.includes("refresh token") ||
+    normalized.includes("not authorized")
   );
 }
 
@@ -542,8 +547,12 @@ export function PostAdStep3MediaScreen() {
         if (eventDate) listingBody.eventDate = eventDate;
         if (eventTime) listingBody.eventTime = eventTime;
         const range = parseDateRangeFromText(eventDate);
-        if (range.start) listingBody.startDate = range.start.toISOString();
-        if (range.end) listingBody.endDate = range.end.toISOString();
+        const startCal = range.start ? normalizeToCalendarDate(range.start) : null;
+        const endCal = (range.end ?? range.start)
+          ? normalizeToCalendarDate(range.end ?? range.start)
+          : null;
+        if (startCal) listingBody.startDate = startCal.toISOString();
+        if (endCal) listingBody.endDate = endCal.toISOString();
         if (organizer) listingBody.organizer = organizer;
         if (venue) listingBody.venue = venue;
         if (ticketsAvailable) listingBody.ticketsAvailable = Number(ticketsAvailable);
@@ -738,7 +747,11 @@ export function PostAdStep3MediaScreen() {
         err instanceof Error ? err.message : "Failed to post listing";
       dispatch(setSubmitError(message));
       dispatch(setSubmitting(false));
-      if (!isAuthenticated || isAuthFailureMessage(message)) {
+      if (
+        !isAuthenticated ||
+        isAuthFailureMessage(message) ||
+        (err instanceof AuthApiError && err.status === 401)
+      ) {
         dispatch(showAuthGate({ action: "sell", redirectTo: POST_AD_RETURN_PATH }));
         return;
       }
