@@ -17,6 +17,7 @@ const {
   eventOccursOnDate,
   isEventExpired,
   resolveEventDatesFromBody,
+  repairEventDatesIfNeeded,
   startOfDay,
   endOfDay,
   parseDateKey,
@@ -949,6 +950,16 @@ exports.getUpcomingEvents = async (req, res) => {
       .populate("seller", "name profileImage")
       .lean();
 
+    // Repair corrupt structured dates (e.g. year 0026) from eventDate text.
+    for (const listing of listings) {
+      const patch = repairEventDatesIfNeeded(listing);
+      if (patch) {
+        listing.startDate = patch.startDate;
+        listing.endDate = patch.endDate;
+        void Event.updateOne({ _id: listing._id }, { $set: patch });
+      }
+    }
+
     listings = listings.filter((e) => !isEventExpired(e));
 
     let hasMore = false;
@@ -967,6 +978,14 @@ exports.getUpcomingEvents = async (req, res) => {
           .populate("seller", "name profileImage")
           .lean();
         listings = fallback.filter((e) => eventOccursOnDate(e, day) && !isEventExpired(e));
+        for (const listing of listings) {
+          const patch = repairEventDatesIfNeeded(listing);
+          if (patch) {
+            listing.startDate = patch.startDate;
+            listing.endDate = patch.endDate;
+            void Event.updateOne({ _id: listing._id }, { $set: patch });
+          }
+        }
         hasMore = false;
       }
     } else {
@@ -989,17 +1008,15 @@ exports.getUpcomingEvents = async (req, res) => {
       const legacyOnDay = legacy.filter((e) => eventOccursOnDate(e, day) && !isEventExpired(e));
       const seen = new Set(listings.map((l) => String(l._id)));
     for (const item of legacyOnDay) {
-      if (!seen.has(String(item._id))) {
-        listings.push(item);
-        // Backfill structured dates from eventDate text for future queries
-        const resolved = resolveEventDatesFromBody(item);
-        if (resolved.startDate && !item.startDate) {
-          void Event.updateOne(
-            { _id: item._id },
-            { $set: { startDate: resolved.startDate, endDate: resolved.endDate } },
-          );
+        if (!seen.has(String(item._id))) {
+          listings.push(item);
+          const patch = repairEventDatesIfNeeded(item);
+          if (patch) {
+            item.startDate = patch.startDate;
+            item.endDate = patch.endDate;
+            void Event.updateOne({ _id: item._id }, { $set: patch });
+          }
         }
-      }
     }
     }
 

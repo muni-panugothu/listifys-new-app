@@ -1196,7 +1196,7 @@ export function PostAdStep2DetailsScreen() {
               <View className="mb-6 flex-row gap-4">
                 <View className="flex-1">
                   <Label text="Event Date" required />
-                  <IconField icon="event" value={eventDate} onChangeText={(v) => dispatch(setEventDate(v))} placeholder="e.g. 25 Dec 2025" />
+                  <IconField icon="event" value={eventDate} onChangeText={(v) => dispatch(setEventDate(v))} placeholder="e.g. 26 Jun - 28 Jun 2026" />
                 </View>
                 <View className="flex-1">
                   <Label text="Event Time" required />

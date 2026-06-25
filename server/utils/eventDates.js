@@ -3,13 +3,24 @@
  * Events may store free-text eventDate (legacy) or structured startDate/endDate.
  */
 
+const MIN_VALID_YEAR = 1970;
+const MAX_VALID_YEAR = 2100;
+
+function stripOrdinals(input) {
+  return String(input).replace(/(\d{1,2})(?:st|nd|rd|th)\b/gi, "$1");
+}
+
+function isPlausibleYear(year) {
+  return year >= MIN_VALID_YEAR && year <= MAX_VALID_YEAR;
+}
+
 function parseFlexibleDate(input) {
   if (input == null || input === "") return null;
   if (input instanceof Date) {
     return Number.isNaN(input.getTime()) ? null : input;
   }
 
-  const str = String(input).trim();
+  let str = stripOrdinals(String(input).trim());
   if (!str) return null;
 
   // Reject obvious schedule text (not a calendar date).
@@ -17,15 +28,37 @@ function parseFlexibleDate(input) {
     return null;
   }
 
-  const parsed = Date.parse(str);
-  if (!Number.isNaN(parsed)) return new Date(parsed);
+  // Bare day or bare short number — Date.parse("26") => year 0026 in some engines.
+  if (/^\d{1,2}$/.test(str)) return null;
 
-  // "26 Jun" or "26 jun 2026" without strict ISO
-  const dm = str.match(/^(\d{1,2})\s+([a-z]{3,})(?:\s+(\d{4}))?$/i);
+  // ISO date-only YYYY-MM-DD
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    const y = Number(iso[1]);
+    const m = Number(iso[2]);
+    const d = Number(iso[3]);
+    if (isPlausibleYear(y)) {
+      return new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0));
+    }
+    return null;
+  }
+
+  // "26 Jun 2026" / "26 Jun"
+  const dm = str.match(/^(\d{1,2})\s+([a-zA-Z]+)(?:\s+(\d{4}))?$/);
   if (dm) {
     const year = dm[3] ? Number(dm[3]) : new Date().getFullYear();
+    if (!isPlausibleYear(year)) return null;
     const retry = Date.parse(`${dm[1]} ${dm[2]} ${year}`);
-    if (!Number.isNaN(retry)) return new Date(retry);
+    if (!Number.isNaN(retry)) {
+      const parsed = new Date(retry);
+      if (isPlausibleYear(parsed.getFullYear())) return parsed;
+    }
+  }
+
+  const parsed = Date.parse(str);
+  if (!Number.isNaN(parsed)) {
+    const d = new Date(parsed);
+    if (isPlausibleYear(d.getFullYear())) return d;
   }
 
   return null;
@@ -35,8 +68,10 @@ function parseFlexibleDate(input) {
 function normalizeToCalendarDate(input) {
   const parsed = input instanceof Date ? input : parseFlexibleDate(input);
   if (!parsed || Number.isNaN(parsed.getTime())) return null;
+  const y = parsed.getFullYear();
+  if (!isPlausibleYear(y)) return null;
   return new Date(
-    Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0),
+    Date.UTC(y, parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0),
   );
 }
 
@@ -44,7 +79,20 @@ function calendarDayFromStored(value) {
   if (!value) return null;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0, 0));
+  const y = d.getUTCFullYear();
+  if (!isPlausibleYear(y)) return null;
+  return new Date(Date.UTC(y, d.getUTCMonth(), d.getUTCDate(), 12, 0, 0, 0));
+}
+
+function isCorruptStoredDate(stored, fromText) {
+  if (!stored) return false;
+  const y = stored.getUTCFullYear();
+  if (!isPlausibleYear(y)) return true;
+  if (fromText) {
+    const ty = fromText.getUTCFullYear();
+    if (isPlausibleYear(ty) && ty !== y) return true;
+  }
+  return false;
 }
 
 function startOfDay(date) {
@@ -68,15 +116,33 @@ function dateKey(date) {
 
 function parseDateKey(key) {
   const [y, m, d] = String(key).split("-").map(Number);
-  if (!y || !m || !d) return null;
+  if (!y || !m || !d || !isPlausibleYear(y)) return null;
   return new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0));
 }
 
-/** Parse "26 to 28 Jun", "26 Jun - 28 Jun 2026", etc. */
+/**
+ * Parse ranges including:
+ * - "26 - 28th Jun 2026"
+ * - "26 Jun - 28 Jun 2026"
+ * - "26 to 28 Jun 2026"
+ */
 function parseDateRangeFromText(text) {
   if (!text || !String(text).trim()) return { start: null, end: null };
 
-  const str = String(text).trim();
+  const str = stripOrdinals(String(text).trim());
+
+  // "26 - 28 Jun 2026" (shared month/year on the right)
+  const sharedMonth = str.match(
+    /^(\d{1,2})\s*(?:–|—|-|to)\s*(\d{1,2})\s+([a-zA-Z]+)(?:\s+(\d{4}))?$/i,
+  );
+  if (sharedMonth) {
+    const year = sharedMonth[4] ? Number(sharedMonth[4]) : new Date().getFullYear();
+    const month = sharedMonth[3];
+    const start = parseFlexibleDate(`${sharedMonth[1]} ${month} ${year}`);
+    const end = parseFlexibleDate(`${sharedMonth[2]} ${month} ${year}`);
+    return { start, end };
+  }
+
   const rangeMatch = str.match(/^(.+?)\s*(?:–|—|-|to)\s*(.+)$/i);
   if (rangeMatch) {
     let startPart = rangeMatch[1].trim();
@@ -86,7 +152,7 @@ function parseDateRangeFromText(text) {
     if (/^\d{1,2}$/.test(startPart)) {
       const endParsed = parseFlexibleDate(endPart);
       if (endParsed) {
-        const monthYear = endPart.replace(/^\d{1,2}\s*/, "").trim();
+        const monthYear = endPart.replace(/^\d{1,2}(?:st|nd|rd|th)?\s*/i, "").trim();
         if (monthYear) startPart = `${startPart} ${monthYear}`;
       }
     }
@@ -103,13 +169,17 @@ function parseDateRangeFromText(text) {
 function getEventRange(event) {
   if (!event) return null;
 
+  const textRange = event.eventDate ? parseDateRangeFromText(event.eventDate) : { start: null, end: null };
+  const textStart = normalizeToCalendarDate(textRange.start);
+  const textEnd = normalizeToCalendarDate(textRange.end ?? textRange.start);
+
   let start = event.startDate ? calendarDayFromStored(event.startDate) : null;
   let end = event.endDate ? calendarDayFromStored(event.endDate) : null;
 
-  if (!start && event.eventDate) {
-    const range = parseDateRangeFromText(event.eventDate);
-    start = normalizeToCalendarDate(range.start);
-    end = normalizeToCalendarDate(range.end);
+  // Prefer eventDate when structured dates are missing or corrupt (e.g. year 0026).
+  if (isCorruptStoredDate(start, textStart) || (!start && textStart)) {
+    start = textStart;
+    end = textEnd ?? textStart;
   }
 
   if (!start) {
@@ -167,9 +237,10 @@ function buildUpcomingFilter(now = new Date()) {
       { endDate: { $gte: todayStart } },
       { endDate: null, startDate: { $gte: todayStart } },
       { endDate: { $exists: false }, startDate: { $gte: todayStart } },
-      // Legacy: no structured dates — keep visible (client shows eventDate text).
       { startDate: { $exists: false } },
       { startDate: null },
+      // Include corrupt/missing structured dates when eventDate text exists.
+      { eventDate: { $exists: true, $ne: "" } },
     ],
   };
 }
@@ -178,10 +249,17 @@ function resolveEventDatesFromBody(body) {
   let start = normalizeToCalendarDate(body.startDate);
   let end = normalizeToCalendarDate(body.endDate);
 
-  if ((!start || !end) && body.eventDate) {
+  if (body.eventDate) {
     const range = parseDateRangeFromText(body.eventDate);
-    start = start ?? normalizeToCalendarDate(range.start);
-    end = end ?? normalizeToCalendarDate(range.end);
+    const fromTextStart = normalizeToCalendarDate(range.start);
+    const fromTextEnd = normalizeToCalendarDate(range.end ?? range.start);
+
+    if (isCorruptStoredDate(start, fromTextStart) || !start) {
+      start = fromTextStart;
+    }
+    if (isCorruptStoredDate(end, fromTextEnd) || !end) {
+      end = fromTextEnd ?? start;
+    }
   }
 
   if (!start) {
@@ -192,6 +270,34 @@ function resolveEventDatesFromBody(body) {
   return {
     startDate: start,
     endDate: end,
+  };
+}
+
+/** Repair corrupt startDate/endDate from eventDate text. Returns fields to $set or null. */
+function repairEventDatesIfNeeded(event) {
+  if (!event?.eventDate) return null;
+
+  const resolved = resolveEventDatesFromBody({
+    eventDate: event.eventDate,
+    startDate: event.startDate,
+    endDate: event.endDate,
+  });
+
+  if (!resolved.startDate) return null;
+
+  const currentStart = event.startDate ? calendarDayFromStored(event.startDate) : null;
+  if (
+    !isCorruptStoredDate(currentStart, resolved.startDate) &&
+    currentStart &&
+    resolved.startDate &&
+    currentStart.getTime() === resolved.startDate.getTime()
+  ) {
+    return null;
+  }
+
+  return {
+    startDate: resolved.startDate,
+    endDate: resolved.endDate ?? resolved.startDate,
   };
 }
 
@@ -209,4 +315,5 @@ module.exports = {
   buildDayOverlapFilter,
   buildUpcomingFilter,
   resolveEventDatesFromBody,
+  repairEventDatesIfNeeded,
 };
