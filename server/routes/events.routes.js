@@ -16,7 +16,12 @@ const {
   getSavedEvents,
   uploadImages,
   toggleSave,
+  getEventCalendarSummary,
+  getUpcomingEvents,
 } = require("../controllers/events.controller.js");
+
+router.get("/calendar/summary", searchLimiter, getEventCalendarSummary);
+router.get("/upcoming", searchLimiter, cacheResponseTracked("events", 60, "upcoming"), getUpcomingEvents);
 
 router.get("/", searchLimiter, cacheResponseTracked("events", 300, "list"), getAllEvents);
 

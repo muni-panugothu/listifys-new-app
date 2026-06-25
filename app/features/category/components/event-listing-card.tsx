@@ -3,23 +3,8 @@ import { Pressable, Text, View } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
 import type { ListingItem } from "@/features/listing/services/listing-api";
+import { formatEventDisplayLabel } from "@/lib/event-dates";
 import { Image } from "@/lib/nativewind-interop";
-
-function formatEventDate(dateStr?: string, timeStr?: string): string {
-  const parts: string[] = [];
-  if (dateStr) {
-    try {
-      const d = new Date(dateStr);
-      parts.push(
-        d.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
-      );
-    } catch {
-      parts.push(dateStr);
-    }
-  }
-  if (timeStr) parts.push(timeStr);
-  return parts.join(" • ");
-}
 
 type EventListingCardProps = {
   event: ListingItem;
@@ -38,7 +23,9 @@ export function EventListingCard({
 }: EventListingCardProps) {
   const eventDate = (event as { eventDate?: string }).eventDate ?? "";
   const eventTime = (event as { eventTime?: string }).eventTime ?? "";
-  const dateLabel = formatEventDate(eventDate, eventTime);
+  const startDate = (event as { startDate?: string }).startDate;
+  const endDate = (event as { endDate?: string }).endDate;
+  const dateLabel = formatEventDisplayLabel({ eventDate, eventTime, startDate, endDate });
   const featured = (event as { featured?: boolean }).featured;
 
   return (

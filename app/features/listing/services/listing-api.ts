@@ -503,6 +503,9 @@ export async function createListing(
   invalidateCache("feed:");
   invalidateCache(`list:${categorySlug}`);
   invalidateCache("my-listings");
+  if (categorySlug === "events") {
+    invalidateCache("events:");
+  }
   return result;
 }
 

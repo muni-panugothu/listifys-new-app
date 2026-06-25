@@ -34,6 +34,7 @@ import { PhoneInputWithCountry } from "@/components/phone-input-with-country";
 import { GooglePlacesInput, type PlacesSelectResult } from "@/components/google-places-input";
 import { useLocale } from "@/providers/locale-provider";
 import { getMileageUnitForCountry } from "@/lib/listing-distance";
+import { dateKey, parseDateRangeFromText } from "@/lib/event-dates";
 import { getCurrencyCodeFromCountry } from "@/lib/currency";
 import { validateListingContactPhone } from "@/lib/phone-validation";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -540,6 +541,9 @@ export function PostAdStep3MediaScreen() {
       if (category === "events") {
         if (eventDate) listingBody.eventDate = eventDate;
         if (eventTime) listingBody.eventTime = eventTime;
+        const range = parseDateRangeFromText(eventDate);
+        if (range.start) listingBody.startDate = range.start.toISOString();
+        if (range.end) listingBody.endDate = range.end.toISOString();
         if (organizer) listingBody.organizer = organizer;
         if (venue) listingBody.venue = venue;
         if (ticketsAvailable) listingBody.ticketsAvailable = Number(ticketsAvailable);

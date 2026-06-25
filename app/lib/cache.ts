@@ -202,6 +202,8 @@ export const cacheKeys = {
   conversations: () => "conversations",
   conversation: (id: string) => `conv:${id}`,
   threadMessages: (threadId: string) => `messages:${threadId}`,
+  eventsCalendar: (queryKey: string) => `events:calendar:${queryKey}`,
+  eventsUpcoming: (queryKey: string) => `events:upcoming:${queryKey}`,
 };
 
 // ── Cross-screen seed bridge ──────────────────────────────────────────────────

@@ -9,6 +9,18 @@ const viewCounter = require("../services/viewcount.service.js");
 const SearchService = require("../services/search.service.js");
 const { esHydratedSearch } = require("../utils/esSearch");
 const { notifyFollowersOfNewListing } = require("../services/notifyfollowers.service.js");
+const {
+  buildDayOverlapFilter,
+  buildUpcomingFilter,
+  dateKey,
+  getEventRange,
+  eventOccursOnDate,
+  isEventExpired,
+  resolveEventDatesFromBody,
+  startOfDay,
+  endOfDay,
+  parseDateKey,
+} = require("../utils/eventDates");
 
 // ── RabbitMQ Producers ─────────────────────────────────────────────────────────
 const {
@@ -37,6 +49,8 @@ const LIST_PROJECTION = { currency: 1, slug: 1,
   createdAt: 1,
   eventDate: 1,
   eventTime: 1,
+  startDate: 1,
+  endDate: 1,
   organizer: 1,
   venue: 1,
   ticketsAvailable: 1,
@@ -88,6 +102,8 @@ exports.createEvent = async (req, res) => {
       images,
       eventDate,
       eventTime,
+      startDate: bodyStartDate,
+      endDate: bodyEndDate,
       organizer,
       venue,
       ticketsAvailable,
@@ -118,6 +134,12 @@ exports.createEvent = async (req, res) => {
       });
     }
 
+    const resolvedDates = resolveEventDatesFromBody({
+      startDate: bodyStartDate,
+      endDate: bodyEndDate,
+      eventDate,
+    });
+
     const listing = await Event.create({
       title,
       description,
@@ -134,6 +156,8 @@ exports.createEvent = async (req, res) => {
       images: images || [],
       eventDate,
       eventTime,
+      startDate: resolvedDates.startDate,
+      endDate: resolvedDates.endDate,
       organizer,
       venue,
       ticketsAvailable: ticketsAvailable !== undefined && ticketsAvailable !== null && ticketsAvailable !== ""
@@ -460,6 +484,8 @@ exports.updateEvent = async (req, res) => {
       "status",
       "eventDate",
       "eventTime",
+      "startDate",
+      "endDate",
       "organizer",
       "venue",
       "ticketsAvailable",
@@ -472,6 +498,20 @@ exports.updateEvent = async (req, res) => {
         listing[field] = req.body[field];
       }
     });
+
+    if (
+      req.body.startDate !== undefined ||
+      req.body.endDate !== undefined ||
+      req.body.eventDate !== undefined
+    ) {
+      const resolvedDates = resolveEventDatesFromBody({
+        startDate: req.body.startDate ?? listing.startDate,
+        endDate: req.body.endDate ?? listing.endDate,
+        eventDate: req.body.eventDate ?? listing.eventDate,
+      });
+      listing.startDate = resolvedDates.startDate;
+      listing.endDate = resolvedDates.endDate;
+    }
 
     await listing.save();
 
@@ -764,5 +804,198 @@ exports.toggleSave = async (req, res) => {
       success: false,
       message: "Failed to toggle save",
     });
+  }
+};
+
+/**
+ * GET /api/events/calendar/summary
+ * Returns per-day event counts for the upcoming window (for date strip + calendar dots).
+ */
+exports.getEventCalendarSummary = async (req, res) => {
+  try {
+    const days = Math.min(Math.max(Number(req.query.days) || 60, 7), 120);
+    const subcategory = req.query.category || req.query.subcategory;
+    const { lat, lng, radius, countryCode } = req.query;
+
+    const now = startOfDay(new Date());
+    const windowEnd = new Date(now);
+    windowEnd.setDate(windowEnd.getDate() + days);
+
+    const filter = {
+      status: "active",
+      startDate: { $exists: true, $ne: null, $lte: endOfDay(windowEnd) },
+      $or: [
+        { endDate: { $gte: now } },
+        { endDate: null },
+        { endDate: { $exists: false } },
+      ],
+    };
+
+    if (subcategory && subcategory !== "All") {
+      const cats = String(subcategory).split(",").map((c) => c.trim());
+      filter.subcategory = { $in: cats };
+    }
+
+    const { applyGeoFilter, applyCountryFilter } = require("../utils/geoQuery");
+    applyGeoFilter(filter, lat, lng, radius);
+    applyCountryFilter(filter, countryCode);
+
+    const events = await Event.find(filter, {
+      startDate: 1,
+      endDate: 1,
+    }).lean();
+
+    const counts = {};
+    for (let i = 0; i < days; i++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      counts[dateKey(d)] = 0;
+    }
+
+    for (const event of events) {
+      const range = getEventRange(event);
+      if (!range) continue;
+      const cursor = new Date(Math.max(range.start.getTime(), now.getTime()));
+      const last = range.end < windowEnd ? range.end : endOfDay(windowEnd);
+      while (cursor <= last) {
+        const key = dateKey(cursor);
+        if (counts[key] !== undefined) {
+          counts[key] += 1;
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+
+    const dates = Object.entries(counts)
+      .filter(([, count]) => count > 0)
+      .map(([key, count]) => ({ date: key, count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=120");
+    res.status(200).json({
+      success: true,
+      counts,
+      dates,
+      totalDays: days,
+    });
+  } catch (error) {
+    logger.error("Event calendar summary error:", error);
+    res.status(500).json({ success: false, message: "Failed to load event calendar" });
+  }
+};
+
+/**
+ * GET /api/events/upcoming
+ * Upcoming events with optional date filter (multi-day aware), search, geo, pagination.
+ */
+exports.getUpcomingEvents = async (req, res) => {
+  try {
+    const {
+      date,
+      search,
+      category,
+      subcategory,
+      sort,
+      location: locationFilter,
+      lat,
+      lng,
+      radius,
+      countryCode,
+      page = 1,
+      limit = 30,
+    } = req.query;
+
+    const safeLimit = Math.min(Math.max(Number(limit) || 30, 1), 50);
+    const safePage = Math.max(Number(page) || 1, 1);
+    const skip = (safePage - 1) * safeLimit;
+
+    const filter = { status: "active" };
+    const andClauses = [buildUpcomingFilter()];
+
+    const sub = subcategory || category;
+    if (sub && sub !== "All") {
+      const cats = String(sub).split(",").map((c) => c.trim());
+      filter.subcategory = { $in: cats };
+    }
+
+    if (date) {
+      const dayFilter = buildDayOverlapFilter(String(date));
+      if (dayFilter) andClauses.push(dayFilter);
+    }
+
+    filter.$and = andClauses;
+
+    if (search) {
+      const escapedSearch = String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { title: { $regex: escapedSearch, $options: "i" } },
+          { description: { $regex: escapedSearch, $options: "i" } },
+          { organizer: { $regex: escapedSearch, $options: "i" } },
+          { venue: { $regex: escapedSearch, $options: "i" } },
+        ],
+      });
+    }
+
+    const { applyGeoFilter, buildSortOption, buildLocationRegex, applyCountryFilter } = require("../utils/geoQuery");
+    if (locationFilter) {
+      filter.location = buildLocationRegex(locationFilter);
+    }
+    applyGeoFilter(filter, lat, lng, radius);
+    applyCountryFilter(filter, countryCode);
+
+    const sortOption = date
+      ? { startDate: 1, createdAt: -1 }
+      : buildSortOption(sort || "newest", !!(lat && lng), !!search);
+
+    let listings = await Event.find(filter, LIST_PROJECTION)
+      .sort(sortOption)
+      .skip(skip)
+      .limit(safeLimit + 1)
+      .populate("seller", "name profileImage")
+      .lean();
+
+    const hasMore = listings.length > safeLimit;
+    if (hasMore) listings = listings.slice(0, safeLimit);
+
+    // Legacy events without structured dates: include when filtering by date if text matches
+    if (date) {
+      const day = parseDateKey(String(date));
+      if (day) {
+        const legacyFilter = {
+          status: "active",
+          $or: [{ startDate: null }, { startDate: { $exists: false } }],
+        };
+        if (filter.subcategory) legacyFilter.subcategory = filter.subcategory;
+        const legacy = await Event.find(legacyFilter, LIST_PROJECTION)
+          .sort({ createdAt: -1 })
+          .limit(100)
+          .populate("seller", "name profileImage")
+          .lean();
+        const legacyOnDay = legacy.filter((e) => eventOccursOnDate(e, day));
+        const seen = new Set(listings.map((l) => String(l._id)));
+        for (const item of legacyOnDay) {
+          if (!seen.has(String(item._id))) listings.push(item);
+        }
+      }
+    }
+
+    listings = listings.filter((e) => !isEventExpired(e));
+    listings.forEach(normaliseImages);
+
+    res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=120");
+    res.status(200).json({
+      success: true,
+      listings,
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        hasMore,
+      },
+    });
+  } catch (error) {
+    logger.error("Get upcoming events error:", error);
+    res.status(500).json({ success: false, message: "Failed to load upcoming events" });
   }
 };

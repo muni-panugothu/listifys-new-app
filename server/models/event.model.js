@@ -105,6 +105,15 @@ const eventSchema = new mongoose.Schema(
       trim: true,
       maxlength: [300, "Event time cannot exceed 300 characters"],
     },
+    /** Structured calendar range for filtering / multi-day events */
+    startDate: {
+      type: Date,
+      index: true,
+    },
+    endDate: {
+      type: Date,
+      index: true,
+    },
     organizer: {
       type: String,
       trim: true,
@@ -216,6 +225,8 @@ eventSchema.index({ seller: 1, status: 1 });
 eventSchema.index({ price: 1 });
 eventSchema.index({ savedBy: 1 });
 eventSchema.index({ eventDate: 1, subcategory: 1 });
+eventSchema.index({ startDate: 1, endDate: 1, status: 1 });
+eventSchema.index({ status: 1, startDate: 1 });
 eventSchema.index({ title: "text", description: "text", organizer: "text", venue: "text" });
 eventSchema.index({ coordinates: "2dsphere" });
 
