@@ -22,6 +22,18 @@ import type { PermissionStatus } from './types';
 
 const TOKEN_CACHE_KEY = '@fcm_token_v2';
 
+/** Transient FCM errors — retry instead of treating as fatal config failure. */
+function isTransientFcmError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /SERVICE_NOT_AVAILABLE|NETWORK_ERROR|TIMEOUT|UNAVAILABLE|ECONNRESET|ETIMEDOUT|fetch failed|too many requests/i.test(
+    message,
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
 async function ensureAndroidNotificationPermission(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
   const apiLevel = typeof Platform.Version === 'number' ? Platform.Version : parseInt(String(Platform.Version), 10);
@@ -93,44 +105,122 @@ export async function checkPermission(): Promise<PermissionStatus> {
 
 // ── Token ─────────────────────────────────────────────────────────────────────
 
+export type GetFCMTokenOptions = {
+  /**
+   * When true, shows the OS permission dialog if not yet granted.
+   * Default false — call `requestPermission()` explicitly from HomeFeed
+   * so the prompt never appears on Login / Onboarding.
+   */
+  promptPermission?: boolean;
+};
+
 /**
  * Request permission and return the FCM token.
  * The token is cached in AsyncStorage for quick retrieval.
  * Returns null if permission is denied or on error.
+ *
+ * Retries transient Play Services / FCM errors (SERVICE_NOT_AVAILABLE) and
+ * falls back to the last cached token when minting fails temporarily.
  */
-export async function getFCMToken(): Promise<string | null> {
+export async function getFCMToken(options?: GetFCMTokenOptions): Promise<string | null> {
+  const promptPermission = options?.promptPermission === true;
+
   if (!messaging) {
-    notificationDebug.critical(
+    notificationDebug.warn(
       'Token',
-      'Firebase Messaging native module unavailable — rebuild with google-services.json + @react-native-firebase/messaging',
+      'Firebase Messaging native module unavailable — rebuild with google-services.json',
     );
     return null;
   }
 
   try {
-    const permission = await requestPermission();
-    notificationDebug.info('Permission', 'notification permission', { permission });
+    const permission = promptPermission
+      ? await requestPermission()
+      : await checkPermission();
+    notificationDebug.info('Permission', 'notification permission', { permission, promptPermission });
 
-    if (permission === 'denied') {
-      notificationDebug.critical(
-        'Token',
-        'POST_NOTIFICATIONS denied — enable in Settings → Apps → Listifys → Notifications',
-      );
+    if (permission !== 'granted' && permission !== 'provisional') {
+      if (promptPermission && permission === 'denied') {
+        notificationDebug.warn(
+          'Token',
+          'POST_NOTIFICATIONS denied — enable in Settings → Apps → Listifys → Notifications',
+        );
+      }
+      // Without prompt, return cached token if we already have permission-less read failed
+      if (!promptPermission) {
+        return null;
+      }
       return null;
     }
 
-    const token = await messaging().getToken();
-    if (token) {
-      await AsyncStorage.setItem(TOKEN_CACHE_KEY, token);
-      notificationDebug.info('Token', 'FCM token minted', {
-        prefix: token.slice(0, 24),
-        length: token.length,
+    const MAX_ATTEMPTS = 4;
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        const token = await messaging().getToken();
+        if (token) {
+          await AsyncStorage.setItem(TOKEN_CACHE_KEY, token);
+          notificationDebug.info('Token', 'FCM token minted', {
+            prefix: token.slice(0, 24),
+            length: token.length,
+            attempt,
+          });
+          return token;
+        }
+        notificationDebug.warn('Token', 'messaging().getToken() returned empty', { attempt });
+        return null;
+      } catch (error) {
+        lastError = error;
+        const transient = isTransientFcmError(error);
+        const message = error instanceof Error ? error.message : String(error);
+
+        if (transient && attempt < MAX_ATTEMPTS - 1) {
+          const delayMs = 800 * (attempt + 1);
+          notificationDebug.warn('Token', 'getToken transient failure — retrying', {
+            attempt: attempt + 1,
+            delayMs,
+            error: message,
+          });
+          await sleep(delayMs);
+          continue;
+        }
+
+        break;
+      }
+    }
+
+    // Transient failure — use cached token so pushes still work if we had one before.
+    const cached = await getCachedToken();
+    if (cached) {
+      notificationDebug.warn('Token', 'using cached FCM token after mint failure', {
+        prefix: cached.slice(0, 24),
+        error: lastError instanceof Error ? lastError.message : String(lastError),
+      });
+      return cached;
+    }
+
+    const errMsg = lastError instanceof Error ? lastError.message : String(lastError);
+    if (isTransientFcmError(lastError)) {
+      notificationDebug.warn('Token', 'getFCMToken failed (transient — Play Services / network)', {
+        error: errMsg,
+        hint: 'FCM will retry on next app foreground. Ensure Google Play Services is up to date.',
       });
     } else {
-      notificationDebug.critical('Token', 'messaging().getToken() returned empty');
+      notificationDebug.critical('Token', 'getFCMToken failed', {
+        error: errMsg,
+        hint: 'If this persists on release builds, verify SHA-1 in Firebase Console matches your signing key.',
+      });
     }
-    return token ?? null;
+    return null;
   } catch (error) {
+    const cached = await getCachedToken();
+    if (cached) {
+      notificationDebug.warn('Token', 'using cached FCM token after unexpected error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return cached;
+    }
     notificationDebug.critical('Token', 'getFCMToken failed', {
       error: error instanceof Error ? error.message : String(error),
     });

@@ -21,6 +21,7 @@ import { useAppSelector } from "@/store/hooks";
 import { store } from "@/store";
 import { incomingCallReceived } from "@/store/slices/call-slice";
 import {
+  checkPermission,
   deleteFCMToken,
   subscribeTokenRefresh,
 } from "@/lib/notifications/token-manager";
@@ -77,7 +78,7 @@ export function useNotifications() {
     };
   }, [enabled]);
 
-  // ── Token registration ────────────────────────────────────────────────────
+  // ── Token registration (silent — never prompts OS dialog here) ───────────
   useEffect(() => {
     if (!enabled || pushEnabled === null) return;
 
@@ -86,15 +87,22 @@ export function useNotifications() {
       return;
     }
 
-    void syncFcmTokenWithServer({ force: true });
+    const syncIfGranted = async () => {
+      const permission = await checkPermission();
+      if (permission === "granted" || permission === "provisional") {
+        void syncFcmTokenWithServer({ force: true, promptPermission: false });
+      }
+    };
+
+    void syncIfGranted();
 
     const unsubRefresh = subscribeTokenRefresh(() => {
-      void syncFcmTokenWithServer({ force: true });
+      void syncFcmTokenWithServer({ force: true, promptPermission: false });
     });
 
     const onAppState = (state: AppStateStatus) => {
       if (state === "active") {
-        void syncFcmTokenWithServer();
+        void syncIfGranted();
       }
     };
     const appStateSub = AppState.addEventListener("change", onAppState);

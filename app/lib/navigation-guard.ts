@@ -55,6 +55,12 @@ export function acquireNavigationLock(holdMs = NAV_LOCK_AUTO_RELEASE_MS): (() =>
   };
 }
 
+/** Force-clear the navigation lock (used after auth when retries are exhausted). */
+export function releaseNavigationLock(): void {
+  navLockedUntil = 0;
+  navLockToken++;
+}
+
 // ── Per-key in-flight dedupe ──────────────────────────────────────────────────
 
 const inFlight = new Map<string, Promise<unknown>>();

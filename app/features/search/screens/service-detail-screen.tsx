@@ -419,21 +419,31 @@ export function ServiceDetailScreen() {
             paddingBottom: 120 + footerBottom,
           }}
         >
-        <View className="relative h-64 w-full overflow-hidden bg-[#E5E7EB]">
-          <Image
-            source={coverImage}
-            contentFit="cover"
-            transition={200}
-            style={{ width: "100%", height: 256 }}
-          />
+        <View className="relative">
+          <View className="h-64 w-full overflow-hidden bg-[#E5E7EB]">
+            <Image
+              source={coverImage}
+              contentFit="cover"
+              transition={200}
+              style={{ width: "100%", height: 256 }}
+            />
+          </View>
 
-          <View className="absolute -bottom-12 left-4">
+          {/* Avatar sits outside the overflow-hidden cover so it is not clipped */}
+          <View
+            className="absolute left-4 z-10"
+            style={{ top: 256 - 48 }}
+          >
             <View className="relative overflow-hidden rounded-xl border-4 border-white bg-[#F3F4F6]">
-              <Image
-                source={profileImage}
-                contentFit="cover"
-                transition={200}
+              <ProfileAvatarImage
+                user={
+                  typeof (listing as any)?.userId === "object"
+                    ? (listing as any).userId
+                    : { profileImage: profileImage }
+                }
+                fallbackName={professionalName}
                 style={{ width: 96, height: 96 }}
+                iconSize={40}
               />
               <View className="absolute -bottom-1 -right-1 rounded-full border-2 border-white bg-[#27BB97] p-1">
                 <MaterialIcons name="verified" size={16} color="#FFFFFF" />

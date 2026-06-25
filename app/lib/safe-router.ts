@@ -171,14 +171,39 @@ export function useRouter() {
     setTimeout(release, NAV_LOCK_RELEASE_MS);
   }, [router, pathname]);
 
+  /**
+   * Post-auth replace — bypasses duplicate-route and same-pathname guards.
+   * Auth transitions must never be silently dropped (Google Sign-In bug fix).
+   */
+  const replaceAfterAuth = useCallback(
+    (href: Href) => {
+      if (!isValidHref(href)) {
+        // eslint-disable-next-line no-console
+        console.warn("[safe-router] Ignored invalid replaceAfterAuth href", href);
+        return;
+      }
+
+      const nextPath = hrefToPath(href);
+      const release = acquireNavigationLock(600);
+      // Always navigate — even if lock was held, auth must win.
+      notifyRouteTransition("replace", nextPath);
+      router.replace(href);
+      if (release) {
+        setTimeout(release, 600);
+      }
+    },
+    [router],
+  );
+
   return useMemo(
     () => ({
       ...router,
       push,
       replace,
+      replaceAfterAuth,
       back,
     }),
-    [router, push, replace, back],
+    [router, push, replace, replaceAfterAuth, back],
   );
 }
 

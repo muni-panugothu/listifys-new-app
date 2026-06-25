@@ -5,6 +5,16 @@ import { notificationDebug } from "@/lib/notifications/notification-debug";
 
 let syncInFlight: Promise<boolean> | null = null;
 let lastSyncedToken: string | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleFcmRetry(delayMs = 15_000) {
+  if (retryTimer) return;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    notificationDebug.info("Sync", "retrying FCM token sync after transient failure");
+    void syncFcmTokenWithServer({ force: true });
+  }, delayMs);
+}
 
 /**
  * Fetch the device FCM token and persist it on the server.
@@ -12,6 +22,8 @@ let lastSyncedToken: string | null = null;
  */
 export async function syncFcmTokenWithServer(options?: {
   force?: boolean;
+  /** Set true only when user explicitly opts in (Home feed prompt, Settings toggle). */
+  promptPermission?: boolean;
 }): Promise<boolean> {
   if (syncInFlight && !options?.force) {
     return syncInFlight;
@@ -24,12 +36,15 @@ export async function syncFcmTokenWithServer(options?: {
       return false;
     }
 
-    const token = await getFCMToken();
+    const token = await getFCMToken({
+      promptPermission: options?.promptPermission === true,
+    });
     if (!token) {
-      notificationDebug.critical(
+      notificationDebug.warn(
         "Sync",
-        "no FCM token — check notification permission and Firebase SHA-1 in google-services.json",
+        "no FCM token yet — will retry on next foreground (often Play Services / network)",
       );
+      scheduleFcmRetry();
       return false;
     }
 
@@ -41,11 +56,16 @@ export async function syncFcmTokenWithServer(options?: {
     const saved = await registerFCMTokenWithServer(token);
     if (saved) {
       lastSyncedToken = token;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
       notificationDebug.info("Sync", "token registered on server", {
         prefix: token.slice(0, 24),
       });
     } else {
-      notificationDebug.critical("Sync", "server rejected FCM token registration");
+      notificationDebug.warn("Sync", "server rejected FCM token registration — will retry");
+      scheduleFcmRetry(30_000);
     }
     return saved;
   };
@@ -61,4 +81,8 @@ export async function syncFcmTokenWithServer(options?: {
 export function resetFcmSyncState(): void {
   lastSyncedToken = null;
   syncInFlight = null;
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
 }

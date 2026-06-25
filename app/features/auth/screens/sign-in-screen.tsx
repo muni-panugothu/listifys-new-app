@@ -24,10 +24,12 @@ import {
   signInWithGoogleNative,
 } from "@/lib/google-sign-in";
 import { formatAuthFailureMessage, reportAuthSliceError, reportGoogleSignInFailure } from "@/lib/auth-error-display";
+import { navigateAfterAuthentication } from "@/lib/auth-navigation";
+import { authTrace } from "@/lib/auth-trace";
 import { showErrorToast } from "@/lib/toast";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { hideAuthGate } from "@/store/slices/auth-gate-slice";
-import { clearError, googleLogin, login } from "@/store/slices/auth-slice";
+import { clearError, googleLogin, login, resetAuthStatus } from "@/store/slices/auth-slice";
 
 export function SignInScreen() {
   const router = useRouter();
@@ -52,22 +54,20 @@ export function SignInScreen() {
 
   useEffect(() => {
     void configureGoogleSignIn().catch(() => {});
-  }, []);
+    dispatch(resetAuthStatus());
+  }, [dispatch]);
 
-  // Navigate only after a fresh login on this screen — not stale session state.
+  // Safety-net navigation — primary path is imperative after unwrap().
   useEffect(() => {
     if (!isAuthenticated || status !== "succeeded") return;
 
+    authTrace("sign-in.effect_nav", { redirectTo: redirectTo ?? null });
     Keyboard.dismiss();
     dispatch(hideAuthGate());
-    if (redirectTo && redirectTo.startsWith("/")) {
-      router.replace(redirectTo as Href);
-      return;
-    }
-    router.replace("/(tabs)/home-feed-root" as Href);
-    // `router` intentionally omitted from deps – its reference changes on every
-    // navigation (safe-router rebuilds on pathname), which would cause this
-    // effect to re-fire after the user navigates away and bounce them back.
+    void navigateAfterAuthentication(router, {
+      redirectTo,
+      source: "sign-in.effect",
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, isAuthenticated, redirectTo, status]);
 
@@ -90,11 +90,8 @@ export function SignInScreen() {
       await dispatch(login({ identity: validation.identity, password: validation.password })).unwrap();
       Keyboard.dismiss();
       dispatch(hideAuthGate());
-      if (redirectTo && redirectTo.startsWith("/")) {
-        router.replace(redirectTo as Href);
-      } else {
-        router.replace("/(tabs)/home-feed-root" as Href);
-      }
+      authTrace("sign-in.password_success");
+      await navigateAfterAuthentication(router, { redirectTo, source: "sign-in.password" });
     } catch (err) {
       showErrorToast("Sign In Failed", formatAuthFailureMessage(err, "Sign in"));
     }
@@ -103,8 +100,14 @@ export function SignInScreen() {
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleLoading(true);
+      authTrace("sign-in.google_start");
       const idToken = await signInWithGoogleNative();
+      authTrace("sign-in.google_native_ok");
       await dispatch(googleLogin({ idToken })).unwrap();
+      authTrace("sign-in.google_backend_ok");
+      Keyboard.dismiss();
+      dispatch(hideAuthGate());
+      await navigateAfterAuthentication(router, { redirectTo, source: "sign-in.google" });
     } catch (err) {
       reportGoogleSignInFailure(err, showErrorToast, "Google sign in");
     } finally {

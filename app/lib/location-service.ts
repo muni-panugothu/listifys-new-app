@@ -363,13 +363,12 @@ export async function getCurrentCoordinates(options?: {
     throw new Error("SERVICES_DISABLED");
   }
 
-  const timeoutMs = options?.timeoutMs ?? 15_000;
+  const timeoutMs = options?.timeoutMs ?? 8_000;
 
-  // Wrap in a timeout so we don't hang forever on weak GPS
   const position = await Promise.race([
     Location.getCurrentPositionAsync({
       accuracy: options?.highAccuracy
-        ? Location.Accuracy.BestForNavigation
+        ? Location.Accuracy.High        // High = cell-tower assisted, much faster than BestForNavigation
         : Location.Accuracy.Balanced,
     }),
     new Promise<never>((_, reject) =>
@@ -385,29 +384,52 @@ export async function getCurrentCoordinates(options?: {
 }
 
 /**
- * Try a high-accuracy fix first, then fall back to last-known position.
- * This mirrors the UX of Swiggy / DoorDash which show an instant approximate
- * pin while waiting for a precise fix.
+ * Instant-first location resolution.
+ *
+ * Returns last-known coordinates IMMEDIATELY via the callback (≤ 50 ms),
+ * then resolves the promise with a fresh GPS fix when available.
+ *
+ * Flow (Swiggy / Uber style):
+ *   1. getLastKnownPositionAsync()  ← ~5 ms, dispatched instantly
+ *   2. onInstant(lastKnown)         ← caller updates UI immediately
+ *   3. getCurrentPositionAsync()    ← runs in background (≤ 8 s)
+ *   4. resolve(fresh)               ← caller refines UI silently
  */
-export async function getBestAvailableCoordinates(): Promise<{
+export async function getBestAvailableCoordinates(options?: {
+  onInstant?: (coords: { lat: number; lng: number; accuracy: number | null }) => void;
+}): Promise<{
   lat: number;
   lng: number;
   accuracy: number | null;
   source: "current" | "last_known";
 }> {
-  // Fast path: last-known location while we wait for GPS lock
-  const lastKnown = await Location.getLastKnownPositionAsync({
-    requiredAccuracy: 5_000, // accept up to 5 km stale accuracy
-    maxAge: 5 * 60 * 1000,   // no older than 5 minutes
+  // Step 1: last-known is synchronous from the OS location cache — returns in < 50 ms.
+  const lastKnownPromise = Location.getLastKnownPositionAsync({
+    requiredAccuracy: 5_000,          // accept up to 5 km stale accuracy
+    maxAge: 10 * 60 * 1000,           // no older than 10 minutes
   });
 
-  try {
-    const current = await getCurrentCoordinates({
-      highAccuracy: true,
-      timeoutMs: 15_000,
+  // Step 2: fire GPS request in parallel — don't await it first.
+  const freshPromise = getCurrentCoordinates({
+    highAccuracy: true,
+    timeoutMs: 8_000,                 // reduced from 15 s
+  });
+
+  // Step 3: as soon as last-known resolves, notify caller so they can update UI now.
+  const lastKnown = await lastKnownPromise;
+  if (lastKnown && options?.onInstant) {
+    options.onInstant({
+      lat: lastKnown.coords.latitude,
+      lng: lastKnown.coords.longitude,
+      accuracy: lastKnown.coords.accuracy ?? null,
     });
+  }
+
+  // Step 4: wait for fresh GPS (may already be done since both ran in parallel).
+  try {
+    const current = await freshPromise;
     return { ...current, source: "current" };
-  } catch (err) {
+  } catch {
     if (lastKnown) {
       return {
         lat: lastKnown.coords.latitude,
@@ -416,8 +438,7 @@ export async function getBestAvailableCoordinates(): Promise<{
         source: "last_known",
       };
     }
-    // Re-throw the original error (GPS_TIMEOUT / unavailable)
-    throw err;
+    throw new Error("GPS_TIMEOUT");
   }
 }
 
@@ -480,6 +501,11 @@ export async function geocodeSearchQuery(query: string) {
 export async function detectDeviceLocation(options?: {
   previous?: StoredAppLocation | null;
   force?: boolean;
+  /**
+   * Called as soon as last-known coordinates are available (< 50 ms) so the
+   * caller can update the UI immediately — before geocoding finishes.
+   */
+  onInstantCoords?: (partial: StoredAppLocation) => void;
 }) {
   const granted = await hasLocationPermission();
   if (!granted) {
@@ -492,7 +518,23 @@ export async function detectDeviceLocation(options?: {
   }
 
   const previous = options?.previous ?? null;
-  const coords = await getBestAvailableCoordinates();
+
+  // Fire GPS + last-known in parallel. Notify caller with raw coords instantly.
+  const coords = await getBestAvailableCoordinates({
+    onInstant: options?.onInstantCoords
+      ? (raw) => {
+          options.onInstantCoords!({
+            label: previous?.label ?? "Detecting location…",
+            lat: raw.lat,
+            lng: raw.lng,
+            isoCountryCode: previous?.isoCountryCode ?? null,
+            source: "gps",
+            updatedAt: Date.now(),
+          });
+        }
+      : undefined,
+  });
+
   const { label, isoCountryCode } = await reverseGeocodeDetails(
     coords.lat,
     coords.lng,

@@ -35,6 +35,7 @@ import {
   type RecentlyViewedItem,
 } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useHomeNotificationPrompt } from "@/hooks/use-home-notification-prompt";
 import { ProfileAvatarImage } from "@/components/profile-avatar-image";
 import { Image } from "@/lib/nativewind-interop";
 import { useLocale } from "@/providers/locale-provider";
@@ -104,6 +105,7 @@ function buildSavedIds(feedData: FeedResponse | null, userId?: string | null) {
 
 export function HomeFeedRootScreen() {
   const router = useRouter();
+  useHomeNotificationPrompt();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const { isoCountryCode: localeCountryCode } = useLocale();
@@ -244,13 +246,19 @@ export function HomeFeedRootScreen() {
     }
   }, [dispatch, user?.address]);
 
-  // Ask for location only after the user reaches the home feed (login or skip) � not on install.
+  // Ask for location only after the user reaches the home feed — not on install.
+  // Instant-first strategy: useCurrentDeviceLocation dispatches applyInstantCoords
+  // from last-known (< 50 ms) before geocoding completes, so the UI updates immediately.
   useEffect(() => {
     if (!sessionHydrated || !locationHydrated || locationPromptAttempted.current) return;
 
     locationPromptAttempted.current = true;
 
     const askAndRefreshLocation = async () => {
+      // Run permission/services check and location fetch concurrently where possible.
+      // ensureDeviceLocationAccess shows the system dialog; once the user taps
+      // "Turn on", we immediately dispatch useCurrentDeviceLocation which will
+      // return last-known coords in < 50 ms via applyInstantCoords.
       const access = await ensureDeviceLocationAccess();
       if (!access.ok) {
         if (access.reason === "permission_denied") {
@@ -259,11 +267,12 @@ export function HomeFeedRootScreen() {
         return;
       }
 
-      try {
-        await dispatch(useCurrentDeviceLocation()).unwrap();
-      } catch {
-        // GPS timeout or services off.
-      }
+      // useCurrentDeviceLocation calls detectDeviceLocation which fires
+      // onInstantCoords as soon as last-known is available — UI updates then,
+      // not after the full GPS + geocoding chain finishes.
+      void dispatch(useCurrentDeviceLocation());
+      // Do NOT await — let it run in background. Feed refresh is driven by
+      // the locationCoords useEffect which triggers when coords change.
     };
 
     void askAndRefreshLocation().catch(() => {});

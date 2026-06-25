@@ -30,6 +30,7 @@ import { LocaleProvider } from "@/providers/locale-provider";
 import { TypographyProvider } from "@/providers/typography-provider";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { hideAuthGate } from "@/store/slices/auth-gate-slice";
+import { navigateAfterAuthentication } from "@/lib/auth-navigation";
 import { logout, invalidateSession } from "@/store/slices/auth-slice";
 import { onSessionInvalidated } from "@/features/auth/services/auth-api";
 import { hydrateAppLocation } from "@/store/slices/location-slice";
@@ -185,7 +186,8 @@ function AppLayout() {
     void connectSocket()
       .then(() => {
         attachCallListeners();
-        void syncFcmTokenWithServer({ force: true });
+        // Sync only if permission already granted — never prompt from root layout.
+        void syncFcmTokenWithServer({ force: true, promptPermission: false });
       })
       .catch(() => {});
   }, [sessionHydrated, isAuthenticated]);
@@ -225,10 +227,12 @@ function AppLayout() {
   }, [dispatch]);
 
   const handleAuthenticated = useCallback(() => {
+    const target = redirectTo;
     dispatch(hideAuthGate());
-    if (redirectTo) {
-      router.replace(redirectTo as Href);
-    }
+    void navigateAfterAuthentication(router, {
+      redirectTo: target ?? undefined,
+      source: "auth-gate.onAuthenticated",
+    });
   }, [dispatch, redirectTo, router]);
 
   const authGateEmailSignInHref = useCallback(() => {

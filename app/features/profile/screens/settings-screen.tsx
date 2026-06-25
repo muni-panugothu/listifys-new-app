@@ -80,7 +80,7 @@ export function SettingsScreen() {
       // If permission was denied at OS level this returns null and the user
       // will need to enable notifications in their OS settings — we surface
       // a soft hint without blocking the toggle state.
-      const token = await getFCMToken();
+      const token = await getFCMToken({ promptPermission: true });
       if (token) {
         await registerFCMTokenWithServer(token);
       } else {

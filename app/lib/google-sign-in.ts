@@ -4,6 +4,7 @@ import { Platform } from "react-native";
 import type { GoogleClientIds } from "@/features/auth/services/auth-api";
 import { GOOGLE_OAUTH_CONFIG } from "@/lib/google-oauth-config";
 import { devLog, devWarn } from "@/lib/dev-log";
+import { authTrace, authTraceWarn } from "@/lib/auth-trace";
 
 export class GoogleSignInError extends Error {
   cancelled: boolean;
@@ -552,9 +553,7 @@ export async function signOutGoogleCachedAccount(): Promise<void> {
 export async function signInWithGoogleNative(): Promise<string> {
   const started = Date.now();
   const logStep = (step: string) => {
-    if (__DEV__) {
-      console.info(`[GoogleSignIn] ${step} (+${Date.now() - started}ms)`);
-    }
+    authTrace(`google.${step}`, { elapsedMs: Date.now() - started });
   };
 
   if (isRunningInExpoGo()) {
@@ -575,13 +574,16 @@ export async function signInWithGoogleNative(): Promise<string> {
 
   try {
     const token = await _attemptGoogleSignIn(module);
-    logStep("native sign-in complete");
+    logStep("native_sign_in_complete");
     return token;
   } catch (firstError: unknown) {
     if (isActivityNullError(firstError)) {
+      authTraceWarn("google.activity_null_retry");
       // Activity was null — wait for it to settle then try once more.
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
-      return _attemptGoogleSignIn(module);
+      const token = await _attemptGoogleSignIn(module);
+      logStep("native_sign_in_complete_after_retry");
+      return token;
     }
     throw firstError;
   }

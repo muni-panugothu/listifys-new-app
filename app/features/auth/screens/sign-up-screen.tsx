@@ -18,6 +18,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthSkipButton } from "@/features/auth/components/auth-skip-button";
 import { validateSignUpInput } from "@/lib/auth-validation";
 import { reportAuthSliceError, reportGoogleSignInFailure } from "@/lib/auth-error-display";
+import { navigateAfterAuthentication } from "@/lib/auth-navigation";
+import { authTrace } from "@/lib/auth-trace";
 import {
   configureGoogleSignIn,
   signInWithGoogleNative,
@@ -57,9 +59,9 @@ export function SignUpScreen() {
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      router.replace("/(tabs)/home-feed-root" as Href);
-    }
+    if (!isAuthenticated) return;
+    authTrace("sign-up.effect_nav");
+    void navigateAfterAuthentication(router, { source: "sign-up.effect" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
@@ -101,8 +103,12 @@ export function SignUpScreen() {
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleLoading(true);
+      authTrace("sign-up.google_start");
       const idToken = await signInWithGoogleNative();
+      authTrace("sign-up.google_native_ok");
       await dispatch(googleLogin({ idToken })).unwrap();
+      authTrace("sign-up.google_backend_ok");
+      await navigateAfterAuthentication(router, { source: "sign-up.google" });
     } catch (err) {
       reportGoogleSignInFailure(err, showErrorToast, "Google sign in");
     } finally {

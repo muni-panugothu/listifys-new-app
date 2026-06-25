@@ -1,4 +1,4 @@
-import { createAsyncThunk, createSelector, createSlice } from "@reduxjs/toolkit";
+import { createAsyncThunk, createSelector, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 import {
   detectDeviceLocation,
@@ -91,7 +91,7 @@ export const hydrateAppLocation = createAsyncThunk(
 
 export const refreshDeviceLocation = createAsyncThunk(
   "location/refreshDevice",
-  async (options: { force?: boolean } | undefined, { getState, rejectWithValue }) => {
+  async (options: { force?: boolean } | undefined, { getState, dispatch, rejectWithValue }) => {
     try {
       const stored = await loadStoredLocation();
       const force = options?.force === true;
@@ -140,7 +140,13 @@ export const refreshDeviceLocation = createAsyncThunk(
             }
           : null);
 
-      return await detectDeviceLocation({ previous, force });
+      return await detectDeviceLocation({
+        previous,
+        force,
+        onInstantCoords: (partial) => {
+          dispatch(applyInstantCoords(partial));
+        },
+      });
     } catch (error) {
       return rejectWithValue(
         error instanceof Error ? error.message : "Could not detect location",
@@ -174,7 +180,7 @@ export const setLocationFromSearch = createAsyncThunk(
 
 export const useCurrentDeviceLocation = createAsyncThunk(
   "location/useCurrent",
-  async (_, { getState, rejectWithValue }) => {
+  async (_, { getState, dispatch, rejectWithValue }) => {
     try {
       const access = await ensureDeviceLocationAccess();
       if (!access.ok) {
@@ -200,7 +206,15 @@ export const useCurrentDeviceLocation = createAsyncThunk(
             }
           : null);
 
-      return await detectDeviceLocation({ previous, force: true });
+      return await detectDeviceLocation({
+        previous,
+        force: true,
+        // Instant callback: dispatch partial location (coords only, no label yet)
+        // so the UI updates in < 50 ms without waiting for reverse geocoding.
+        onInstantCoords: (partial) => {
+          dispatch(applyInstantCoords(partial));
+        },
+      });
     } catch (error) {
       return rejectWithValue(
         error instanceof Error ? error.message : "Could not get current location",
@@ -241,6 +255,25 @@ const locationSlice = createSlice({
       state.source = null;
       state.status = "ready";
       state.error = null;
+    },
+    /**
+     * Partial "instant" update — coords are known but label/geocoding still pending.
+     * Sets coords + a placeholder label so distance calculations on cards work
+     * immediately; the full label arrives when the thunk resolves.
+     */
+    applyInstantCoords(state, action: PayloadAction<StoredAppLocation>) {
+      const { lat, lng, label, isoCountryCode } = action.payload;
+      if (state.source === "manual") return; // never override manual pick
+      state.lat = lat;
+      state.lng = lng;
+      // Keep existing label if it's real; only use placeholder if nothing exists
+      if (!state.label || state.label === "Set location") {
+        state.label = label || "Detecting location…";
+      }
+      if (isoCountryCode) state.isoCountryCode = isoCountryCode;
+      state.source = "gps";
+      state.error = null;
+      // Do NOT set status = "ready" — keep "loading" so spinner shows until full label arrives
     },
     /** Directly set location from an autocomplete selection (no async needed). */
     setLocationDirect(
@@ -356,7 +389,7 @@ const locationSlice = createSlice({
   },
 });
 
-export const { setProfileFallbackLocation, setLocationDirect, clearLocation } = locationSlice.actions;
+export const { setProfileFallbackLocation, setLocationDirect, clearLocation, applyInstantCoords } = locationSlice.actions;
 
 export const selectLocationLabel = (state: RootState) => {
   if (state.location.status === "loading" && !state.location.hydrated) {

@@ -8,7 +8,9 @@ import { StatusBar } from 'expo-status-bar'
 import { useEffect, useState } from 'react'
 import { showErrorToast } from '@/lib/toast'
 import { reportGoogleSignInFailure } from '@/lib/auth-error-display'
-import { useAppDispatch } from '@/store/hooks'
+import { navigateAfterAuthentication } from '@/lib/auth-navigation'
+import { authTrace } from '@/lib/auth-trace'
+import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { googleLogin } from '@/store/slices/auth-slice'
 import { completeOnboarding } from '@/store/slices/onboarding-slice'
 import {
@@ -36,6 +38,7 @@ const App = () => {
   const insets = useSafeAreaInsets()
   const bgSize = useFullScreenBackgroundSize()
   const dispatch = useAppDispatch()
+  const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
 
   const markOnboardingComplete = async () => {
@@ -55,11 +58,27 @@ const App = () => {
     void configureGoogleSignIn().catch(() => {})
   }, [])
 
+  // Safety net if imperative navigation in handleGoogleSignIn was blocked.
+  useEffect(() => {
+    if (!isAuthenticated) return
+    authTrace('onboarding.effect_nav')
+    void (async () => {
+      await markOnboardingComplete()
+      await navigateAfterAuthentication(router, { source: 'onboarding.effect' })
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated])
+
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleLoading(true)
+      authTrace('onboarding.google_start')
       const idToken = await signInWithGoogleNative()
+      authTrace('onboarding.google_native_ok')
       await dispatch(googleLogin({ idToken })).unwrap()
+      authTrace('onboarding.google_backend_ok')
+      await markOnboardingComplete()
+      await navigateAfterAuthentication(router, { source: 'onboarding.google' })
     } catch (err) {
       reportGoogleSignInFailure(err, showErrorToast, 'Google sign in')
     } finally {

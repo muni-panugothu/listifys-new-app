@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useKeyboardStickyOffset } from "@/components/chat-keyboard-scroll-view";
 import { formatAuthFailureMessage, reportGoogleSignInFailure } from "@/lib/auth-error-display";
+import { authTrace } from "@/lib/auth-trace";
 import {
   configureGoogleSignIn,
   signInWithGoogleNative,
@@ -151,14 +152,20 @@ export function AuthGateBottomSheet({
   const handleGoogleSignIn = useCallback(async () => {
     try {
       setIsGoogleLoading(true);
+      authTrace("auth-gate.google_start");
       const idToken = await signInWithGoogleNative();
+      authTrace("auth-gate.google_native_ok");
       await dispatch(googleLogin({ idToken })).unwrap();
+      authTrace("auth-gate.google_backend_ok");
+      Keyboard.dismiss();
+      onAuthenticated?.();
+      onClose();
     } catch (err) {
       reportGoogleSignInFailure(err, showErrorToast, "Google sign in");
     } finally {
       setIsGoogleLoading(false);
     }
-  }, [dispatch]);
+  }, [dispatch, onAuthenticated, onClose]);
 
   const title = useMemo(
     () => `Sign in to ${ACTION_TITLES[action] ?? "continue"}`,

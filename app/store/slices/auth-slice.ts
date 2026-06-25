@@ -4,6 +4,7 @@ import { type PayloadAction, createAsyncThunk, createSlice } from "@reduxjs/tool
 import { LOCATION_STORAGE_KEY } from "@/lib/location-service";
 import { disconnectSocket } from "@/features/messaging/services/socket-service";
 import { signOutGoogleCachedAccount } from "@/lib/google-sign-in";
+import { authTrace } from "@/lib/auth-trace";
 import { resetFcmSyncState } from "@/lib/notifications/sync-fcm-token";
 import {
   AuthApiError,
@@ -116,16 +117,28 @@ export const googleLogin = createAsyncThunk(
   "auth/googleLogin",
   async ({ idToken }: { idToken: string }, { rejectWithValue }) => {
     try {
+      authTrace("redux.google_login_start");
       const response = await loginWithGoogleToken(idToken);
+      authTrace("redux.google_login_backend_ok", {
+        hasAccessToken: Boolean(response.accessToken),
+        hasUser: Boolean(response.user),
+      });
       if (!response.accessToken) {
         return rejectWithValue("Google sign in succeeded but no session token was returned.");
       }
       if (response.user) {
         await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.user));
+        authTrace("redux.google_login_user_stored");
       }
       await setTokens(response.accessToken, response.refreshToken);
+      authTrace("redux.google_login_tokens_stored", {
+        hasRefresh: Boolean(response.refreshToken),
+      });
       return response;
     } catch (error) {
+      authTrace("redux.google_login_failed", {
+        message: getAuthErrorMessage(error),
+      });
       return rejectWithValue(getAuthErrorMessage(error));
     }
   },
