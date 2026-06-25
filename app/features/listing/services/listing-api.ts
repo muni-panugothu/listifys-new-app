@@ -160,6 +160,45 @@ export type ImageUploadResponse = {
 
 // ── Normalise image URLs in listings ───────────────────────────────────────────
 
+/**
+ * Feed/list endpoints often return `seller` as a plain ObjectId string.
+ * Spreading a string (`{ ...seller }`) corrupts it into `{0:"6",1:"7",...}` and
+ * breaks getListingSellerId — which caused "Seller information is missing".
+ */
+function normaliseSellerField(
+  seller: ListingItem["seller"] | undefined,
+): ListingItem["seller"] | undefined {
+  if (seller == null) return seller;
+
+  if (typeof seller === "string") {
+    return seller.trim() || seller;
+  }
+
+  if (typeof seller === "object") {
+    const rec = seller as {
+      _id?: string;
+      id?: string;
+      name?: string;
+      profileImage?: string;
+      toString?: () => string;
+    };
+
+    // Populated seller document
+    if (rec._id || rec.id || rec.name || rec.profileImage) {
+      return {
+        ...rec,
+        profileImage: resolveAbsoluteMediaUrl(rec.profileImage) ?? undefined,
+      };
+    }
+
+    // Raw Mongo ObjectId object from lean queries
+    const asString = String(seller);
+    if (/^[a-f\d]{24}$/i.test(asString)) return asString;
+  }
+
+  return seller;
+}
+
 function normaliseListingImages(listing: ListingItem): ListingItem {
   const userId =
     listing.userId && typeof listing.userId === "object"
@@ -172,20 +211,22 @@ function normaliseListingImages(listing: ListingItem): ListingItem {
         }
       : listing.userId;
 
+  const seller = normaliseSellerField(listing.seller);
+  // Keep sellerId in sync when API only sends an unpopulated seller ref.
+  const sellerId =
+    listing.sellerId ??
+    (typeof seller === "string" ? seller : seller?._id);
+
   return {
     ...listing,
     userId,
+    seller,
+    sellerId: sellerId ? String(sellerId) : listing.sellerId,
     images: (listing.images || []).map((img) => {
       // Server may return image objects {url, publicId, isPrimary} — extract the URL string
       const rawUrl = typeof img === "string" ? img : ((img as unknown as { url?: string }).url ?? "");
       return resolveAbsoluteMediaUrl(rawUrl) ?? rawUrl;
     }).filter(Boolean),
-    seller: listing.seller
-      ? {
-          ...listing.seller,
-          profileImage: resolveAbsoluteMediaUrl(listing.seller.profileImage) ?? undefined,
-        }
-      : listing.seller,
   };
 }
 

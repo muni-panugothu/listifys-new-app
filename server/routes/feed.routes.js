@@ -49,6 +49,7 @@ const LISTING_PROJECTION = {
   createdAt: 1,
   coordinates: 1,
   seller: 1,
+  sellerName: 1,
 };
 
 function haversineDistanceKm(lat1, lng1, lat2, lng2) {
@@ -179,6 +180,7 @@ router.get("/", optionalAuth, async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit + 1)
+        .populate("seller", "name profileImage")
         .lean();
 
       // .lean() bypasses toJSON transforms, so normalize image URLs manually

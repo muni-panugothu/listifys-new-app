@@ -6,29 +6,36 @@ type ListingOwnerFields = {
   sellerId?: string;
 };
 
+const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
+
+function coerceMongoId(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return OBJECT_ID_RE.test(trimmed) ? trimmed : null;
+  }
+  if (typeof value === "object") {
+    const rec = value as { _id?: unknown; id?: unknown; toString?: () => string };
+    const fromField = coerceMongoId(rec._id) ?? coerceMongoId(rec.id);
+    if (fromField) return fromField;
+    if (typeof rec.toString === "function") {
+      const asString = String(value);
+      if (OBJECT_ID_RE.test(asString)) return asString;
+    }
+  }
+  return null;
+}
+
 /** Resolve listing owner id from API shapes (ObjectId string, populated seller, or populated userId). */
 export function getListingSellerId(listing: ListingOwnerFields): string | null {
-  if (listing.sellerId) {
-    return String(listing.sellerId);
-  }
+  const explicit = coerceMongoId(listing.sellerId);
+  if (explicit) return explicit;
 
-  const seller = listing.seller;
-  if (typeof seller === "string" && seller.trim()) {
-    return seller.trim();
-  }
-  if (seller && typeof seller === "object") {
-    const id = (seller as { _id?: string; id?: string })._id ?? (seller as { _id?: string; id?: string }).id;
-    if (id) return String(id);
-  }
+  const fromSeller = coerceMongoId(listing.seller);
+  if (fromSeller) return fromSeller;
 
-  const userId = listing.userId;
-  if (typeof userId === "string" && userId.trim()) {
-    return userId.trim();
-  }
-  if (userId && typeof userId === "object") {
-    const id = userId._id ?? userId.id;
-    if (id) return String(id);
-  }
+  const fromUser = coerceMongoId(listing.userId);
+  if (fromUser) return fromUser;
 
   return null;
 }
