@@ -1016,7 +1016,7 @@ export function PostAdStep3MediaScreen() {
         className="mb-6 text-center text-[12px] text-[#6B7280]"
         style={{ fontFamily: ListifyFonts.regular }}
       >
-        By posting, you agree to Listify&apos;s{" "}
+        By posting, you agree to Listifys&apos;s{" "}
         <Text
           onPress={() => router.push("/terms-of-service")}
           style={{ fontFamily: ListifyFonts.semiBold, color: ListifyColors.primary }}

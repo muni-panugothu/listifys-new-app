@@ -56,7 +56,7 @@ export function AboutListifyScreen() {
           className="flex-1 text-[17px]"
           style={{ fontFamily: ListifyFonts.semiBold, color: "#111827" }}
         >
-          About Listify
+          About Listifys
         </Text>
       </View>
 
@@ -284,7 +284,7 @@ export function AboutListifyScreen() {
             className="mt-3 text-center text-[12px] text-[#9CA3AF]"
             style={{ fontFamily: ListifyFonts.regular }}
           >
-            © {new Date().getFullYear()} Listify · Version {APP_VERSION}
+            © {new Date().getFullYear()} Listifys · Version {APP_VERSION}
           </Text>
         </View>
       </ScrollView>

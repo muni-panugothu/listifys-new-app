@@ -391,7 +391,7 @@ export function ServiceDetailScreen() {
               <MaterialIcons name="arrow-back" size={22} color="#161D1A" />
             </Pressable>
             <Text className="text-[20px] font-black tracking-tight text-[#27BB97]">
-              Listify
+              Listifys
             </Text>
           </View>
 

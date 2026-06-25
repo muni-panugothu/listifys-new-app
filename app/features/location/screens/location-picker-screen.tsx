@@ -345,7 +345,7 @@ export function LocationPickerScreen() {
     Linking.openSettings().catch(() => {
       Alert.alert(
         "Open Settings",
-        "Go to Settings → Apps → Listify → Permissions → Location and enable it.",
+        "Go to Settings → Apps → Listifys → Permissions → Location and enable it.",
         [{ text: "OK" }],
       );
     });

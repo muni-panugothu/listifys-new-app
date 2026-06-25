@@ -2,6 +2,28 @@ const fs = require("fs");
 const path = require("path");
 const { withDangerousMod } = require("expo/config-plugins");
 
+const NOTIFICATION_COLOR_NAME = "listifys_notification_color";
+const NOTIFICATION_COLOR = "#27BB97";
+
+function ensureNotificationColor(valuesDir) {
+  fs.mkdirSync(valuesDir, { recursive: true });
+  const colorsPath = path.join(valuesDir, "colors.xml");
+  const colorEntry = `  <color name="${NOTIFICATION_COLOR_NAME}">${NOTIFICATION_COLOR}</color>`;
+  if (fs.existsSync(colorsPath)) {
+    let colorsXml = fs.readFileSync(colorsPath, "utf8");
+    if (!colorsXml.includes(`name="${NOTIFICATION_COLOR_NAME}"`)) {
+      colorsXml = colorsXml.replace("</resources>", `${colorEntry}\n</resources>`);
+      fs.writeFileSync(colorsPath, colorsXml, "utf8");
+    }
+  } else {
+    fs.writeFileSync(
+      colorsPath,
+      `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n${colorEntry}\n</resources>\n`,
+      "utf8",
+    );
+  }
+}
+
 /**
  * Copies Listifys project keystores into the generated Android project during prebuild.
  * Debug: used by `expo run:android` and local APK installs.
@@ -45,6 +67,10 @@ function withListifysAndroidSigning(config) {
           }
         }
       }
+
+      ensureNotificationColor(
+        path.join(cfg.modRequest.platformProjectRoot, "app", "src", "main", "res", "values"),
+      );
 
       return cfg;
     },

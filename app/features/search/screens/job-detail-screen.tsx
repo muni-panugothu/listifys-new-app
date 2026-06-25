@@ -183,7 +183,7 @@ export function JobDetailScreen() {
           <Pressable onPress={() => router.back()} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
             <MaterialIcons name="arrow-back" size={24} color="#0f172a" />
           </Pressable>
-          <Text className="text-[20px] font-black tracking-tight text-[#27BB97]">Listify</Text>
+          <Text className="text-[20px] font-black tracking-tight text-[#27BB97]">Listifys</Text>
         </View>
         <View className="flex-row items-center gap-4">
           <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>

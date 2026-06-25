@@ -343,7 +343,7 @@ export function SellerPublicProfileScreen() {
   const displayName = seller?.name ?? paramSellerName ?? "Seller";
   const memberSince = seller?.createdAt
     ? `Member since ${new Date(seller.createdAt).getFullYear()}`
-    : "Verified seller on Listify";
+    : "Verified seller on Listifys";
 
   const avatarUri = useMemo(() => {
     if (seller?.profileImageUrl) {

@@ -420,7 +420,7 @@ export function ListingDetailTemplateScreen() {
     : null;
   const sellerJoined = listing?.seller?.createdAt
     ? `Member since ${new Date(listing.seller.createdAt).getFullYear()}`
-    : "Verified seller on Listify";
+    : "Verified seller on Listifys";
 
   const showReadMore = description.length > READ_MORE_LIMIT;
   const descriptionPreview = descExpanded

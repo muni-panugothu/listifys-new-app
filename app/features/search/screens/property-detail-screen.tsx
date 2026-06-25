@@ -305,7 +305,7 @@ export function PropertyDetailScreen() {
             <MaterialIcons name="arrow-back" size={22} color="#161D1A" />
           </Pressable>
           <Text className="text-[20px] font-black tracking-tight text-[#27BB97]">
-            Listify
+            Listifys
           </Text>
           <View className="flex-row items-center gap-4 pr-2">
             <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>

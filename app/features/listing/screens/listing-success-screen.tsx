@@ -61,7 +61,7 @@ export function ListingSuccessScreen() {
     const lines = [listingTitle];
     if (listingPrice) lines.push(listingPrice);
     if (listingLocation) lines.push(listingLocation);
-    lines.push("Posted on Listify");
+    lines.push("Posted on Listifys");
     try {
       await Share.share({
         message: lines.join("\n"),
@@ -90,7 +90,7 @@ export function ListingSuccessScreen() {
         <View className="flex-row items-center gap-2">
           <MaterialIcons name="storefront" size={24} color="#27BB97" />
           <Text className="text-[20px] font-black tracking-tight text-[#27BB97]">
-            Listify
+            Listifys
           </Text>
         </View>
         <Pressable className="rounded-full p-2">

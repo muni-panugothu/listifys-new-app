@@ -144,7 +144,7 @@ export function NewPasswordScreen() {
           style={{ top: insets.top + 18 }}
         >
           <Text className="text-xl font-black tracking-tight text-[#27BB97]">
-            Listify
+            Listifys
           </Text>
         </View>
 

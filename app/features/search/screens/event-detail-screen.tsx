@@ -161,7 +161,7 @@ export function EventDetailScreen() {
         <Pressable className="h-10 w-10 items-center justify-center" onPress={() => router.back()} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
           <MaterialIcons name="arrow-back" size={24} color="#27BB97" />
         </Pressable>
-        <Text className="text-[20px] font-black tracking-tight text-[#27BB97]">Listify</Text>
+        <Text className="text-[20px] font-black tracking-tight text-[#27BB97]">Listifys</Text>
         <View className="flex-row items-center gap-4">
           <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
             <MaterialIcons name="share" size={22} color="#64748B" />
@@ -248,7 +248,6 @@ export function EventDetailScreen() {
                 { label: "Entry Price", value: priceLabel, icon: "local-activity" as const },
                 venue && { label: "Venue", value: venue, icon: "place" as const },
                 locationText && { label: "Location", value: locationText, icon: "location-on" as const },
-                ticketsAvailable > 0 && { label: "Tickets Available", value: String(ticketsAvailable), icon: "confirmation-number" as const },
                 ageRestriction && { label: "Age Restriction", value: ageRestriction, icon: "no-accounts" as const },
                 dressCode && { label: "Dress Code", value: dressCode, icon: "checkroom" as const },
                 subcategory && { label: "Category", value: subcategory, icon: "category" as const },

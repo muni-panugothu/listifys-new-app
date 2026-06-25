@@ -86,7 +86,7 @@ export function SettingsScreen() {
       } else {
         showErrorToast(
           "Enable system notifications",
-          "Allow notifications for Listify in your device settings to receive pushes.",
+          "Allow notifications for Listifys in your device settings to receive pushes.",
         );
       }
       return;
@@ -242,7 +242,7 @@ export function SettingsScreen() {
           icon="info"
           iconBg="#F3F4F6"
           iconColor="#6B7280"
-          label="About Listify"
+          label="About Listifys"
           type="navigate"
           onPress={() => push("/about-listify")}
         />

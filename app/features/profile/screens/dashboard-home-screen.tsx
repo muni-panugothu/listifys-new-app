@@ -163,7 +163,7 @@ export function DashboardHomeScreen() {
   const handleInviteFriend = useCallback(async () => {
     try {
       await Share.share({
-        message: "Join me on Listify — buy and sell locally!",
+        message: "Join me on Listifys — buy and sell locally!",
       });
     } catch {
       // user dismissed

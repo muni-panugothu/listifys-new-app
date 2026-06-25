@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { type Href, useLocalSearchParams, useRouter } from "@/lib/safe-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BackHandler, Pressable, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 
@@ -33,7 +33,11 @@ export function PostAdStep1CategoryScreen() {
 
   const categorySlug = getValidCategorySlug(params.category);
   const categoryConfig = CATEGORY_MAP[categorySlug];
-  const subcategories = categoryConfig?.subcategories ?? [];
+  const subcategories = useMemo(
+    () => categoryConfig?.subcategories ?? [],
+    [categorySlug],
+  );
+  const showSubcategorySearch = subcategories.length >= 3;
 
   // Read the current Redux subcategory so we can restore it when this screen
   // remounts (e.g. user pressed Back from step 2 via router.replace).
@@ -99,6 +103,7 @@ export function PostAdStep1CategoryScreen() {
       step={1}
       title={categoryConfig?.name ?? "Category"}
       subtitle="Choose a subcategory"
+      keyboardPersistTaps="always"
       onBack={handleBack}
       rightAction={
         <Pressable
@@ -122,7 +127,7 @@ export function PostAdStep1CategoryScreen() {
       primaryLabel="Continue"
       onPrimaryPress={() => router.push("/post-ad-step2-details")}
     >
-      {subcategories.length > 5 ? (
+      {showSubcategorySearch ? (
         <View
           style={{
             marginBottom: 16,
@@ -140,8 +145,12 @@ export function PostAdStep1CategoryScreen() {
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder={`Search in ${categoryConfig?.name ?? "subcategories"}...`}
+            placeholder={`Search ${categoryConfig?.name ?? "subcategories"}...`}
             placeholderTextColor="#9CA3AF"
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+            clearButtonMode="while-editing"
             style={{
               flex: 1,
               marginLeft: 8,

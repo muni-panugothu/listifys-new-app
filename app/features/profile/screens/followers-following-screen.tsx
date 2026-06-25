@@ -341,9 +341,6 @@ export function FollowersFollowingScreen() {
             {currentUser?.name || "Followers"}
           </Text>
         </View>
-        <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-          <MaterialIcons name="more-vert" size={22} color="#161D1A" />
-        </Pressable>
       </View>
 
       <View className="flex-1" style={{ paddingTop: topBarHeight, paddingBottom: 84 + bottomNavPadding }}>
