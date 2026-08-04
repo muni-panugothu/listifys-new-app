@@ -11,6 +11,7 @@ import { showAuthGate, type AuthGateAction } from "@/store/slices/auth-gate-slic
 /** Expo Router hrefs for tabs (used outside the tab navigator). */
 const TAB_ROUTES: Record<string, string> = {
   home: "/(tabs)/home-feed-root",
+  hotlists: "/saved-items",
   sell: "/(tabs)/sell-entry",
   search: "/(tabs)/search-home",
   messages: "/messages-inbox",
@@ -24,6 +25,9 @@ const TAB_SCREEN_NAMES: Record<string, string> = {
   search: "search-home",
   profile: "dashboard-home",
 };
+
+/** Tabs that live outside the main tab navigator (stack routes). */
+const STACK_ONLY_TABS = new Set(["hotlists"]);
 
 type AnyNavigation = {
   getState?: () => { type?: string; routeNames?: string[] } | undefined;
@@ -86,8 +90,7 @@ export function useTabNavigation(onAuthRequired?: () => void) {
   const handleTabPress = useCallback(
     (tabId: string) => {
       const target = TAB_ROUTES[tabId];
-      const screenName = TAB_SCREEN_NAMES[tabId];
-      if (!target || !screenName) return;
+      if (!target) return;
 
       if (AUTH_REQUIRED_TABS.has(tabId) && !isAuthenticated) {
         onAuthRequired?.();
@@ -117,6 +120,14 @@ export function useTabNavigation(onAuthRequired?: () => void) {
       if (Platform.OS !== "web") {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       }
+
+      if (STACK_ONLY_TABS.has(tabId)) {
+        router.push(target as never);
+        return;
+      }
+
+      const screenName = TAB_SCREEN_NAMES[tabId];
+      if (!screenName) return;
 
       const tabNavigator = findTabNavigator(navigation as unknown as AnyNavigation);
       if (tabNavigator) {

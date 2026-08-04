@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ChatConversationScreen — user-centric marketplace chat.
  *
  * Params (from router):
@@ -57,8 +57,8 @@ import { validateOfferAmount, parseListedPrice } from "@/lib/offer-validation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 
-import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 import { resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
 import { normalizeListingChatParams } from "@/lib/listing-chat";
 import { getListingDetailHref } from "@/lib/notification-navigation";
@@ -103,8 +103,6 @@ import {
 import { outgoingCallStarted } from "@/store/slices/call-slice";
 
 const BRAND         = "#27BB97";
-const CHAT_BG       = APP_SCREEN_BG;
-const BAR_BG        = APP_SCREEN_BG;
 const INCOMING_BG   = "#E8E8E8";
 const OFFER_BG      = "#EFF6FF";
 const SYSTEM_BG     = "#F3F4F6";
@@ -232,6 +230,7 @@ export function ChatConversationScreen() {
   const chatParams = useMemo(() => normalizeListingChatParams(rawParams), [rawParams]);
   const params = chatParams;
   const insets  = useSafeAreaInsets();
+  const { colors } = useTheme();
   const user    = useAppSelector((s) => s.auth.user);
   const dispatch = useAppDispatch();
 
@@ -1341,21 +1340,21 @@ export function ChatConversationScreen() {
   );
   if (loading && !hasShellSeed) {
     return (
-      <View style={{ flex: 1, backgroundColor: CHAT_BG, alignItems: "center", justifyContent: "center", paddingTop: insets.top }}>
+      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", paddingTop: insets.top }}>
         <ActivityIndicator color={BRAND} />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: CHAT_BG }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <View
         style={{
           paddingTop: insets.top + 8,
           paddingBottom: 10,
           paddingHorizontal: 16,
-          backgroundColor: BAR_BG,
+          backgroundColor: colors.background,
           flexDirection: "row",
           alignItems: "center",
           gap: 10,
@@ -1364,7 +1363,7 @@ export function ChatConversationScreen() {
         }}
       >
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <MaterialIcons name="arrow-back" size={24} color={TEXT_DARK} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.icon} />
         </Pressable>
         <Pressable
           onPress={navigateToSellerProfile}
@@ -1385,7 +1384,7 @@ export function ChatConversationScreen() {
             )}
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 15, color: TEXT_DARK }} numberOfLines={1}>{contactName}</Text>
+            <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 15, color: colors.textPrimary }} numberOfLines={1}>{contactName}</Text>
             {isTyping && typingUser && (
               <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 11, color: BRAND }}>typing…</Text>
             )}
@@ -1409,7 +1408,7 @@ export function ChatConversationScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={{ maxHeight: 44, backgroundColor: BAR_BG, borderBottomWidth: 1, borderBottomColor: "#E5E7EB" }}
+          style={{ maxHeight: 44, backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: "#E5E7EB" }}
           contentContainerStyle={{ paddingHorizontal: 12, alignItems: "center", gap: 8 }}
         >
           {threads.map((t) => {
@@ -1521,7 +1520,7 @@ export function ChatConversationScreen() {
         {!isClosed && (
           <View
             style={{
-              backgroundColor: BAR_BG,
+              backgroundColor: colors.background,
               borderTopWidth: replyTo ? 0 : 1,
               borderTopColor: "#E5E7EB",
             }}

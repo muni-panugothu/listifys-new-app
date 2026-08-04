@@ -10,6 +10,7 @@ import {
 } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const ITEM_WIDTH = 128;
@@ -26,6 +27,7 @@ export function CategorySnapSubcategoryPicker({
   selected,
   onSelect,
 }: CategorySnapSubcategoryPickerProps) {
+  const { colors } = useTheme();
   const scrollRef = useRef<ScrollView>(null);
   const [centerIndex, setCenterIndex] = useState(() =>
     Math.max(0, items.indexOf(selected)),
@@ -100,7 +102,7 @@ export function CategorySnapSubcategoryPicker({
                 style={{
                   fontFamily: isActive ? ListifyFonts.bold : ListifyFonts.regular,
                   fontSize: isActive ? 22 : isAdjacent ? 17 : 15,
-                  color: isActive ? "#1A1A1A" : "#C8CDD2",
+                  color: isActive ? colors.textPrimary : colors.textTertiary,
                   textAlign: "center",
                 }}
               >

@@ -4,9 +4,10 @@ import {
   Animated,
   Dimensions,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+
+import { useTheme } from '@/providers/theme-provider';
 // import LottieView from 'lottie-react-native';
 
 const { width, height } = Dimensions.get('screen');
@@ -26,6 +27,7 @@ interface Props {
 export function PageTransitionLoader({ visible, label = 'Getting ready…' }: Props) {
   const [isMounted, setIsMounted] = useState(false);
   const opacity = useRef(new Animated.Value(0)).current;
+  const { colors, resolvedMode } = useTheme();
   // const lottieRef = useRef<LottieView>(null);
 
   useEffect(() => {
@@ -54,34 +56,26 @@ export function PageTransitionLoader({ visible, label = 'Getting ready…' }: Pr
 
   if (!isMounted && !visible) return null;
 
+  const overlayBackground =
+    resolvedMode === "dark"
+      ? "rgba(13,15,18,0.97)"
+      : "rgba(255,252,246,0.97)";
+  const dotColor = colors.primary;
+
   return (
     <Animated.View
       // Loader is visual-only; never block taps on underlying UI.
       pointerEvents="none"
-      style={[styles.overlay, { opacity }]}
+      style={[styles.overlay, { opacity, backgroundColor: overlayBackground }]}
     >
-      {/* Frosted card container */}
       <View style={styles.card}>
-        {/* Lottie animation commented out — use plain spinner instead */}
-        {/*
-        <LottieView
-          ref={lottieRef}
-          source={require('../animation/shopping.json')}
-          autoPlay
-          loop
-          style={styles.lottie}
-          resizeMode="contain"
-        />
-        */}
-        <ActivityIndicator size="large" color="#7A6652" />
-        {/* <Text style={styles.label}>{label}</Text> */}
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
 
-      {/* Shimmer dots row — purely decorative, like Zepto loading indicator */}
       <View style={styles.dotsRow}>
-        <ShimmerDot delay={0} />
-        <ShimmerDot delay={180} />
-        <ShimmerDot delay={360} />
+        <ShimmerDot delay={0} color={dotColor} />
+        <ShimmerDot delay={180} color={dotColor} />
+        <ShimmerDot delay={360} color={dotColor} />
       </View>
     </Animated.View>
   );
@@ -89,7 +83,7 @@ export function PageTransitionLoader({ visible, label = 'Getting ready…' }: Pr
 
 // ─── Shimmer Dot ─────────────────────────────────────────────────────────────
 
-function ShimmerDot({ delay }: { delay: number }) {
+function ShimmerDot({ delay, color }: { delay: number; color: string }) {
   const anim = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
@@ -112,7 +106,11 @@ function ShimmerDot({ delay }: { delay: number }) {
     return () => loop.stop();
   }, [anim, delay]);
 
-  return <Animated.View style={[styles.dot, { opacity: anim }]} />;
+  return (
+    <Animated.View
+      style={[styles.dot, { opacity: anim, backgroundColor: color }]}
+    />
+  );
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
@@ -126,24 +124,12 @@ const styles = StyleSheet.create({
     height,
     zIndex: 999,
     elevation: 999,
-    backgroundColor: 'rgba(255, 252, 246, 0.97)', // warm off-white — Zepto-inspired
     alignItems: 'center',
     justifyContent: 'center',
   },
   card: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  lottie: {
-    width: 220,
-    height: 220,
-  },
-  label: {
-    marginTop: 4,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#7A6652', // warm brown — matches bag character colour
-    letterSpacing: 0.3,
   },
   dotsRow: {
     flexDirection: 'row',
@@ -154,6 +140,5 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#E8A020', // warm amber — matches Lottie bag accent
   },
 });

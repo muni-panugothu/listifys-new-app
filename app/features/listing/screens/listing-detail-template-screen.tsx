@@ -554,7 +554,7 @@ export function ListingDetailTemplateScreen() {
       >
         <View className="mr-3 h-14 w-14 overflow-hidden rounded-full bg-[#E5E7EB]">
           {sellerProfileImage ? (
-            <Image source={sellerProfileImage} contentFit="cover" className="h-full w-full" />
+            <Image source={sellerProfileImage} contentFit="cover" cachePolicy="memory-disk" className="h-full w-full" />
           ) : (
             <View className="h-full w-full items-center justify-center bg-[#F43F9C]">
               <Text className="text-[20px] text-white" style={{ fontFamily: ListifyFonts.bold }}>
@@ -598,6 +598,8 @@ export function ListingDetailTemplateScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        removeClippedSubviews
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1A1A1A" />
         }
@@ -632,6 +634,8 @@ export function ListingDetailTemplateScreen() {
                     <Image
                       source={item}
                       contentFit="contain"
+                      cachePolicy="memory-disk"
+                      recyclingKey={typeof item === "string" ? item : undefined}
                       style={{ width: IMAGE_WIDTH * 0.88, height: IMAGE_WIDTH * 0.88 }}
                     />
                   </View>
@@ -688,7 +692,7 @@ export function ListingDetailTemplateScreen() {
                       borderColor: TAB_BLUE,
                     }}
                   >
-                    <Image source={img} contentFit="cover" className="h-full w-full" />
+                    <Image source={img} contentFit="cover" cachePolicy="memory-disk" className="h-full w-full" />
                   </Pressable>
                 );
               })}

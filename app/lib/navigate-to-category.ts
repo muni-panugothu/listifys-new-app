@@ -10,5 +10,8 @@ export function getCategoryHref(catId: CategorySlug): Href {
   if (catId === "events") {
     return "/events-listing" as Href;
   }
+  if (catId === "properties") {
+    return "/properties-listing" as Href;
+  }
   return `/category-listing-template?category=${catId}` as Href;
 }

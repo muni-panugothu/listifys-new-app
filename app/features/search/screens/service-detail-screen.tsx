@@ -419,6 +419,8 @@ export function ServiceDetailScreen() {
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          removeClippedSubviews
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -438,6 +440,7 @@ export function ServiceDetailScreen() {
             <Image
               source={coverImage}
               contentFit="cover"
+              cachePolicy="memory-disk"
               transition={200}
               style={{ width: "100%", height: 256 }}
             />
@@ -529,6 +532,8 @@ export function ServiceDetailScreen() {
                 <Image
                   source={item.image}
                   contentFit="cover"
+                  cachePolicy="memory-disk"
+                  recyclingKey={item.image}
                   transition={200}
                   style={{ width: 192, height: 128, borderRadius: 12 }}
                 />

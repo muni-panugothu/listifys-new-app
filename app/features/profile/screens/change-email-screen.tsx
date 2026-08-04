@@ -28,8 +28,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { KeyboardFormScroll } from "@/components/keyboard-form-scroll";
 
-import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 import { requestEmailChange, verifyEmailChange, AuthApiError } from "@/features/auth/services/auth-api";
 import { showErrorToast } from "@/lib/toast";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -162,6 +162,7 @@ export function ChangeEmailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
+  const { colors } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
 
   const [step, setStep] = useState<"email" | "otp">("email");
@@ -255,7 +256,7 @@ export function ChangeEmailScreen() {
   const otpExpired = step === "otp" && expireTimer.secs === 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: APP_SCREEN_BG }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Header */}
       <View
         style={{
@@ -264,7 +265,7 @@ export function ChangeEmailScreen() {
           paddingTop: insets.top + 8,
           paddingBottom: 12,
           paddingHorizontal: 20,
-          backgroundColor: APP_SCREEN_BG,
+          backgroundColor: colors.background,
         }}
       >
         <Pressable
@@ -279,9 +280,9 @@ export function ChangeEmailScreen() {
             justifyContent: "center",
           })}
         >
-          <MaterialIcons name="chevron-left" size={32} color={TEXT_PRIMARY} />
+          <MaterialIcons name="chevron-left" size={32} color={colors.icon} />
         </Pressable>
-        <Text style={{ fontSize: 22, fontFamily: ListifyFonts.bold, color: TEXT_PRIMARY }}>
+        <Text style={{ fontSize: 22, fontFamily: ListifyFonts.bold, color: colors.textPrimary }}>
           Change Email
         </Text>
       </View>
@@ -323,7 +324,7 @@ export function ChangeEmailScreen() {
         {step === "email" && (
           <View
             style={{
-              backgroundColor: "#fff",
+              backgroundColor: colors.surface,
               borderRadius: 20,
               padding: 24,
               shadowColor: "#000",
@@ -391,7 +392,7 @@ export function ChangeEmailScreen() {
         {step === "otp" && (
           <View
             style={{
-              backgroundColor: "#fff",
+              backgroundColor: colors.surface,
               borderRadius: 20,
               padding: 24,
               shadowColor: "#000",

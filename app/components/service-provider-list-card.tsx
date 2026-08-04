@@ -1,4 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { memo } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 
 import { ProfileAvatarImage } from "@/components/profile-avatar-image";
@@ -8,6 +9,7 @@ import { ListifyFonts } from "@/constants/typography";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { formatPrice as libFormatPrice } from "@/lib/currency";
 import { formatServiceExperienceLabel } from "@/lib/format-service-experience";
+import { useTheme } from "@/providers/theme-provider";
 
 const IMAGE_WIDTH = 96;
 const MIN_IMAGE_HEIGHT = 96;
@@ -177,7 +179,7 @@ function BadgePill({ badge }: { badge: ServiceBadge }) {
   );
 }
 
-export function ServiceProviderListCard({
+function ServiceProviderListCardImpl({
   item,
   isoCountryCode,
   isSaved = false,
@@ -187,6 +189,7 @@ export function ServiceProviderListCard({
   onMessage,
   showMessage = true,
 }: ServiceProviderListCardProps) {
+  const { colors, isDark } = useTheme();
   const providerName = getProviderName(item);
   const profileUser = getProfileUser(item);
   const experience = getExperienceText(item);
@@ -206,14 +209,16 @@ export function ServiceProviderListCard({
     <SafePressable
       onPress={onPress}
       cooldownMs={700}
-      className="overflow-hidden rounded-2xl bg-white"
       style={({ pressed }) => ({
+        overflow: "hidden",
+        borderRadius: 16,
+        backgroundColor: colors.surface,
         opacity: pressed ? 0.96 : 1,
         borderWidth: 1,
-        borderColor: ListifyColors.cardBorder,
+        borderColor: colors.border,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
+        shadowOpacity: isDark ? 0.28 : 0.06,
         shadowRadius: 8,
         elevation: 2,
         transform: [{ scale: pressed ? 0.995 : 1 }],
@@ -223,7 +228,10 @@ export function ServiceProviderListCard({
         <View
           style={{ width: IMAGE_WIDTH, minHeight: MIN_IMAGE_HEIGHT, alignSelf: "stretch" }}
         >
-          <View className="flex-1 overflow-hidden rounded-lg bg-[#F3F4F6]">
+          <View
+            className="flex-1 overflow-hidden rounded-lg"
+            style={{ backgroundColor: colors.surfaceMuted }}
+          >
             <ProfileAvatarImage
               user={profileUser}
               fallbackName={providerName}
@@ -238,8 +246,8 @@ export function ServiceProviderListCard({
           <View className="flex-row items-start justify-between gap-2">
             <Text
               numberOfLines={1}
-              className="flex-1 text-[17px] text-[#161D1A]"
-              style={{ fontFamily: ListifyFonts.semiBold }}
+              className="flex-1 text-[17px]"
+              style={{ fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
             >
               {providerName}
             </Text>
@@ -259,7 +267,7 @@ export function ServiceProviderListCard({
                   <MaterialIcons
                     name={isSaved ? "favorite" : "favorite-border"}
                     size={22}
-                    color={isSaved ? ListifyColors.error : "#9CA3AF"}
+                    color={isSaved ? ListifyColors.error : colors.iconMuted}
                   />
                 </SafePressable>
               ) : null}
@@ -276,15 +284,17 @@ export function ServiceProviderListCard({
                   style={({ pressed }) => ({
                     width: 34,
                     height: 34,
-                    backgroundColor: pressed ? "rgba(39, 187, 151, 0.14)" : "#FFFFFF",
+                    backgroundColor: pressed
+                      ? colors.primarySoft
+                      : colors.surface,
                     borderWidth: 1.5,
-                    borderColor: ListifyColors.primary,
+                    borderColor: colors.primary,
                   })}
                 >
                   <MaterialIcons
                     name="chat-bubble-outline"
                     size={18}
-                    color={ListifyColors.primary}
+                    color={colors.primary}
                   />
                 </SafePressable>
               ) : null}
@@ -294,15 +304,15 @@ export function ServiceProviderListCard({
           <View className="flex-row items-center" style={{ gap: 4 }}>
             <MaterialIcons name="star" size={15} color={ListifyColors.warning} />
             <Text
-              className="text-[14px] text-[#161D1A]"
-              style={{ fontFamily: ListifyFonts.semiBold }}
+              className="text-[14px]"
+              style={{ fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
             >
               {rating != null ? rating.toFixed(1) : "—"}
             </Text>
             {reviewCount != null ? (
               <Text
-                className="text-[12px] text-[#9CA3AF]"
-                style={{ fontFamily: ListifyFonts.regular }}
+                className="text-[12px]"
+                style={{ fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
               >
                 ({reviewCount} {reviewCount === 1 ? "review" : "reviews"})
               </Text>
@@ -312,8 +322,8 @@ export function ServiceProviderListCard({
           {experience ? (
             <Text
               numberOfLines={1}
-              className="text-[13px] text-[#6B7280]"
-              style={{ fontFamily: ListifyFonts.regular }}
+              className="text-[13px]"
+              style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
             >
               {experience}
             </Text>
@@ -329,14 +339,14 @@ export function ServiceProviderListCard({
 
           {priceText ? (
             <Text
-              className="text-[15px] text-[#161D1A]"
-              style={{ fontFamily: ListifyFonts.bold }}
+              className="text-[15px]"
+              style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
             >
               {priceText}
               {priceUnit ? (
                 <Text
-                  className="text-[12px] text-[#9CA3AF]"
-                  style={{ fontFamily: ListifyFonts.regular }}
+                  className="text-[12px]"
+                  style={{ fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
                 >
                   {priceUnit}
                 </Text>
@@ -358,3 +368,5 @@ export function ServiceProviderListCard({
     </SafePressable>
   );
 }
+
+export const ServiceProviderListCard = memo(ServiceProviderListCardImpl);

@@ -15,8 +15,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardFormScroll } from "@/components/keyboard-form-scroll";
 
 import { ProfileAvatarImage } from "@/components/profile-avatar-image";
-import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 import { uploadProfileImage } from "@/features/auth/services/auth-api";
 import { showErrorToast } from "@/lib/toast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -57,10 +57,12 @@ function FieldLabel({ children }: { children: string }) {
 }
 
 function FormCard({ children }: { children: React.ReactNode }) {
+  const { colors } = useTheme();
   return (
     <View
-      className="rounded-2xl bg-white p-4"
+      className="rounded-2xl p-4"
       style={{
+        backgroundColor: colors.surface,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.04,
@@ -77,6 +79,7 @@ export function ProfileDetailsEditScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
+  const { colors } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const sessionHydrated = useAppSelector((s) => s.auth.sessionHydrated);
@@ -302,7 +305,7 @@ export function ProfileDetailsEditScreen() {
   };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: APP_SCREEN_BG }}>
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <View
         className="flex-row items-center justify-between px-5"
         style={{ paddingTop: insets.top + 8, paddingBottom: 12 }}
@@ -314,19 +317,19 @@ export function ProfileDetailsEditScreen() {
             className="mr-2 h-10 w-10 items-center justify-center"
             style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
           >
-            <MaterialIcons name="chevron-left" size={32} color={TEXT_PRIMARY} />
+            <MaterialIcons name="chevron-left" size={32} color={colors.icon} />
           </Pressable>
           <Text
             className="text-[22px]"
-            style={{ fontFamily: ListifyFonts.bold, color: TEXT_PRIMARY }}
+            style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
           >
             Edit profile
           </Text>
         </View>
         <Pressable
           onPress={() => router.push("/app-settings" as Href)}
-          className="h-10 w-10 items-center justify-center rounded-full bg-white"
-          style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+          className="h-10 w-10 items-center justify-center rounded-full"
+          style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1, backgroundColor: colors.surface })}
         >
           <MaterialIcons name="settings" size={22} color={TEXT_MUTED} />
         </Pressable>
@@ -555,7 +558,7 @@ export function ProfileDetailsEditScreen() {
         style={{
           borderTopWidth: 1,
           borderTopColor: "#E5E7EB",
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
           paddingHorizontal: 20,
           paddingTop: 12,
           paddingBottom: Math.max(insets.bottom, 12),

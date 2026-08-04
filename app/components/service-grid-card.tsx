@@ -1,5 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import Animated, {
   interpolate,
@@ -11,6 +11,7 @@ import Animated, {
 import { ListifyFonts } from "@/constants/typography";
 import { formatPrice as libFormatPrice } from "@/lib/currency";
 import { Image } from "@/lib/nativewind-interop";
+import { useTheme } from "@/providers/theme-provider";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -51,7 +52,7 @@ const UNIT_MAP: Record<string, string> = {
   Negotiable: "",
 };
 
-export function ServiceGridCard({
+function ServiceGridCardImpl({
   title,
   subcategory,
   price,
@@ -67,6 +68,8 @@ export function ServiceGridCard({
   onPress,
   onToggleSave,
 }: ServiceGridCardProps) {
+  const { colors, isDark } = useTheme();
+  const cardBackground = isDark ? colors.surfaceElevated : colors.card;
   const IMAGE_HEIGHT = Math.round(width * 1.25); // 4:5 aspect ratio
   const savedProgress = useSharedValue(isSaved ? 1 : 0);
 
@@ -95,15 +98,15 @@ export function ServiceGridCard({
       onPress={onPress}
       style={({ pressed }) => ({
         width,
-        backgroundColor: "#FFFFFF",
+        backgroundColor: cardBackground,
         borderRadius: 12,
         overflow: "hidden",
         borderWidth: 1,
-        borderColor: "rgba(226, 232, 240, 0.8)",
+        borderColor: colors.border,
         opacity: pressed ? 0.96 : 1,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
+        shadowOpacity: isDark ? 0.28 : 0.06,
         shadowRadius: 6,
         elevation: 3,
         transform: [{ scale: pressed ? 0.985 : 1 }],
@@ -125,12 +128,16 @@ export function ServiceGridCard({
             style={{
               width,
               height: IMAGE_HEIGHT,
-              backgroundColor: "#F0FBFF",
+              backgroundColor: isDark ? colors.surfaceMuted : "#F0FBFF",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <MaterialIcons name="home-repair-service" size={44} color="#B8E8F4" />
+            <MaterialIcons
+              name="home-repair-service"
+              size={44}
+              color={isDark ? colors.iconMuted : "#B8E8F4"}
+            />
           </View>
         )}
 
@@ -149,18 +156,18 @@ export function ServiceGridCard({
               width: 32,
               height: 32,
               borderRadius: 16,
-              backgroundColor: "rgba(255, 255, 255, 0.85)",
+              backgroundColor: isDark ? "rgba(30,35,42,0.92)" : "rgba(255, 255, 255, 0.85)",
               borderWidth: 1,
-              borderColor: "rgba(243, 244, 246, 1)",
+              borderColor: isDark ? colors.border : "rgba(243, 244, 246, 1)",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
             <Animated.View style={[{ position: "absolute" }, plusIconStyle]} pointerEvents="none">
-              <MaterialIcons name="add" size={17} color="#374151" />
+              <MaterialIcons name="add" size={17} color={colors.icon} />
             </Animated.View>
             <Animated.View style={[{ position: "absolute" }, checkIconStyle]} pointerEvents="none">
-              <MaterialIcons name="check" size={17} color="#27BB97" />
+              <MaterialIcons name="check" size={17} color={colors.primary} />
             </Animated.View>
           </AnimatedPressable>
         )}
@@ -175,20 +182,20 @@ export function ServiceGridCard({
               flexDirection: "row",
               alignItems: "center",
               gap: 3,
-              backgroundColor: "rgba(255, 255, 255, 0.85)",
+              backgroundColor: isDark ? "rgba(30,35,42,0.92)" : "rgba(255, 255, 255, 0.85)",
               borderWidth: 1,
-              borderColor: "rgba(243, 244, 246, 1)",
+              borderColor: isDark ? colors.border : "rgba(243, 244, 246, 1)",
               borderRadius: 8,
               paddingHorizontal: 7,
               paddingVertical: 3,
             }}
           >
-            <MaterialIcons name="star" size={12} color="#F59E0B" />
+            <MaterialIcons name="star" size={12} color={colors.warning} />
             <Text
               style={{
                 fontFamily: ListifyFonts.bold,
                 fontSize: 12,
-                color: "#111827",
+                color: colors.textPrimary,
                 ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
               }}
             >
@@ -206,7 +213,7 @@ export function ServiceGridCard({
             style={{
               fontFamily: ListifyFonts.semiBold,
               fontSize: 10,
-              color: "#27BB97",
+              color: colors.primary,
               textTransform: "uppercase",
               letterSpacing: 0.8,
               ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
@@ -222,7 +229,7 @@ export function ServiceGridCard({
           style={{
             fontFamily: ListifyFonts.semiBold,
             fontSize: 15,
-            color: "#161D1A",
+            color: colors.textPrimary,
             lineHeight: 21,
             ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
           }}
@@ -237,7 +244,7 @@ export function ServiceGridCard({
             style={{
               fontFamily: ListifyFonts.regular,
               fontSize: 11,
-              color: "#94A3B8",
+              color: colors.textTertiary,
               ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
             }}
           >
@@ -252,7 +259,7 @@ export function ServiceGridCard({
               style={{
                 fontFamily: ListifyFonts.bold,
                 fontSize: 16,
-                color: "#161D1A",
+                color: colors.textPrimary,
                 ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
               }}
             >
@@ -263,7 +270,7 @@ export function ServiceGridCard({
                 style={{
                   fontFamily: ListifyFonts.regular,
                   fontSize: 10,
-                  color: "#94A3B8",
+                  color: colors.textTertiary,
                   ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
                 }}
               >
@@ -276,7 +283,7 @@ export function ServiceGridCard({
             style={{
               fontFamily: ListifyFonts.medium,
               fontSize: 13,
-              color: "#94A3B8",
+              color: colors.textTertiary,
               ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
             }}
           >
@@ -289,7 +296,7 @@ export function ServiceGridCard({
               marginTop: 4,
               fontFamily: ListifyFonts.medium,
               fontSize: 12,
-              color: "#6B7280",
+              color: colors.textSecondary,
               ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
             }}
             numberOfLines={1}
@@ -301,3 +308,5 @@ export function ServiceGridCard({
     </Pressable>
   );
 }
+
+export const ServiceGridCard = memo(ServiceGridCardImpl);

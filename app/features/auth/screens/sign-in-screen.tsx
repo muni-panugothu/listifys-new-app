@@ -1,29 +1,34 @@
-import { MaterialIcons } from "@expo/vector-icons";
 import { type Href, useLocalSearchParams, useRouter } from "@/lib/safe-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AuthUI } from "@/constants/auth-ui";
+import { ListifyFonts } from "@/constants/typography";
+import { AuthField } from "@/features/auth/components/auth-field";
+import { AuthPrimaryButton } from "@/features/auth/components/auth-primary-button";
 import { AuthSkipButton } from "@/features/auth/components/auth-skip-button";
+import { AuthSocialRow } from "@/features/auth/components/auth-social-row";
 import { AUTH_API_BASE_URL } from "@/features/auth/services/auth-api";
 import { validateSignInInput } from "@/lib/auth-validation";
 import {
   configureGoogleSignIn,
   signInWithGoogleNative,
 } from "@/lib/google-sign-in";
-import { formatAuthFailureMessage, reportAuthSliceError, reportGoogleSignInFailure } from "@/lib/auth-error-display";
+import {
+  formatAuthFailureMessage,
+  reportAuthSliceError,
+  reportGoogleSignInFailure,
+} from "@/lib/auth-error-display";
 import { navigateAfterAuthentication } from "@/lib/auth-navigation";
 import { authTrace } from "@/lib/auth-trace";
 import { showErrorToast } from "@/lib/toast";
@@ -57,7 +62,6 @@ export function SignInScreen() {
     dispatch(resetAuthStatus());
   }, [dispatch]);
 
-  // Safety-net navigation — primary path is imperative after unwrap().
   useEffect(() => {
     if (!isAuthenticated || status !== "succeeded") return;
 
@@ -84,10 +88,9 @@ export function SignInScreen() {
       return;
     }
     try {
-      // Mirror Google login: await + unwrap so navigation is driven imperatively,
-      // not via a useEffect. This guarantees keyboard is dismissed and the Redux
-      // state is fully committed before we push the tab navigator.
-      await dispatch(login({ identity: validation.identity, password: validation.password })).unwrap();
+      await dispatch(
+        login({ identity: validation.identity, password: validation.password }),
+      ).unwrap();
       Keyboard.dismiss();
       dispatch(hideAuthGate());
       authTrace("sign-in.password_success");
@@ -116,7 +119,7 @@ export function SignInScreen() {
   };
 
   return (
-    <View className="flex-1 bg-white">
+    <View className="flex-1" style={{ backgroundColor: AuthUI.bg }}>
       <StatusBar style="dark" />
       <AuthSkipButton />
 
@@ -128,104 +131,88 @@ export function SignInScreen() {
           bounces={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
-            paddingTop: insets.top + 16,
+            paddingTop: insets.top + 48,
             paddingBottom: contentPaddingBottom,
-            paddingHorizontal: 16,
+            paddingHorizontal: 24,
             flexGrow: 1,
             justifyContent: "center",
           }}
         >
-          <View className="w-full self-center" style={{ maxWidth: 430 }}>
-            <View className="w-full items-center">
-              <Text className="mb-5 text-[30px] font-extrabold text-gray-800">Login</Text>
+          <View className="w-full self-center" style={{ maxWidth: AuthUI.maxWidth }}>
+            <Text
+              className="text-center text-[28px] text-[#111111]"
+              style={{ fontFamily: ListifyFonts.bold }}
+            >
+              Sign In
+            </Text>
+            <Text
+              className="mb-8 mt-2 text-center text-[14px]"
+              style={{ fontFamily: ListifyFonts.regular, color: AuthUI.subtitle }}
+            >
+              Hi Welcome back, you&apos;ve been missed
+            </Text>
 
-              <View className="w-full flex-col gap-3">
-                <TextInput
-                  value={credential}
-                  onChangeText={setCredential}
-                  placeholder="Email or phone"
-                  placeholderTextColor="#9CA3AF"
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoComplete="username"
-                  className="w-full rounded-full border border-gray-300 p-4 text-gray-800"
-                />
-                <View className="w-full flex-row items-center rounded-full border border-gray-300 pr-4">
-                  <TextInput
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="Password"
-                    placeholderTextColor="#9CA3AF"
-                    secureTextEntry={!showPassword}
-                    autoComplete="password"
-                    className="flex-1 p-4 text-gray-800"
-                  />
-                  <Pressable onPress={() => setShowPassword((v) => !v)} hitSlop={8}>
-                    <MaterialIcons
-                      name={showPassword ? "visibility" : "visibility-off"}
-                      size={20}
-                      color="#9CA3AF"
-                    />
-                  </Pressable>
-                </View>
-              </View>
+            <AuthField
+              label="Email"
+              value={credential}
+              onChangeText={setCredential}
+              placeholder="example@gmail.com"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="username"
+            />
+            <AuthField
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              isPassword
+              showPassword={showPassword}
+              onTogglePassword={() => setShowPassword((v) => !v)}
+              autoComplete="password"
+            />
 
-              <Pressable onPress={() => router.push("/forgot-password" as Href)}>
-                <Text className="my-5 font-bold text-gray-800 underline">Forgot Password?</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={handleSignIn}
-                disabled={isLoading || isGoogleLoading}
-                style={({ pressed }) => ({
-                  opacity: pressed ? 0.9 : isLoading ? 0.7 : 1,
-                })}
-                className="w-full items-center rounded-full bg-black px-5 py-3"
+            <Pressable
+              onPress={() => router.push("/forgot-password" as Href)}
+              hitSlop={8}
+              style={({ pressed }) => ({
+                alignSelf: "flex-end",
+                marginBottom: 24,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Text
+                style={{
+                  fontFamily: ListifyFonts.medium,
+                  color: AuthUI.link,
+                  fontSize: 13,
+                }}
               >
-                {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text className="text-center font-semibold text-white">Login</Text>
-                )}
-              </Pressable>
-            </View>
+                Forgot Password?
+              </Text>
+            </Pressable>
 
-            <View className="my-7 w-full flex-row items-center gap-3">
-              <View className="h-px flex-1 bg-gray-400" />
-              <Text className="text-gray-400">or</Text>
-              <View className="h-px flex-1 bg-gray-400" />
-            </View>
+            <AuthPrimaryButton
+              label="Sign In"
+              onPress={handleSignIn}
+              loading={isLoading}
+              disabled={isGoogleLoading}
+            />
 
-            <View className="w-full flex-col gap-2">
-              <Pressable
-                onPress={handleGoogleSignIn}
-                disabled={isLoading || isGoogleLoading}
-                style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
-                className="flex-row items-center justify-center gap-4 rounded-full bg-gray-200 px-6 py-3"
-              >
-                <Image source={require("../../../assets/google.jpg")} className="h-8 w-8 rounded-full" />
-                <Text className="font-semibold text-black">
-                  {isGoogleLoading ? "Connecting..." : "Continue with Google"}
-                </Text>
-              </Pressable>
+            <AuthSocialRow
+              mode="sign-in"
+              onGooglePress={handleGoogleSignIn}
+              googleLoading={isGoogleLoading}
+              disabled={isLoading}
+            />
 
-              <Pressable
-                onPress={() => router.push("/mobile" as Href)}
-                className="flex-row items-center justify-center gap-4 rounded-full bg-gray-200 px-6 py-3"
-              >
-                <Image
-                  source={require("../../../assets/mobile.jpg")}
-                  className="h-8 w-10 rounded-lg"
-                  resizeMode="contain"
-                />
-                <Text className="font-semibold text-black">Continue with Mobile</Text>
-              </Pressable>
-            </View>
-
-            <Text className="mt-4 text-center text-gray-500">
+            <Text
+              className="mt-8 text-center text-[14px]"
+              style={{ fontFamily: ListifyFonts.regular, color: AuthUI.subtitle }}
+            >
               Don&apos;t have an account?{" "}
               <Text
-                className="text-[17px] font-bold text-gray-800"
+                style={{ fontFamily: ListifyFonts.semiBold, color: AuthUI.link }}
                 onPress={() => router.push("/sign-up" as Href)}
               >
                 Sign Up
@@ -233,7 +220,10 @@ export function SignInScreen() {
             </Text>
 
             {__DEV__ ? (
-              <Text className="mt-6 text-center text-[11px] text-gray-400">
+              <Text
+                className="mt-6 text-center text-[11px]"
+                style={{ color: AuthUI.muted }}
+              >
                 API: {AUTH_API_BASE_URL}
               </Text>
             ) : null}

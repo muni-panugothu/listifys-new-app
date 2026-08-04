@@ -15,6 +15,7 @@ import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { Image } from "@/lib/nativewind-interop";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
 import { FloatingBottomNav } from "@/components/floating-bottom-nav";
+import { useTheme } from "@/providers/theme-provider";
 
 type FilterChip = {
   id: string;
@@ -118,6 +119,7 @@ export function ServiceListingGridScreen() {
   const params = useLocalSearchParams<{ title?: string | string[] }>();
   const { width: screenWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
   const [activeFilterId, setActiveFilterId] = useState("all");
   const { refreshing, onRefresh } = usePullToRefresh();
 
@@ -132,16 +134,21 @@ export function ServiceListingGridScreen() {
 
   const handleBottomTabPress = useTabNavigation();
 
+  const cardBackground = isDark ? colors.surfaceElevated : colors.card;
+
   return (
-    <View className="flex-1 bg-[#F6F7F8]">
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <View
-        className="absolute inset-x-0 top-0 z-50 border-b border-slate-100 bg-white/80 px-4"
+        className="absolute inset-x-0 top-0 z-50 px-4"
         style={{
           paddingTop: insets.top,
           height: topBarHeight,
+          backgroundColor: colors.background,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.05,
+          shadowOpacity: isDark ? 0.2 : 0.05,
           shadowRadius: 2,
           elevation: 2,
         }}
@@ -173,6 +180,7 @@ export function ServiceListingGridScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -195,19 +203,22 @@ export function ServiceListingGridScreen() {
               className="-ml-2 h-10 w-10 items-center justify-center"
               style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
             >
-              <MaterialIcons name="arrow-back" size={22} color="#161D1A" />
+              <MaterialIcons name="arrow-back" size={22} color={colors.icon} />
             </Pressable>
-            <Text className="text-[24px] font-bold tracking-tight text-[#161D1A]">
+            <Text
+              className="text-[24px] font-bold tracking-tight"
+              style={{ color: colors.textPrimary }}
+            >
               {title}
             </Text>
           </View>
 
           <Pressable
             className="flex-row items-center gap-1 rounded-lg border px-3 py-1.5"
-            style={{ borderColor: "#BBCAC3" }}
+            style={{ borderColor: colors.border }}
           >
-            <MaterialIcons name="filter-list" size={20} color="#3C4A44" />
-            <Text className="text-[12px] font-medium text-[#3C4A44]">
+            <MaterialIcons name="filter-list" size={20} color={colors.textSecondary} />
+            <Text className="text-[12px] font-medium" style={{ color: colors.textSecondary }}>
               Filter
             </Text>
           </Pressable>
@@ -281,19 +292,29 @@ export function ServiceListingGridScreen() {
                 />
 
                 <Pressable
-                  className="absolute right-2 top-2 h-8 w-8 items-center justify-center rounded-full border border-slate-100 bg-white/70"
-                  style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+                  className="absolute right-2 top-2 h-8 w-8 items-center justify-center rounded-full border"
+                  style={({ pressed }) => ({
+                    opacity: pressed ? 0.7 : 1,
+                    backgroundColor: isDark ? "rgba(30,35,42,0.85)" : "rgba(255,255,255,0.7)",
+                    borderColor: colors.border,
+                  })}
                 >
                   <MaterialIcons
                     name={card.liked ? "favorite" : "favorite-border"}
                     size={16}
-                    color={card.liked ? "#EF4444" : "#161D1A"}
+                    color={card.liked ? colors.danger : colors.icon}
                   />
                 </Pressable>
 
-                <View className="absolute bottom-2 left-2 flex-row items-center gap-1 rounded-lg border border-slate-100 bg-white/70 px-2 py-1">
-                  <MaterialIcons name="star" size={14} color="#EAB308" />
-                  <Text className="text-[11px] font-bold text-[#161D1A]">
+                <View
+                  className="absolute bottom-2 left-2 flex-row items-center gap-1 rounded-lg border px-2 py-1"
+                  style={{
+                    backgroundColor: isDark ? "rgba(30,35,42,0.85)" : "rgba(255,255,255,0.7)",
+                    borderColor: colors.border,
+                  }}
+                >
+                  <MaterialIcons name="star" size={14} color={colors.warning} />
+                  <Text className="text-[11px] font-bold" style={{ color: colors.textPrimary }}>
                     {card.rating}
                   </Text>
                 </View>

@@ -1,24 +1,27 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { type Href, useRouter } from "@/lib/safe-router";
+import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native";
 
+import { AuthUI } from "@/constants/auth-ui";
+import { ListifyFonts } from "@/constants/typography";
+import { AuthPrimaryButton } from "@/features/auth/components/auth-primary-button";
 import { resendForgotPasswordOtp } from "@/features/auth/services/auth-api";
 import { showErrorToast } from "@/lib/toast";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { clearError, resendResetOtp, verifyResetOtp } from "@/store/slices/auth-slice";
+import { clearError, verifyResetOtp } from "@/store/slices/auth-slice";
 
 const RESET_OTP_LENGTH = 6;
 const INITIAL_TIMER = 59;
@@ -32,11 +35,16 @@ export function ResetOtpVerificationScreen() {
     Array(RESET_OTP_LENGTH).fill(""),
   );
   const [secondsRemaining, setSecondsRemaining] = useState(INITIAL_TIMER);
+  const [isVerifying, setIsVerifying] = useState(false);
   const inputRefs = useRef<Array<TextInput | null>>([]);
+  const navigatedToNewPassword = useRef(false);
+  const verifyInFlight = useRef(false);
 
-  const headerHeight = useMemo(() => insets.top + 64, [insets.top]);
+  const headerHeight = useMemo(() => insets.top + 52, [insets.top]);
   const timerLabel = `00:${String(secondsRemaining).padStart(2, "0")}`;
-  const isLoading = status === "loading";
+  const isLoading = status === "loading" || isVerifying;
+  const otp = otpDigits.join("");
+  const isVerifyEnabled = otp.length === RESET_OTP_LENGTH;
 
   useEffect(() => {
     if (!resetDevOtp || resetDevOtp.length !== RESET_OTP_LENGTH) return;
@@ -44,30 +52,33 @@ export function ResetOtpVerificationScreen() {
   }, [resetDevOtp]);
 
   useEffect(() => {
-    if (resetToken) {
-      router.push("/new-password" as Href);
-    }
+    if (!resetToken || navigatedToNewPassword.current) return;
+    navigatedToNewPassword.current = true;
+    verifyInFlight.current = false;
+    setIsVerifying(false);
+    router.replace("/new-password" as Href);
   }, [resetToken, router]);
 
   useEffect(() => {
-    if (error) {
-      showErrorToast("Verification Failed", error);
+    // First concurrent verify may succeed; later ones fail with "session expired".
+    // Ignore those errors once we already have a reset token / are navigating.
+    if (!error) return;
+    if (resetToken || navigatedToNewPassword.current) {
       dispatch(clearError());
-    }
-  }, [dispatch, error]);
-
-  useEffect(() => {
-    if (secondsRemaining === 0) {
       return;
     }
+    showErrorToast("Verification Failed", error);
+    verifyInFlight.current = false;
+    setIsVerifying(false);
+    dispatch(clearError());
+  }, [dispatch, error, resetToken]);
 
+  useEffect(() => {
+    if (secondsRemaining === 0) return;
     const timer = setTimeout(() => {
       setSecondsRemaining((current) => current - 1);
     }, 1000);
-
-    return () => {
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [secondsRemaining]);
 
   const handleDigitChange = (value: string, index: number) => {
@@ -91,7 +102,7 @@ export function ResetOtpVerificationScreen() {
   };
 
   const handleResend = () => {
-    if (!resetEmail) return;
+    if (!resetEmail || verifyInFlight.current) return;
     void resendForgotPasswordOtp(resetEmail)
       .then((res) => {
         if (res.devOtp && res.devOtp.length === RESET_OTP_LENGTH) {
@@ -108,45 +119,49 @@ export function ResetOtpVerificationScreen() {
   };
 
   const handleVerify = () => {
+    if (verifyInFlight.current || navigatedToNewPassword.current || resetToken) {
+      return;
+    }
     if (!resetEmail) {
       showErrorToast("Error", "Reset session expired. Please try again.");
       router.replace("/forgot-password" as Href);
       return;
     }
-    const otp = otpDigits.join("");
-    if (otp.length !== RESET_OTP_LENGTH) {
+    if (!isVerifyEnabled) {
       showErrorToast("Invalid OTP", "Please enter the full 6-digit OTP.");
       return;
     }
-    dispatch(verifyResetOtp({ email: resetEmail, otp }));
+
+    verifyInFlight.current = true;
+    setIsVerifying(true);
+    void dispatch(verifyResetOtp({ email: resetEmail, otp }))
+      .unwrap()
+      .then(() => {
+        // Navigation is handled by the resetToken effect.
+      })
+      .catch(() => {
+        if (!navigatedToNewPassword.current) {
+          verifyInFlight.current = false;
+          setIsVerifying(false);
+        }
+      });
   };
 
   return (
-    <View className="flex-1 bg-[#F6F7F8]">
-      <View className="absolute inset-0 overflow-hidden">
-        <View className="absolute right-0 top-0 h-64 w-64 rounded-full bg-[#27BB97]/5 blur-[100px]" />
-        <View className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-[#5BA2FF]/5 blur-[120px]" />
-      </View>
+    <View className="flex-1" style={{ backgroundColor: AuthUI.bg }}>
+      <StatusBar style="dark" />
 
       <View
-        className="z-50 flex-row items-center justify-between bg-white/80 px-4"
-        style={{ paddingTop: insets.top, height: headerHeight }}
+        className="flex-row items-center px-4"
+        style={{ paddingTop: insets.top + 8, height: headerHeight }}
       >
         <Pressable
-          onPress={() => {
-            router.back();
-          }}
+          onPress={() => router.back()}
           style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-          className="h-10 w-10 items-center justify-center rounded-full"
+          className="h-10 w-10 items-center justify-center"
         >
-          <MaterialIcons name="arrow-back" size={24} color="#161D1A" />
+          <MaterialIcons name="arrow-back" size={24} color={AuthUI.text} />
         </Pressable>
-
-        <Text className="text-xl font-black tracking-tight text-[#27BB97]">
-            Listifys
-        </Text>
-
-        <View className="h-10 w-10" />
       </View>
 
       <KeyboardAvoidingView
@@ -157,131 +172,112 @@ export function ResetOtpVerificationScreen() {
           bounces={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
-            paddingHorizontal: 16,
+            paddingHorizontal: 24,
             paddingTop: 24,
             paddingBottom: Math.max(insets.bottom + 16, 24),
             flexGrow: 1,
           }}
         >
-          <View className="mx-auto flex-1 w-full max-w-md items-center justify-center">
-            <View className="mb-6 relative">
-              <View className="h-24 w-24 items-center justify-center rounded-full bg-[#27BB97]/10">
-                <MaterialIcons name="lock-reset" size={48} color="#006B55" />
-              </View>
-              <View className="absolute -right-2 -top-2 h-12 w-12 rounded-full bg-[#5BA2FF]/20 blur-xl" />
-              <View className="absolute -bottom-4 -left-4 h-16 w-16 rounded-full bg-[#27BB97]/20 blur-xl" />
-            </View>
-
-            <View className="mb-6 items-center gap-2">
-              <Text className="text-center text-[24px] font-bold tracking-[-0.48px] text-[#161D1A]">
-                Password Reset Code
+          <View className="w-full self-center" style={{ maxWidth: AuthUI.maxWidth }}>
+            <Text
+              className="text-center text-[28px] text-[#111111]"
+              style={{ fontFamily: ListifyFonts.bold }}
+            >
+              Verify Code
+            </Text>
+            <Text
+              className="mt-3 text-center text-[14px] leading-5"
+              style={{ fontFamily: ListifyFonts.regular, color: AuthUI.subtitle }}
+            >
+              Please enter the code we just sent to email{" "}
+              <Text style={{ color: AuthUI.text, fontFamily: ListifyFonts.medium }}>
+                {resetEmail ?? "your email"}
               </Text>
-              <Text className="max-w-70 text-center text-[14px] leading-5 text-[#3C4A44]">
-                A 6-digit code has been sent to your email
-              </Text>
-              {resetDevOtp ? (
-                <Text className="mt-2 text-center text-[13px] text-amber-800">
-                  Dev mode: email could not be delivered. Your code is {resetDevOtp}
-                </Text>
-              ) : null}
-            </View>
+            </Text>
 
-            <View className="w-full gap-6">
-              <View className="w-full flex-row justify-between gap-2">
-                {otpDigits.map((digit, index) => (
-                  <TextInput
-                    key={index}
-                    ref={(ref) => {
-                      inputRefs.current[index] = ref;
-                    }}
-                    value={digit}
-                    onChangeText={(value) => {
-                      handleDigitChange(value, index);
-                    }}
-                    onKeyPress={({ nativeEvent }) => {
-                      handleKeyPress(nativeEvent.key, index);
-                    }}
-                    keyboardType="number-pad"
-                    maxLength={1}
-                    placeholder="-"
-                    placeholderTextColor="#6C7A74"
-                    style={styles.otpInput}
-                  />
-                ))}
-              </View>
-
-              <Pressable
-                onPress={handleVerify}
-                disabled={isLoading}
-                style={({ pressed }) => [
-                  { transform: [{ scale: pressed ? 0.98 : 1 }] },
-                  { opacity: isLoading ? 0.7 : 1 },
-                ]}
-                className="overflow-hidden rounded-lg"
+            {resetDevOtp ? (
+              <Text
+                className="mt-3 text-center text-[13px]"
+                style={{ color: "#B45309", fontFamily: ListifyFonts.medium }}
               >
-                <LinearGradient
-                  colors={["#27BB97", "#1E9E7E"]}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  className="h-12 flex-row items-center justify-center gap-2 rounded-lg"
-                  style={{
-                    shadowColor: "rgba(39,187,151,0.2)",
-                    shadowOffset: { width: 0, height: 8 },
-                    shadowOpacity: 1,
-                    shadowRadius: 18,
-                    elevation: 6,
+                Dev mode: your code is {resetDevOtp}
+              </Text>
+            ) : null}
+
+            <View className="mb-6 mt-10 w-full flex-row justify-center gap-2.5">
+              {otpDigits.map((digit, index) => (
+                <TextInput
+                  key={index}
+                  ref={(ref) => {
+                    inputRefs.current[index] = ref;
                   }}
-                >
-                  {isLoading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text className="text-[18px] font-semibold text-white">
-                      Verify & Reset
-                    </Text>
-                  )}
-                </LinearGradient>
-              </Pressable>
+                  value={digit}
+                  onChangeText={(value) => handleDigitChange(value, index)}
+                  onKeyPress={({ nativeEvent }) => {
+                    handleKeyPress(nativeEvent.key, index);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={1}
+                  placeholder="–"
+                  placeholderTextColor={AuthUI.muted}
+                  style={styles.otpInput}
+                />
+              ))}
             </View>
 
-            <View className="mt-6 items-center gap-4">
+            <View className="items-center">
               {secondsRemaining === 0 ? (
                 <Pressable onPress={handleResend} hitSlop={8} disabled={isLoading}>
-                  <Text className="text-center text-[14px] text-[#3C4A44]">
-                    Didn&apos;t receive the code?{" "}
-                    <Text className="font-semibold text-[#006B55]">Resend</Text>
+                  <Text
+                    className="text-center text-[14px]"
+                    style={{ color: AuthUI.subtitle, fontFamily: ListifyFonts.regular }}
+                  >
+                    Didn&apos;t receive OTP?{" "}
+                    <Text
+                      style={{
+                        color: AuthUI.text,
+                        fontFamily: ListifyFonts.semiBold,
+                        textDecorationLine: "underline",
+                      }}
+                    >
+                      Resend code
+                    </Text>
                   </Text>
                 </Pressable>
               ) : (
-                <Text className="text-center text-[14px] text-[#3C4A44]">
-                  Resend code in{" "}
-                  <Text className="font-semibold text-[#161D1A]">{timerLabel}</Text>
+                <Text
+                  className="text-center text-[14px]"
+                  style={{ color: AuthUI.subtitle, fontFamily: ListifyFonts.regular }}
+                >
+                  Didn&apos;t receive OTP? Resend in{" "}
+                  <Text style={{ color: AuthUI.text, fontFamily: ListifyFonts.semiBold }}>
+                    {timerLabel}
+                  </Text>
                 </Text>
               )}
-
-              <View className="flex-row items-center justify-center gap-2 opacity-60">
-                <MaterialIcons name="verified-user" size={16} color="#3C4A44" />
-                <Text className="text-[12px] font-medium uppercase tracking-[2px] text-[#3C4A44]">
-                  Secure Verification
-                </Text>
-              </View>
             </View>
-          </View>
 
-          <View className="mt-auto pt-6">
-            <View className="flex-row items-start gap-4 rounded-xl border border-white/20 bg-white/40 p-4">
-              <View className="rounded-lg bg-[#006B55]/10 p-2">
-                <MaterialIcons name="info-outline" size={20} color="#006B55" />
-              </View>
-
-              <View className="flex-1">
-                <Text className="mb-1 text-[12px] font-bold tracking-[0.24px] text-[#161D1A]">
-                  Check your Spam
-                </Text>
-                <Text className="text-[13px] leading-5 text-[#3C4A44]">
-                  If you don&apos;t see the email in your inbox, please check
-                  your junk or spam folder.
-                </Text>
-              </View>
+            <View className="mt-16">
+              {isLoading ? (
+                <View
+                  style={{
+                    minHeight: 52,
+                    borderRadius: AuthUI.buttonRadius,
+                    backgroundColor: AuthUI.primary,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: 0.7,
+                  }}
+                >
+                  <ActivityIndicator color="#FFFFFF" />
+                </View>
+              ) : (
+                <AuthPrimaryButton
+                  label="Verify"
+                  onPress={handleVerify}
+                  disabled={!isVerifyEnabled}
+                />
+              )}
             </View>
           </View>
         </ScrollView>
@@ -292,15 +288,13 @@ export function ResetOtpVerificationScreen() {
 
 const styles = StyleSheet.create({
   otpInput: {
-    width: 44,
-    aspectRatio: 1,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#BBCAC3",
-    backgroundColor: "#FFFFFF",
+    width: 48,
+    height: 52,
+    borderRadius: 10,
+    backgroundColor: AuthUI.inputBg,
     textAlign: "center",
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "600",
-    color: "#161D1A",
+    color: AuthUI.text,
   },
 });

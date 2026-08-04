@@ -15,7 +15,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native";
 
-import { APP_SCREEN_BG } from "@/constants/theme";
+import { AuthUI } from "@/constants/auth-ui";
+import { ListifyFonts } from "@/constants/typography";
+import { AuthPrimaryButton } from "@/features/auth/components/auth-primary-button";
 import { showErrorToast } from "@/lib/toast";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
@@ -50,7 +52,6 @@ export function OtpVerificationScreen() {
   const isLoading = status === "loading";
   const timerLabel = `00:${String(secondsRemaining).padStart(2, "0")}`;
   const canResend = secondsRemaining === 0;
-  const isEmailFlow = Boolean(registrationEmail && !registrationPhone);
   const isVerifyEnabled = otp.length === OTP_LENGTH;
 
   const otpSlots = useMemo(() => {
@@ -66,7 +67,7 @@ export function OtpVerificationScreen() {
       }
       return registrationPhone;
     }
-    return registrationEmail ?? "";
+    return registrationEmail ?? "your email";
   }, [registrationEmail, registrationPhone]);
 
   useEffect(() => {
@@ -159,7 +160,7 @@ export function OtpVerificationScreen() {
   };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: APP_SCREEN_BG }}>
+    <View className="flex-1" style={{ backgroundColor: AuthUI.bg }}>
       <StatusBar style="dark" />
 
       <View
@@ -176,9 +177,9 @@ export function OtpVerificationScreen() {
             }
           }}
           style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-          className="h-10 w-10 items-center justify-center rounded-full"
+          className="h-10 w-10 items-center justify-center"
         >
-          <MaterialIcons name="arrow-back" size={24} color="#161D1A" />
+          <MaterialIcons name="arrow-back" size={24} color={AuthUI.text} />
         </Pressable>
       </View>
 
@@ -191,46 +192,35 @@ export function OtpVerificationScreen() {
           bounces={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 16,
-            paddingBottom: 16,
+            paddingHorizontal: 24,
+            paddingTop: 24,
+            paddingBottom: 24,
             flexGrow: 1,
           }}
         >
-          <View className="w-full max-w-md self-center">
-            <View className="relative mb-6 items-center">
-              <View className="h-24 w-24 items-center justify-center rounded-full bg-[#27BB97]/10">
-                <MaterialIcons
-                  name={isEmailFlow ? "mark-email-unread" : "sms"}
-                  size={48}
-                  color="#006B55"
-                />
-              </View>
-            </View>
-
-            <View className="mb-6 items-center gap-2">
-              <Text className="text-center text-[24px] font-bold tracking-[-0.48px] text-[#161D1A]">
-                Enter verification code
+          <View className="w-full self-center" style={{ maxWidth: AuthUI.maxWidth }}>
+            <Text
+              className="text-center text-[28px] text-[#111111]"
+              style={{ fontFamily: ListifyFonts.bold }}
+            >
+              Verify Code
+            </Text>
+            <Text
+              className="mt-3 text-center text-[14px] leading-5"
+              style={{ fontFamily: ListifyFonts.regular, color: AuthUI.subtitle }}
+            >
+              Please enter the code we just sent to email{" "}
+              <Text style={{ color: AuthUI.text, fontFamily: ListifyFonts.medium }}>
+                {contactSubtitle}
               </Text>
-              <Text className="max-w-[300px] text-center text-[14px] leading-5 text-[#3C4A44]">
-                We sent a 6-digit code to{" "}
-                <Text className="font-semibold text-[#161D1A]">{contactSubtitle}</Text>
-              </Text>
-            </View>
+            </Text>
 
             <Pressable
               onPress={() => inputRef.current?.focus()}
-              className="relative mb-2 w-full flex-row justify-between gap-2"
+              className="relative mb-6 mt-10 w-full flex-row justify-center gap-2.5"
             >
               {otpSlots.map((digit, index) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.otpBox,
-                    digit ? styles.otpBoxFilled : null,
-                    verificationError ? styles.otpBoxError : null,
-                  ]}
-                >
+                <View key={index} style={styles.otpBox}>
                   <Text style={styles.otpBoxText}>{digit || "–"}</Text>
                 </View>
               ))}
@@ -247,75 +237,71 @@ export function OtpVerificationScreen() {
               />
             </Pressable>
 
-            <Text className="mb-2 text-center text-[13px] text-[#6C7A74]">
-              Tap the boxes to enter your code
-            </Text>
-
             {verificationError ? (
-              <View className="mb-3 flex-row items-center justify-center gap-2 rounded-lg bg-red-50 px-3 py-2">
-                <MaterialIcons name="error-outline" size={18} color="#DC2626" />
-                <Text className="flex-1 text-center text-[13px] font-medium text-red-600">
-                  {verificationError}
-                </Text>
-              </View>
+              <Text
+                className="mb-3 text-center text-[13px]"
+                style={{ color: AuthUI.error, fontFamily: ListifyFonts.medium }}
+              >
+                {verificationError}
+              </Text>
             ) : null}
 
-            <View className="mt-2 items-center gap-2">
+            <View className="items-center">
               {canResend ? (
                 <Pressable onPress={handleResend} hitSlop={8} disabled={isLoading}>
-                  <Text className="text-center text-[14px] text-[#3C4A44]">
-                    Didn&apos;t receive the code?{" "}
-                    <Text className="font-semibold text-[#006B55]">Resend</Text>
+                  <Text
+                    className="text-center text-[14px]"
+                    style={{ color: AuthUI.subtitle, fontFamily: ListifyFonts.regular }}
+                  >
+                    Didn&apos;t receive OTP?{" "}
+                    <Text
+                      style={{
+                        color: AuthUI.text,
+                        fontFamily: ListifyFonts.semiBold,
+                        textDecorationLine: "underline",
+                      }}
+                    >
+                      Resend code
+                    </Text>
                   </Text>
                 </Pressable>
               ) : (
-                <Text className="text-center text-[14px] text-[#3C4A44]">
-                  Resend code in{" "}
-                  <Text className="font-semibold text-[#161D1A]">{timerLabel}</Text>
+                <Text
+                  className="text-center text-[14px]"
+                  style={{ color: AuthUI.subtitle, fontFamily: ListifyFonts.regular }}
+                >
+                  Didn&apos;t receive OTP? Resend in{" "}
+                  <Text style={{ color: AuthUI.text, fontFamily: ListifyFonts.semiBold }}>
+                    {timerLabel}
+                  </Text>
                 </Text>
               )}
             </View>
 
-            {isEmailFlow ? (
-              <View className="mt-6 flex-row items-start gap-4 rounded-xl border border-[#DDE4DF]/50 bg-white/70 p-4">
-                <View className="rounded-lg bg-[#006B55]/10 p-2">
-                  <MaterialIcons name="info-outline" size={20} color="#006B55" />
+            <View className="mt-16">
+              {isLoading ? (
+                <View
+                  style={{
+                    minHeight: 52,
+                    borderRadius: AuthUI.buttonRadius,
+                    backgroundColor: AuthUI.primary,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: 0.7,
+                  }}
+                >
+                  <ActivityIndicator color="#FFFFFF" />
                 </View>
-                <View className="flex-1">
-                  <Text className="mb-1 text-[12px] font-bold text-[#161D1A]">
-                    Check your spam folder
-                  </Text>
-                  <Text className="text-[13px] leading-5 text-[#3C4A44]">
-                    If you don&apos;t see the email in your inbox, check junk or spam.
-                  </Text>
-                </View>
-              </View>
-            ) : null}
+              ) : (
+                <AuthPrimaryButton
+                  label="Verify"
+                  onPress={handleVerify}
+                  disabled={!isVerifyEnabled}
+                />
+              )}
+            </View>
           </View>
         </ScrollView>
-
-        <View
-          className="border-t border-[#DDE4DF] bg-white px-4 pt-4"
-          style={{ paddingBottom: Math.max(insets.bottom, 16) }}
-        >
-          <Pressable
-            onPress={handleVerify}
-            disabled={isLoading}
-            style={({ pressed }) => [
-              styles.verifyButton,
-              !isVerifyEnabled && !isLoading ? styles.verifyButtonDisabled : null,
-              pressed && isVerifyEnabled && !isLoading ? { opacity: 0.9 } : null,
-            ]}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.verifyButtonText}>
-                {isVerifyEnabled ? "Verify & Continue" : "Enter 6-digit code"}
-              </Text>
-            )}
-          </Pressable>
-        </View>
       </KeyboardAvoidingView>
     </View>
   );
@@ -323,28 +309,17 @@ export function OtpVerificationScreen() {
 
 const styles = StyleSheet.create({
   otpBox: {
-    flex: 1,
-    maxWidth: 48,
-    aspectRatio: 1,
+    width: 48,
+    height: 52,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#BBCAC3",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: AuthUI.inputBg,
     alignItems: "center",
     justifyContent: "center",
-  },
-  otpBoxFilled: {
-    borderColor: "#27BB97",
-    backgroundColor: "#F4FBF9",
-  },
-  otpBoxError: {
-    borderColor: "#F87171",
-    backgroundColor: "#FEF2F2",
   },
   otpBoxText: {
     fontSize: 22,
     fontWeight: "600",
-    color: "#161D1A",
+    color: AuthUI.text,
   },
   hiddenInput: {
     position: "absolute",
@@ -355,20 +330,5 @@ const styles = StyleSheet.create({
     opacity: 0.02,
     color: "transparent",
     fontSize: 16,
-  },
-  verifyButton: {
-    height: 52,
-    borderRadius: 9999,
-    backgroundColor: "#161D1A",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  verifyButtonDisabled: {
-    backgroundColor: "#9CA3AF",
-  },
-  verifyButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
   },
 });

@@ -12,8 +12,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { KeyboardFormScroll } from "@/components/keyboard-form-scroll";
-import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 import { deleteAccount, AuthApiError } from "@/features/auth/services/auth-api";
 import { showErrorToast } from "@/lib/toast";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -33,6 +33,7 @@ export function DeleteAccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
+  const { colors } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
 
   const [confirmation, setConfirmation] = useState("");
@@ -88,7 +89,7 @@ export function DeleteAccountScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: APP_SCREEN_BG }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View
         style={{
           flexDirection: "row",
@@ -99,9 +100,9 @@ export function DeleteAccountScreen() {
         }}
       >
         <Pressable onPress={handleBack} hitSlop={12} className="mr-1 h-10 w-10 items-center justify-center">
-          <MaterialIcons name="chevron-left" size={32} color="#1A1A1A" />
+          <MaterialIcons name="chevron-left" size={32} color={colors.icon} />
         </Pressable>
-        <Text style={{ fontSize: 22, fontFamily: ListifyFonts.bold, color: "#1A1A1A" }}>
+        <Text style={{ fontSize: 22, fontFamily: ListifyFonts.bold, color: colors.textPrimary }}>
           Delete account
         </Text>
       </View>
@@ -110,7 +111,7 @@ export function DeleteAccountScreen() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="rounded-2xl bg-white p-6">
+        <View className="rounded-2xl p-6" style={{ backgroundColor: colors.surface }}>
           <View className="mb-5 items-center">
             <View className="h-16 w-16 items-center justify-center rounded-full bg-red-50">
               <MaterialIcons name="warning-amber" size={36} color="#EF4444" />

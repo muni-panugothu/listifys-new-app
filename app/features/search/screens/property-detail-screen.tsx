@@ -7,10 +7,13 @@ import {
   Animated,
   Dimensions,
   Keyboard,
+  Linking,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -22,15 +25,14 @@ import { buildListingChatHref, sendListingOffer } from "@/lib/listing-chat";
 import { AuthGateBottomSheet } from "@/features/auth/components/auth-gate-bottom-sheet";
 import {
   addToRecentlyViewed,
-  fetchListingById,
   toggleSaveListing,
   type ListingItem,
 } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { useSwrListing } from "@/lib/use-swr-listing";
-import { ListingLocationSection } from "@/components/listing-location-section";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
 import { Image } from "@/lib/nativewind-interop";
+import { ListifyFonts } from "@/constants/typography";
 import { useAppSelector } from "@/store/hooks";
 import {
   selectCanShowDistanceOnCards,
@@ -44,6 +46,11 @@ import { getListingSellerId, isOwnListing } from "@/lib/is-own-listing";
 import { showErrorToast } from "@/lib/toast";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const HERO_HEIGHT = Math.round(SCREEN_WIDTH * 0.78);
+const THUMB = 52;
+const THUMB_GAP = 8;
+const BRAND = "#27BB97";
+const MUTED = "#808080";
 
 export function PropertyDetailScreen() {
   const router = useRouter();
@@ -67,6 +74,7 @@ export function PropertyDetailScreen() {
   const loading = !listing && swrLoading;
   const [isSaved, setIsSaved] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const heroScrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (swrListing && swrListing !== listing) {
@@ -123,16 +131,7 @@ export function PropertyDetailScreen() {
   const bedrooms = listing?.bedrooms ?? 0;
   const bathrooms = listing?.bathrooms ?? 0;
   const squareFeet = (listing as any)?.squareFeet ?? 0;
-  const furnishing = (listing as any)?.furnishing ?? "";
   const features: string[] = (listing as any)?.features ?? [];
-  const availableFrom = (listing as any)?.availableFrom
-    ? new Date((listing as any).availableFrom).toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      })
-    : "";
-  const petFriendly = (listing as any)?.petFriendly ?? false;
 
   const sellerName = listing?.seller?.name ?? listing?.sellerName ?? "Seller";
   const sellerProfileImage = listing?.seller?.profileImage
@@ -145,7 +144,6 @@ export function PropertyDetailScreen() {
     : "";
   const sellerId = listing ? getListingSellerId(listing) : null;
 
-  const topBarHeight = insets.top + 64;
   const footerBottomPadding = Math.max(insets.bottom, 10);
   const isOwn = isOwnListing(listing, user?.id);
 
@@ -266,292 +264,586 @@ export function PropertyDetailScreen() {
     }
   }, [listing, offerAmount, sendingOffer, categorySlug, closeOfferSheet]);
 
+  const [descExpanded, setDescExpanded] = useState(false);
+
   // Screen-first: never block the screen on a spinner. SWR returns cached data
   // synchronously when available; otherwise the shell renders with skeletons
   // that disappear as the listing resolves.
 
+  if (!listing && swrLoading) {
+    return (
+      <View className="flex-1 items-center justify-center bg-white">
+        <ActivityIndicator color={BRAND} size="large" />
+      </View>
+    );
+  }
+
   if (!listing) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F6F7F8]">
+      <View className="flex-1 items-center justify-center bg-white">
         <MaterialIcons name="error-outline" size={48} color="#CBD5E1" />
-        <Text className="mt-2 text-[14px] text-[#6C7A74]">Property not found</Text>
+        <Text className="mt-2 text-[14px] text-[#808080]">Property not found</Text>
         <Pressable onPress={() => router.back()} className="mt-4">
-          <Text className="text-[14px] font-semibold text-[#27BB97]">Go Back</Text>
+          <Text style={{ fontFamily: ListifyFonts.semiBold, color: BRAND }}>Go Back</Text>
         </Pressable>
       </View>
     );
   }
 
-  return (
-    <View className="flex-1 bg-[#F6F7F8]">
-      <View
-        className="absolute inset-x-0 top-0 z-50 border-b border-slate-100 bg-white/80 px-4"
-        style={{
-          paddingTop: insets.top,
-          height: topBarHeight,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.05,
-          shadowRadius: 2,
-          elevation: 2,
-        }}
-      >
-        <View className="h-16 flex-row items-center justify-between">
-          <Pressable
-            onPress={() => router.back()}
-            className="p-2"
-            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-          >
-            <MaterialIcons name="arrow-back" size={22} color="#161D1A" />
-          </Pressable>
-          <Text className="text-[20px] font-black tracking-tight text-[#27BB97]">
-            Listifys
-          </Text>
-          <View className="flex-row items-center gap-4 pr-2">
-            <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-              <MaterialIcons name="share" size={22} color="#6C7A74" />
-            </Pressable>
-            <Pressable
-              onPress={handleToggleSave}
-              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-            >
-              <MaterialIcons
-                name={isSaved ? "favorite" : "favorite-border"}
-                size={22}
-                color={isSaved ? "#EF4444" : "#6C7A74"}
-              />
-            </Pressable>
-          </View>
-        </View>
-      </View>
+  const badgeLabel = listing.subcategory || "Home";
+  const isRental =
+    (listing.subcategory ?? "").toLowerCase().includes("rent") ||
+    (listing.subcategory ?? "").toLowerCase().includes("room") ||
+    (listing.subcategory ?? "").toLowerCase().includes("paying guest");
+  const locationText = listing.location?.trim() || "Location not set";
+  const hasGallery = images.length > 0;
+  const showThumbStrip = images.length > 1;
+  // Up to 5 thumb slots; last slot becomes "N+" when there are more than 5 images.
+  const thumbSlots = images.slice(0, Math.min(5, images.length));
+  const overflowCount = images.length > 5 ? images.length - 4 : 0;
+  const descPreview =
+    description.length > 140 && !descExpanded
+      ? `${description.slice(0, 140).trim()}… `
+      : description;
+  const sellerPhone = listing.phone?.trim() || "";
 
+  const scrollHeroTo = (index: number) => {
+    const safe = Math.max(0, Math.min(index, images.length - 1));
+    setActiveImageIndex(safe);
+    heroScrollRef.current?.scrollTo({ x: safe * SCREEN_WIDTH, animated: true });
+  };
+
+  const circleBtn = {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.06)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  };
+
+  return (
+    <View className="flex-1 bg-white">
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        removeClippedSubviews
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={["#27BB97"]}
-            tintColor="#27BB97"
-            progressViewOffset={topBarHeight}
+            colors={[BRAND]}
+            tintColor={BRAND}
           />
         }
         contentContainerStyle={{
-          paddingTop: topBarHeight,
-          paddingBottom: isOwn ? 24 + footerBottomPadding : 112 + footerBottomPadding,
+          paddingBottom: isOwn ? 24 + footerBottomPadding : 100 + footerBottomPadding,
         }}
       >
-        {/* Image Gallery */}
-        {images.length > 0 ? (
-          <View className="relative w-full" style={{ aspectRatio: 4 / 3 }}>
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={(e) => {
-                const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-                setActiveImageIndex(index);
+        {/* Hero + floating thumbnail strip (matches reference) */}
+        <View style={{ marginBottom: showThumbStrip ? THUMB / 2 + 12 : 0 }}>
+          <View
+            style={{
+              height: HERO_HEIGHT,
+              width: SCREEN_WIDTH,
+              backgroundColor: "#E5E7EB",
+              borderBottomLeftRadius: 28,
+              borderBottomRightRadius: 28,
+              overflow: "hidden",
+            }}
+          >
+            {hasGallery ? (
+              <ScrollView
+                ref={heroScrollRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onMomentumScrollEnd={(e) => {
+                  const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+                  setActiveImageIndex(index);
+                }}
+              >
+                {images.map((img, idx) => (
+                  <Image
+                    key={`${img}-${idx}`}
+                    source={img}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    transition={180}
+                    style={{ width: SCREEN_WIDTH, height: HERO_HEIGHT }}
+                  />
+                ))}
+              </ScrollView>
+            ) : (
+              <View className="h-full w-full items-center justify-center">
+                <MaterialIcons name="apartment" size={48} color="#CBD5E1" />
+              </View>
+            )}
+
+            <View
+              pointerEvents="box-none"
+              style={{
+                position: "absolute",
+                top: insets.top + 8,
+                left: 16,
+                right: 16,
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
               }}
             >
-              {images.map((img, idx) => (
-                <Image
-                  key={idx}
-                  source={img}
-                  contentFit="cover"
-                  transition={180}
-                  style={{ width: SCREEN_WIDTH, height: "100%" }}
-                />
-              ))}
-            </ScrollView>
-            <View className="absolute bottom-4 right-4 rounded-full bg-black/50 px-3 py-1">
-              <Text className="text-[12px] text-white">
-                {activeImageIndex + 1}/{images.length}
-              </Text>
+              <Pressable
+                onPress={() => router.back()}
+                style={({ pressed }) => [{ ...circleBtn, opacity: pressed ? 0.85 : 1 }]}
+              >
+                <MaterialIcons name="chevron-left" size={26} color="#111111" />
+              </Pressable>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Pressable
+                  onPress={() => {
+                    void Share.share({
+                      message: `${title}${price ? ` — ${price}` : ""}${locationText ? `\n${locationText}` : ""}`,
+                      title,
+                    }).catch(() => {});
+                  }}
+                  style={({ pressed }) => [{ ...circleBtn, opacity: pressed ? 0.85 : 1 }]}
+                >
+                  <MaterialIcons name="share" size={18} color="#111111" />
+                </Pressable>
+                <Pressable
+                  onPress={() => requireAuth("save", () => void handleToggleSave())}
+                  style={({ pressed }) => [{ ...circleBtn, opacity: pressed ? 0.85 : 1 }]}
+                >
+                  <MaterialIcons
+                    name={isSaved ? "favorite" : "favorite-border"}
+                    size={18}
+                    color={isSaved ? BRAND : "#111111"}
+                  />
+                </Pressable>
+              </View>
             </View>
           </View>
-        ) : (
-          <View className="w-full items-center justify-center bg-[#E9EFEB]" style={{ aspectRatio: 4 / 3 }}>
-            <MaterialIcons name="apartment" size={48} color="#CBD5E1" />
-          </View>
-        )}
 
-        <View className="mt-6 px-4">
-          {/* Title & Price */}
-          <View className="gap-1">
-            <Text className="text-[24px] font-bold leading-8 text-[#161D1A]">{title}</Text>
-            <View className="flex-row items-center gap-2">
-              <Text className="text-[20px] font-bold text-[#005FB0]">{price}</Text>
-              {listing.subcategory === "Rentals" && (
-                <Text className="text-[12px] text-[#6C7A74]">/ month</Text>
-              )}
+          {showThumbStrip ? (
+            <View
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: -(THUMB / 2 + 6),
+                alignItems: "center",
+                zIndex: 5,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: THUMB_GAP,
+                  backgroundColor: "#FFFFFF",
+                  borderRadius: 18,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.12,
+                  shadowRadius: 12,
+                  elevation: 6,
+                }}
+              >
+                {thumbSlots.map((img, idx) => {
+                  const isOverflowSlot = idx === 4 && overflowCount > 0;
+                  const active = isOverflowSlot
+                    ? activeImageIndex >= 4
+                    : activeImageIndex === idx;
+
+                  return (
+                    <Pressable
+                      key={`${img}-thumb-${idx}`}
+                      onPress={() => scrollHeroTo(isOverflowSlot ? 4 : idx)}
+                      style={{
+                        width: THUMB + 6,
+                        height: THUMB + 6,
+                        borderRadius: 14,
+                        padding: 3,
+                        backgroundColor: active ? "#FFFFFF" : "transparent",
+                        // Soft shadow only when selected so the white frame reads clearly
+                        shadowColor: "#000",
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: active ? 0.22 : 0,
+                        shadowRadius: active ? 2 : 0,
+                        elevation: active ? 2 : 0,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: THUMB,
+                          height: THUMB,
+                          borderRadius: 12,
+                          overflow: "hidden",
+                          backgroundColor: "#F3F4F6",
+                        }}
+                      >
+                        <Image
+                          source={img}
+                          contentFit="cover"
+                          cachePolicy="memory-disk"
+                          style={{ width: THUMB, height: THUMB }}
+                        />
+                        {isOverflowSlot ? (
+                          <View
+                            style={[
+                              StyleSheet.absoluteFillObject,
+                              {
+                                backgroundColor: "rgba(0,0,0,0.55)",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={{
+                                fontFamily: ListifyFonts.bold,
+                                color: "#FFFFFF",
+                                fontSize: 13,
+                              }}
+                            >
+                              {overflowCount}+
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
-            {distanceLabel ? (
-              <View className="mt-1 flex-row items-center gap-1">
-                <MaterialIcons name="near-me" size={14} color="#27BB97" />
-                <Text className="text-[13px] font-semibold text-[#27BB97]">
-                  {distanceLabel} away
+          ) : null}
+        </View>
+
+        <View
+          style={{
+            paddingHorizontal: 20,
+            paddingTop: showThumbStrip ? THUMB / 2 + 20 : 20,
+          }}
+        >
+          {/* Category + Price */}
+          <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <Text
+              style={{
+                fontFamily: ListifyFonts.regular,
+                fontSize: 13,
+                color: MUTED,
+                marginTop: 4,
+              }}
+            >
+              {badgeLabel}
+            </Text>
+            <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
+              <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 22, color: "#111111" }}>
+                {price || "On request"}
+              </Text>
+              {price && isRental ? (
+                <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: MUTED }}>
+                  /Month
+                </Text>
+              ) : null}
+            </View>
+          </View>
+
+          <Text
+            style={{
+              marginTop: 6,
+              fontFamily: ListifyFonts.bold,
+              fontSize: 24,
+              lineHeight: 30,
+              color: "#111111",
+            }}
+          >
+            {title}
+          </Text>
+
+          <View style={{ marginTop: 8, flexDirection: "row", alignItems: "flex-start", gap: 6 }}>
+            <MaterialIcons name="location-on" size={16} color={MUTED} style={{ marginTop: 1 }} />
+            <Text
+              style={{
+                flex: 1,
+                fontFamily: ListifyFonts.regular,
+                fontSize: 13,
+                lineHeight: 18,
+                color: MUTED,
+              }}
+            >
+              {locationText}
+              {distanceLabel ? ` · ${distanceLabel}` : ""}
+            </Text>
+          </View>
+
+          {/* Specs */}
+          <View
+            style={{
+              marginTop: 20,
+              borderWidth: 1,
+              borderColor: "#E8E8E8",
+              borderRadius: 16,
+              paddingVertical: 14,
+              paddingHorizontal: 8,
+              flexDirection: "row",
+            }}
+          >
+            {[
+              { icon: "bed" as const, label: `${bedrooms || 0} Bed` },
+              { icon: "bathtub" as const, label: `${bathrooms || 0} Bath` },
+              {
+                icon: "square-foot" as const,
+                label: squareFeet
+                  ? `${Number(squareFeet).toLocaleString()} Sqrt`
+                  : "— Sqrt",
+              },
+            ].map((spec, i) => (
+              <View
+                key={spec.label}
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  borderRightWidth: i < 2 ? 1 : 0,
+                  borderRightColor: "#EEEEEE",
+                }}
+              >
+                <MaterialIcons name={spec.icon} size={18} color="#111111" />
+                <Text style={{ fontFamily: ListifyFonts.medium, fontSize: 13, color: "#111111" }}>
+                  {spec.label}
                 </Text>
               </View>
-            ) : null}
+            ))}
           </View>
 
-          {listing ? (
-            <ListingLocationSection listing={listing} category={categorySlug} />
+          {/* Description */}
+          {description ? (
+            <View style={{ marginTop: 24 }}>
+              <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 18, color: "#111111" }}>
+                Description
+              </Text>
+              <Text
+                style={{
+                  marginTop: 8,
+                  fontFamily: ListifyFonts.regular,
+                  fontSize: 14,
+                  lineHeight: 22,
+                  color: MUTED,
+                }}
+              >
+                {descPreview}
+                {description.length > 140 ? (
+                  <Text
+                    onPress={() => setDescExpanded((v) => !v)}
+                    style={{ fontFamily: ListifyFonts.bold, color: "#111111" }}
+                  >
+                    {descExpanded ? " Read Less" : "Read More..."}
+                  </Text>
+                ) : null}
+              </Text>
+            </View>
           ) : null}
 
-          {/* Quick Stats */}
-          <View className="mt-6 flex-row border-y border-[#BBCAC3]/30 py-4">
-            <View className="flex-1 items-center border-r border-[#BBCAC3]/30">
-              <MaterialIcons name="bed" size={22} color="#006B55" />
-              <Text className="mt-1 text-[12px] text-[#6C7A74]">
-                {bedrooms} Bed{bedrooms !== 1 ? "s" : ""}
-              </Text>
-            </View>
-            <View className="flex-1 items-center border-r border-[#BBCAC3]/30">
-              <MaterialIcons name="bathtub" size={22} color="#006B55" />
-              <Text className="mt-1 text-[12px] text-[#6C7A74]">
-                {bathrooms} Bath{bathrooms !== 1 ? "s" : ""}
-              </Text>
-            </View>
-            <View className="flex-1 items-center">
-              <MaterialIcons name="square-foot" size={22} color="#006B55" />
-              <Text className="mt-1 text-[12px] text-[#6C7A74]">
-                {squareFeet ? `${squareFeet.toLocaleString()} Sq Ft` : "—"}
-              </Text>
-            </View>
-          </View>
-
-          {/* Details */}
-          <View className="mt-6">
-            <Text className="mb-3 text-[18px] font-semibold text-[#161D1A]">Details</Text>
-            <View className="gap-2">
-              {listing.subcategory ? (
-                <View className="flex-row justify-between py-1">
-                  <Text className="text-[13px] text-[#6C7A74]">Type</Text>
-                  <Text className="text-[13px] font-medium text-[#161D1A]">{listing.subcategory}</Text>
-                </View>
-              ) : null}
-              {furnishing ? (
-                <View className="flex-row justify-between py-1">
-                  <Text className="text-[13px] text-[#6C7A74]">Furnishing</Text>
-                  <Text className="text-[13px] font-medium text-[#161D1A]">{furnishing}</Text>
-                </View>
-              ) : null}
-              {availableFrom ? (
-                <View className="flex-row justify-between py-1">
-                  <Text className="text-[13px] text-[#6C7A74]">Available From</Text>
-                  <Text className="text-[13px] font-medium text-[#161D1A]">{availableFrom}</Text>
-                </View>
-              ) : null}
-              <View className="flex-row justify-between py-1">
-                <Text className="text-[13px] text-[#6C7A74]">Pet Friendly</Text>
-                <Text className="text-[13px] font-medium text-[#161D1A]">
-                  {petFriendly ? "Yes" : "No"}
-                </Text>
-              </View>
-              {listing.views != null && (
-                <View className="flex-row justify-between py-1">
-                  <Text className="text-[13px] text-[#6C7A74]">Views</Text>
-                  <Text className="text-[13px] font-medium text-[#161D1A]">{listing.views}</Text>
-                </View>
-              )}
-            </View>
-          </View>
-
           {/* Amenities */}
-          {features.length > 0 && (
-            <View className="mt-6">
-              <Text className="mb-4 text-[18px] font-semibold text-[#161D1A]">
-                Key Amenities
+          {features.length > 0 ? (
+            <View style={{ marginTop: 24 }}>
+              <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 18, color: "#111111" }}>
+                Amenities
               </Text>
-              <View className="flex-row flex-wrap" style={{ columnGap: 8, rowGap: 8 }}>
+              <View
+                style={{
+                  marginTop: 12,
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 8,
+                }}
+              >
                 {features.map((feat) => (
                   <View
                     key={feat}
-                    className="flex-row items-center gap-2 rounded-xl border border-[#DDE4DF]/50 bg-[#F3F4F6] px-4 py-3"
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 12,
+                      backgroundColor: "#F5F5F5",
+                    }}
                   >
-                    <MaterialIcons name="check-circle" size={18} color="#006B55" />
-                    <Text className="text-[13px] text-[#161D1A]">{feat}</Text>
+                    <MaterialIcons name="check-circle" size={16} color={BRAND} />
+                    <Text style={{ fontFamily: ListifyFonts.medium, fontSize: 13, color: "#111111" }}>
+                      {feat}
+                    </Text>
                   </View>
                 ))}
               </View>
             </View>
-          )}
-
-          {/* Description */}
-          {description ? (
-            <View className="mt-6">
-              <Text className="mb-2 text-[18px] font-semibold text-[#161D1A]">Description</Text>
-              <Text className="text-[14px] leading-6 text-[#3C4A44]">{description}</Text>
-            </View>
           ) : null}
 
-          {/* Seller Card */}
-          <Pressable
-            onPress={() => {
-              if (sellerId) router.push(`/seller-public-profile?userId=${sellerId}` as Href);
-            }}
-            className="mt-6 rounded-2xl border border-[#BBCAC3]/30 bg-white p-4"
-          >
-            <View className="flex-row items-center gap-4">
-              <View className="relative">
+          {/* Listing Broker */}
+          <View style={{ marginTop: 28 }}>
+            <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 18, color: "#111111" }}>
+              Listing Broker
+            </Text>
+            <View
+              style={{
+                marginTop: 14,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <Pressable
+                onPress={() => {
+                  if (sellerId) router.push(`/seller-public-profile?userId=${sellerId}` as Href);
+                }}
+                style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
+              >
                 {sellerProfileImage ? (
                   <Image
                     source={sellerProfileImage}
                     contentFit="cover"
-                    transition={150}
-                    className="h-16 w-16 rounded-full"
+                    style={{ width: 52, height: 52, borderRadius: 26 }}
                   />
                 ) : (
-                  <View className="h-16 w-16 items-center justify-center rounded-full bg-[#E9EFEB]">
-                    <MaterialIcons name="person" size={28} color="#6C7A74" />
+                  <View
+                    style={{
+                      width: 52,
+                      height: 52,
+                      borderRadius: 26,
+                      backgroundColor: "#F3F4F6",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <MaterialIcons name="person" size={26} color="#9CA3AF" />
                   </View>
                 )}
-              </View>
-              <View className="flex-1">
-                <Text className="text-[18px] font-semibold text-[#161D1A]">{sellerName}</Text>
-                {sellerJoined ? (
-                  <Text className="text-[12px] text-[#6C7A74]">{sellerJoined}</Text>
-                ) : null}
-              </View>
-              <MaterialIcons name="chevron-right" size={24} color="#6C7A74" />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{ fontFamily: ListifyFonts.bold, fontSize: 15, color: "#111111" }}
+                  >
+                    {sellerName}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      marginTop: 2,
+                      fontFamily: ListifyFonts.regular,
+                      fontSize: 12,
+                      color: MUTED,
+                    }}
+                  >
+                    {sellerPhone || sellerId || sellerJoined || "Seller"}
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  if (!sellerId) {
+                    showErrorToast("Unavailable", "Seller information is missing for this listing.");
+                    return;
+                  }
+                  requireAuth("message", () => {
+                    router.push(
+                      buildListingChatHref({
+                        recipientId: sellerId,
+                        sellerId,
+                        name: sellerName,
+                        productId: listing._id,
+                        productType: categorySlug,
+                        productTitle: title,
+                        productPrice: listing.price,
+                        productImage: listing.images?.[0] ?? null,
+                        currency: listing.currency ?? "₹",
+                      }),
+                    );
+                  });
+                }}
+                style={({ pressed }) => [{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  backgroundColor: BRAND,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: pressed ? 0.85 : 1,
+                }]}
+              >
+                <MaterialIcons name="chat-bubble" size={18} color="#FFFFFF" />
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  if (sellerPhone) {
+                    void Linking.openURL(`tel:${sellerPhone}`);
+                    return;
+                  }
+                  if (!sellerId) {
+                    showErrorToast("Unavailable", "Seller information is missing for this listing.");
+                    return;
+                  }
+                  requireAuth("message", () => {
+                    router.push(
+                      buildListingChatHref({
+                        recipientId: sellerId,
+                        sellerId,
+                        name: sellerName,
+                        productId: listing._id,
+                        productType: categorySlug,
+                        productTitle: title,
+                        productPrice: listing.price,
+                        productImage: listing.images?.[0] ?? null,
+                        currency: listing.currency ?? "₹",
+                      }),
+                    );
+                  });
+                }}
+                style={({ pressed }) => [{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  backgroundColor: BRAND,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: pressed ? 0.85 : 1,
+                }]}
+              >
+                <MaterialIcons name="phone" size={18} color="#FFFFFF" />
+              </Pressable>
             </View>
-          </Pressable>
+          </View>
         </View>
       </ScrollView>
 
-      {/* Footer — hidden on own listings */}
       {!isOwn ? (
-      <View
-        className="absolute inset-x-0 bottom-0 z-50 border-t border-[#BBCAC3]/20 bg-white/90 px-4"
-        style={{ paddingTop: 12, paddingBottom: footerBottomPadding }}
-      >
-        <View className="mx-auto w-full max-w-xl flex-row gap-4">
-          <Pressable
-            onPress={() => {
-              if (sellerId) {
-                requireAuth("message", () => {
-                  router.push(
-                    buildListingChatHref({
-                      recipientId: sellerId,
-                      sellerId,
-                      name: sellerName,
-                      productId: listing._id,
-                      productType: categorySlug,
-                      productTitle: title,
-                      productPrice: listing.price,
-                      productImage: listing.images?.[0] ?? null,
-                      currency: listing.currency ?? "₹",
-                    }),
-                  );
-                });
-              }
-            }}
-            className="h-12 flex-1 items-center justify-center rounded-xl border border-[#BBCAC3]"
-            style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
-          >
-            <Text className="text-[16px] font-semibold text-[#161D1A]">Contact Seller</Text>
-          </Pressable>
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            paddingHorizontal: 20,
+            paddingTop: 12,
+            paddingBottom: footerBottomPadding,
+            backgroundColor: "#FFFFFF",
+          }}
+        >
           <Pressable
             onPress={() => {
               if (!sellerId) {
@@ -560,20 +852,20 @@ export function PropertyDetailScreen() {
               }
               requireAuth("offer", openOfferSheet);
             }}
-            className="h-12 flex-[1.5] items-center justify-center rounded-xl bg-[#27BB97]"
             style={({ pressed }) => ({
+              height: 54,
+              borderRadius: 999,
+              backgroundColor: BRAND,
+              alignItems: "center",
+              justifyContent: "center",
               opacity: pressed ? 0.9 : 1,
-              shadowColor: "#27BB97",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.2,
-              shadowRadius: 10,
-              elevation: 4,
             })}
           >
-            <Text className="text-[16px] font-semibold text-white">Make Offer</Text>
+            <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 16, color: "#FFFFFF" }}>
+              Book Now
+            </Text>
           </Pressable>
         </View>
-      </View>
       ) : null}
 
       {/* Make Offer Bottom Sheet */}
@@ -638,7 +930,6 @@ export function PropertyDetailScreen() {
                     </Pressable>
                   </View>
 
-                  {/* Product Summary */}
                   <View className="mb-5 flex-row items-center gap-3 rounded-xl bg-[#F3F4F6] p-3">
                     {images[0] ? (
                       <Image source={images[0]} contentFit="cover" className="h-14 w-14 rounded-lg" />
@@ -656,7 +947,6 @@ export function PropertyDetailScreen() {
                     </View>
                   </View>
 
-                  {/* Recommended Offers */}
                   {recommendedOffers.length > 0 && (
                     <View className="mb-6">
                       <Text className="mb-3 text-[12px] font-medium uppercase tracking-wide text-[#6C7A74]">
@@ -676,13 +966,13 @@ export function PropertyDetailScreen() {
                               className="rounded-full px-4 py-2.5"
                               style={{
                                 borderWidth: 1.5,
-                                borderColor: isSelected ? "#006B55" : "#E2E8F0",
+                                borderColor: isSelected ? BRAND : "#E2E8F0",
                                 backgroundColor: isSelected ? "rgba(39,187,151,0.1)" : "#FFFFFF",
                               }}
                             >
                               <Text
                                 className="text-[14px] font-medium"
-                                style={{ color: isSelected ? "#006B55" : "#161D1A" }}
+                                style={{ color: isSelected ? BRAND : "#161D1A" }}
                               >
                                 {label}
                               </Text>
@@ -693,7 +983,6 @@ export function PropertyDetailScreen() {
                     </View>
                   )}
 
-                  {/* Custom Input */}
                   <View className="mb-6">
                     <Text className="mb-2 text-[12px] font-medium uppercase tracking-wide text-[#161D1A]">Your Offer</Text>
                     <View className="h-14 flex-row items-center rounded-xl border-2 border-slate-100 bg-slate-50 px-4">
@@ -719,7 +1008,6 @@ export function PropertyDetailScreen() {
                     </View>
                   </View>
 
-                  {/* Submit */}
                   <Pressable
                     onPress={handleSendOffer}
                     disabled={sendingOffer || !offerAmount}
@@ -730,7 +1018,7 @@ export function PropertyDetailScreen() {
                     })}
                   >
                     <LinearGradient
-                      colors={["#27BB97", "#1E9E7E"]}
+                      colors={[BRAND, "#1FA882"]}
                       start={{ x: 0, y: 0.5 }}
                       end={{ x: 1, y: 0.5 }}
                       style={{

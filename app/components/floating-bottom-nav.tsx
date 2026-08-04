@@ -1,4 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { memo } from "react";
 import { Pressable, Text, View } from "react-native";
 import Animated, { FadeIn, FadeOut, Layout } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,6 +9,7 @@ import {
   type BottomNavTabId,
 } from "@/constants/bottom-nav-tabs";
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 
 type FloatingBottomNavProps = {
   activeTabId: BottomNavTabId;
@@ -16,8 +18,19 @@ type FloatingBottomNavProps = {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export function FloatingBottomNav({ activeTabId, onTabPress }: FloatingBottomNavProps) {
+function FloatingBottomNavImpl({
+  activeTabId,
+  onTabPress,
+}: FloatingBottomNavProps) {
   const insets = useSafeAreaInsets();
+  const { colors, isDark, resolvedMode } = useTheme();
+
+  const barBackground = isDark ? colors.surface : "#F3F4F6";
+  const barBorder = isDark ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.12)";
+  const activePillBackground = isDark ? "rgba(255,255,255,0.14)" : "#E5E7EB";
+  const activePillBorder = isDark ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.1)";
+  const activeColor = isDark ? colors.textPrimary : "#111827";
+  const idleColor = isDark ? colors.iconMuted : "#6B7280";
 
   return (
     <View
@@ -26,50 +39,81 @@ export function FloatingBottomNav({ activeTabId, onTabPress }: FloatingBottomNav
       style={{ paddingBottom: Math.max(insets.bottom, 10) }}
     >
       <View
-        className="flex-row items-center rounded-full border border-white/80 px-1.5 py-2"
         style={{
-          width: "92%",
-          maxWidth: 420,
-          backgroundColor: "rgb(255, 255, 255)",
+          flexDirection: "row",
+          alignItems: "center",
+          alignSelf: "center",
+          borderRadius: 999,
+          paddingHorizontal: 6,
+          paddingVertical: 6,
+          gap: 4,
+          backgroundColor: barBackground,
+          borderWidth: 1,
+          borderColor: barBorder,
           shadowColor: "#000",
-          shadowOffset: { width: 0, height: 10 },
-          shadowOpacity: 0.14,
-          shadowRadius: 28,
-          elevation: 14,
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: resolvedMode === "dark" ? 0.4 : 0.12,
+          shadowRadius: 20,
+          elevation: 12,
         }}
       >
         {BOTTOM_NAV_TABS.map((tab) => {
           const isActive = tab.id === activeTabId;
+          const iconName = isActive
+            ? (tab.activeIcon ?? tab.icon)
+            : tab.icon;
+          const tint = isActive ? activeColor : idleColor;
 
           return (
             <AnimatedPressable
               key={tab.id}
               layout={Layout.springify().damping(18).stiffness(220)}
               onPress={() => onTabPress(tab.id)}
-              className="flex-1 items-center justify-center"
-              style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
+              style={({ pressed }) => ({
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: pressed ? 0.85 : 1,
+              })}
             >
-              {isActive ? (
-                <Animated.View
-                  entering={FadeIn.duration(200)}
-                  exiting={FadeOut.duration(120)}
-                  layout={Layout.springify().damping(20).stiffness(240)}
-                  className="w-full flex-row items-center justify-center gap-1 rounded-full bg-neutral-900 px-2 py-2.5"
-                >
-                  <MaterialIcons name={tab.icon} size={22} color="#FFFFFF" />
-                  <Text
-                    className="text-[12px] text-white"
-                    style={{ fontFamily: ListifyFonts.semiBold }}
-                    numberOfLines={1}
+              <Animated.View
+                layout={Layout.springify().damping(20).stiffness(240)}
+                style={{
+                  alignItems: "center",
+                  justifyContent: "center",
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  backgroundColor: isActive
+                    ? activePillBackground
+                    : "transparent",
+                  borderWidth: 1,
+                  borderColor: isActive ? activePillBorder : "transparent",
+                }}
+              >
+                {isActive ? (
+                  <Animated.View
+                    entering={FadeIn.duration(160)}
+                    exiting={FadeOut.duration(100)}
                   >
-                    {tab.label}
-                  </Text>
-                </Animated.View>
-              ) : (
-                <View className="items-center justify-center py-2.5">
-                  <MaterialIcons name={tab.icon} size={26} color="#1F2937" />
-                </View>
-              )}
+                    <MaterialIcons name={iconName} size={22} color={tint} />
+                  </Animated.View>
+                ) : (
+                  <MaterialIcons name={iconName} size={22} color={tint} />
+                )}
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    marginTop: 3,
+                    fontFamily: isActive
+                      ? ListifyFonts.bold
+                      : ListifyFonts.medium,
+                    fontSize: 11,
+                    color: tint,
+                  }}
+                >
+                  {tab.label}
+                </Text>
+              </Animated.View>
             </AnimatedPressable>
           );
         })}
@@ -77,3 +121,5 @@ export function FloatingBottomNav({ activeTabId, onTabPress }: FloatingBottomNav
     </View>
   );
 }
+
+export const FloatingBottomNav = memo(FloatingBottomNavImpl);

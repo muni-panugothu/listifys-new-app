@@ -21,7 +21,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
 import { sendRecoveryPhoneOTP, verifyRecoveryPhoneOTP } from "@/features/auth/services/auth-api";
 import { showErrorToast } from "@/lib/toast";
@@ -29,6 +28,7 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setAuthUser } from "@/store/slices/auth-slice";
 import { PhoneInputWithCountry } from "@/components/phone-input-with-country";
 import { useLocale } from "@/providers/locale-provider";
+import { useTheme } from "@/providers/theme-provider";
 
 const BRAND = "#27BB97";
 const TEXT_PRIMARY = "#1A1A1A";
@@ -38,6 +38,7 @@ export function ChangePhoneScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
+  const { colors } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
   const { phoneCode: localePhoneCode, isoCountryCode: localeIso } = useLocale();
 
@@ -119,7 +120,7 @@ export function ChangePhoneScreen() {
   };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: APP_SCREEN_BG }}>
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       {/* Header */}
       <View
         className="flex-row items-center px-5"
@@ -131,11 +132,11 @@ export function ChangePhoneScreen() {
           className="mr-2 h-10 w-10 items-center justify-center"
           style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
         >
-          <MaterialIcons name="chevron-left" size={32} color={TEXT_PRIMARY} />
+          <MaterialIcons name="chevron-left" size={32} color={colors.icon} />
         </Pressable>
         <Text
           className="text-[22px]"
-          style={{ fontFamily: ListifyFonts.bold, color: TEXT_PRIMARY }}
+          style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
         >
           {step === "otp" ? "Enter OTP" : "Update Recovery Phone"}
         </Text>
@@ -149,8 +150,8 @@ export function ChangePhoneScreen() {
       >
         {/* Info card */}
         <View
-          className="mb-6 rounded-2xl bg-white p-5"
-          style={{ elevation: 2, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}
+          className="mb-6 rounded-2xl p-5"
+          style={{ backgroundColor: colors.surface, elevation: 2, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}
         >
           <View className="mb-2 flex-row items-center gap-3">
             <View className="h-11 w-11 items-center justify-center rounded-2xl" style={{ backgroundColor: "rgba(39,187,151,0.12)" }}>
@@ -232,7 +233,7 @@ export function ChangePhoneScreen() {
         style={{
           borderTopWidth: 1,
           borderTopColor: "#E5E7EB",
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
           paddingHorizontal: 20,
           paddingTop: 12,
           paddingBottom: Math.max(insets.bottom, 12),

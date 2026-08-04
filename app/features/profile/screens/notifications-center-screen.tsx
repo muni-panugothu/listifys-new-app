@@ -13,7 +13,6 @@ import { Swipeable } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { adjustNotificationUnread } from "@/lib/notification-unread-bus";
-import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
 import {
   normalizeNotification,
@@ -34,12 +33,8 @@ import {
   getSocket,
 } from "@/features/messaging/services/socket-service";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
-
-const HOME_BG = APP_SCREEN_BG;
-const TEXT_PRIMARY = "#1A1A1A";
-const TEXT_MUTED = "#9CA3AF";
-const UNREAD_DOT = "#EF4444";
 
 type NotifVisual = {
   icon: keyof typeof MaterialIcons.glyphMap;
@@ -161,6 +156,7 @@ function NotificationRow({
   onPress: () => void;
   onDelete: () => void;
 }) {
+  const { colors } = useTheme();
   const visual = getNotificationVisual(item.type);
   const senderName = getSenderDisplayName(item);
   const body =
@@ -210,9 +206,9 @@ function NotificationRow({
       <View
         onLayout={(e) => setRowHeight(e.nativeEvent.layout.height)}
         style={{
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
           borderBottomWidth: 1,
-          borderBottomColor: "#F3F4F6",
+          borderBottomColor: colors.border,
         }}
       >
         <Pressable
@@ -222,7 +218,7 @@ function NotificationRow({
         >
         <View
           className="h-12 w-12 items-center justify-center rounded-xl"
-          style={{ backgroundColor: "#1A1A1A" }}
+          style={{ backgroundColor: colors.surfaceElevated }}
         >
           <MaterialIcons name={visual.icon} size={24} color={visual.color} />
         </View>
@@ -231,7 +227,7 @@ function NotificationRow({
           {senderName ? (
             <Text
               className="mb-0.5 text-[14px]"
-              style={{ fontFamily: ListifyFonts.semiBold, color: TEXT_PRIMARY }}
+              style={{ fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
               numberOfLines={1}
             >
               {senderName}
@@ -241,7 +237,7 @@ function NotificationRow({
             className="text-[14px] leading-[20px]"
             style={{
               fontFamily: ListifyFonts.regular,
-              color: item.read ? TEXT_MUTED : TEXT_PRIMARY,
+              color: item.read ? colors.textTertiary : colors.textPrimary,
             }}
             numberOfLines={2}
           >
@@ -249,7 +245,7 @@ function NotificationRow({
           </Text>
           <Text
             className="mt-1 text-[12px]"
-            style={{ fontFamily: ListifyFonts.regular, color: TEXT_MUTED }}
+            style={{ fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
           >
             {timeLabel}
           </Text>
@@ -258,7 +254,7 @@ function NotificationRow({
         {!item.read ? (
           <View
             className="ml-2 h-2.5 w-2.5 rounded-full"
-            style={{ backgroundColor: UNREAD_DOT }}
+            style={{ backgroundColor: colors.danger }}
           />
         ) : (
           <View className="ml-2 w-2.5" />
@@ -282,13 +278,14 @@ function Section({
   onItemDelete: (item: NotificationItem) => void;
   isFirst?: boolean;
 }) {
+  const { colors } = useTheme();
   if (items.length === 0) return null;
 
   return (
     <View className="mb-4" style={isFirst ? { paddingTop: 16 } : undefined}>
       <Text
         className="mb-2 px-5 text-[14px]"
-        style={{ fontFamily: ListifyFonts.medium, color: TEXT_MUTED }}
+        style={{ fontFamily: ListifyFonts.medium, color: colors.textTertiary }}
       >
         {title}
       </Text>
@@ -307,6 +304,7 @@ function Section({
 export function NotificationsCenterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -446,7 +444,7 @@ export function NotificationsCenterScreen() {
   }, [clearingAll, loadNotifications, notifications]);
 
   return (
-    <View className="flex-1" style={{ backgroundColor: HOME_BG }}>
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20 }}>
         <View className="mb-6 flex-row items-center justify-between">
           <View className="flex-row items-center">
@@ -456,11 +454,11 @@ export function NotificationsCenterScreen() {
               className="mr-3 h-10 w-10 items-center justify-center"
               style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
             >
-              <MaterialIcons name="chevron-left" size={32} color={TEXT_PRIMARY} />
+              <MaterialIcons name="chevron-left" size={32} color={colors.icon} />
             </Pressable>
             <Text
               className="text-[22px]"
-              style={{ fontFamily: ListifyFonts.bold, color: TEXT_PRIMARY }}
+              style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
             >
               Notifications
             </Text>
@@ -475,7 +473,7 @@ export function NotificationsCenterScreen() {
             >
               <Text
                 className="text-[14px]"
-                style={{ fontFamily: ListifyFonts.semiBold, color: "#EF4444" }}
+                style={{ fontFamily: ListifyFonts.semiBold, color: colors.danger }}
               >
                 Clear all
               </Text>
@@ -486,13 +484,15 @@ export function NotificationsCenterScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        style={{ flex: 1, backgroundColor: "#FFFFFF" }}
+        scrollEventThrottle={16}
+        removeClippedSubviews
+        style={{ flex: 1, backgroundColor: colors.surface }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={["#27BB97"]}
-            tintColor="#27BB97"
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
         contentContainerStyle={{
@@ -527,11 +527,11 @@ export function NotificationsCenterScreen() {
             <MaterialIcons
               name="notifications-none"
               size={48}
-              color="#D1D5DB"
+              color={colors.iconMuted}
             />
             <Text
               className="mt-3 text-[15px]"
-              style={{ fontFamily: ListifyFonts.regular, color: TEXT_MUTED }}
+              style={{ fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
             >
               No notifications yet
             </Text>

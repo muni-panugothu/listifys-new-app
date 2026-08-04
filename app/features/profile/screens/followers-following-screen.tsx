@@ -402,6 +402,8 @@ export function FollowersFollowingScreen() {
                 key={tab}
                 style={{ width: SCREEN_WIDTH }}
                 showsVerticalScrollIndicator={false}
+                scrollEventThrottle={16}
+                removeClippedSubviews
                 refreshControl={
                   <RefreshControl
                     refreshing={refreshing}

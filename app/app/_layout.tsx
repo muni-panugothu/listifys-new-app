@@ -26,8 +26,8 @@ import { KeyboardProvider } from "@/lib/safe-keyboard-controller";
 import "../global.css";
 
 import { ListifyFonts } from "@/constants/typography";
-import { useColorScheme } from "@/hooks/use-color-scheme";
 import { LocaleProvider } from "@/providers/locale-provider";
+import { ThemeProvider as ListifyThemeProvider, useTheme } from "@/providers/theme-provider";
 import { TypographyProvider } from "@/providers/typography-provider";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { hideAuthGate } from "@/store/slices/auth-gate-slice";
@@ -49,9 +49,11 @@ export default function RootLayout() {
         <KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge>
           <TypographyProvider>
             <LocaleProvider>
-              <NotificationProvider>
-                <AppLayout />
-              </NotificationProvider>
+              <ListifyThemeProvider>
+                <NotificationProvider>
+                  <AppLayout />
+                </NotificationProvider>
+              </ListifyThemeProvider>
             </LocaleProvider>
           </TypographyProvider>
         </KeyboardProvider>
@@ -100,7 +102,7 @@ const LOADER_DEFER_MS = 350;
 const LOADER_FAILSAFE_MS = 1200;
 
 function AppLayout() {
-  const colorScheme = useColorScheme();
+  const { resolvedMode, colors: themeColors } = useTheme();
   const router = useRouter();
   const dispatch = useAppDispatch();
   const { visible, action, redirectTo } = useAppSelector((state) => state.authGate);
@@ -116,15 +118,16 @@ function AppLayout() {
   const loaderStartedAtRef = useRef<number | null>(null);
   const [pageLoading, setPageLoading] = useState(false);
 
-  // Dark status-bar icons on light backgrounds (battery, Wi‑Fi, signal visible).
+  // Drive status-bar + Android system UI from the active theme so light/dark
+  // switches flip both the app chrome and the system chrome instantly.
   useEffect(() => {
-    setStatusBarStyle("dark");
+    setStatusBarStyle(themeColors.statusBarStyle);
     if (Platform.OS === "android") {
-      setStatusBarBackgroundColor("#FFFFFF", false);
+      setStatusBarBackgroundColor(themeColors.statusBarBackground, false);
       setStatusBarTranslucent(false);
-      void SystemUI.setBackgroundColorAsync("#FFFFFF");
+      void SystemUI.setBackgroundColorAsync(themeColors.statusBarBackground);
     }
-  }, []);
+  }, [themeColors.statusBarBackground, themeColors.statusBarStyle]);
 
   const deferTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -263,9 +266,17 @@ function AppLayout() {
     } as Href;
   }, [redirectTo]);
 
-  const navigationTheme = colorScheme === "dark" ? DarkTheme : DefaultTheme;
+  const navigationBase = resolvedMode === "dark" ? DarkTheme : DefaultTheme;
   const themeWithFonts = {
-    ...navigationTheme,
+    ...navigationBase,
+    colors: {
+      ...navigationBase.colors,
+      background: themeColors.background,
+      card: themeColors.surface,
+      text: themeColors.textPrimary,
+      border: themeColors.border,
+      primary: themeColors.primary,
+    },
     fonts: {
       regular: { fontFamily: ListifyFonts.regular, fontWeight: "400" as const },
       medium: { fontFamily: ListifyFonts.medium, fontWeight: "500" as const },
@@ -332,6 +343,10 @@ function AppLayout() {
           />
           <Stack.Screen
             name="services-category-hub"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="events-category"
             options={{ headerShown: false }}
           />
           <Stack.Screen
@@ -478,7 +493,11 @@ function AppLayout() {
         <PageTransitionLoader visible={pageLoading} />
         {/* Global real-time network status banner (offline / slow / back-online) */}
         <NetworkStatusLayer />
-        <StatusBar style="dark" backgroundColor="#FFFFFF" translucent={false} />
+        <StatusBar
+          style={themeColors.statusBarStyle}
+          backgroundColor={themeColors.statusBarBackground}
+          translucent={false}
+        />
       </ThemeProvider>
     </SafeAreaProvider>
   );

@@ -2,7 +2,6 @@ import { type Href, useRouter } from "@/lib/safe-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,6 +13,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PhoneInputWithCountry } from "@/components/phone-input-with-country";
+import { AuthUI } from "@/constants/auth-ui";
+import { ListifyFonts } from "@/constants/typography";
+import { AuthPrimaryButton } from "@/features/auth/components/auth-primary-button";
 import { useLocale } from "@/providers/locale-provider";
 import { showErrorToast } from "@/lib/toast";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -28,11 +30,9 @@ export function MobileAuthScreen() {
   const dispatch = useAppDispatch();
   const { phoneCode: localePhoneCode, isoCountryCode: localeIso } = useLocale();
   const { status, error, isAuthenticated } = useAppSelector((s) => s.auth);
-  // Global phone input state
   const [phoneCode, setPhoneCode] = useState(localePhoneCode);
   const [isoCode, setIsoCode] = useState(localeIso);
   const [phoneDigits, setPhoneDigits] = useState("");
-  // Full E.164 derived from code + digits
   const e164Phone = `${phoneCode}${phoneDigits.replace(/\D/g, "")}`;
 
   const [requestedPhone, setRequestedPhone] = useState<string | null>(null);
@@ -79,7 +79,6 @@ export function MobileAuthScreen() {
   }, [isOtpStep, secondsRemaining]);
 
   useEffect(() => {
-    // Keep country defaults in sync with selected locale/location until OTP flow starts.
     if (!requestedPhone && !phoneDigits) {
       setPhoneCode(localePhoneCode);
       setIsoCode(localeIso);
@@ -162,7 +161,7 @@ export function MobileAuthScreen() {
   const timerLabel = `00:${String(secondsRemaining).padStart(2, "0")}`;
 
   return (
-    <View className="flex-1 bg-white">
+    <View className="flex-1" style={{ backgroundColor: AuthUI.bg }}>
       <StatusBar style="dark" />
 
       <KeyboardAvoidingView
@@ -173,141 +172,150 @@ export function MobileAuthScreen() {
           bounces={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
-            paddingTop: insets.top + 16,
+            paddingTop: insets.top + 48,
             paddingBottom: contentPaddingBottom,
-            paddingHorizontal: 16,
+            paddingHorizontal: 24,
             flexGrow: 1,
             justifyContent: "center",
           }}
         >
-          <View className="w-full self-center" style={{ maxWidth: 430 }}>
-            <View className="w-full items-center">
-              <Text className="text-gray-800 text-[30px] font-extrabold mb-2">
-                Continue with Mobile
-              </Text>
-              <Text className="text-gray-500 text-center mb-5">
-                {isOtpStep
-                  ? "Enter the OTP sent to your mobile number"
-                  : "Enter your mobile number to receive OTP"}
-              </Text>
+          <View className="w-full self-center" style={{ maxWidth: AuthUI.maxWidth }}>
+            <Text
+              className="text-center text-[28px] text-[#111111]"
+              style={{ fontFamily: ListifyFonts.bold }}
+            >
+              {isOtpStep ? "Verify Code" : "Continue with Mobile"}
+            </Text>
+            <Text
+              className="mb-8 mt-2 text-center text-[14px] leading-5"
+              style={{ fontFamily: ListifyFonts.regular, color: AuthUI.subtitle }}
+            >
+              {isOtpStep
+                ? `Please enter the code we just sent to ${requestedPhone}`
+                : "Enter your mobile number to receive OTP"}
+            </Text>
 
-              {!isOtpStep ? (
-                <View className="w-full flex flex-col gap-3">
-                  {/* Global phone input with country picker */}
-                  <PhoneInputWithCountry
-                    phoneCode={phoneCode}
-                    phone={phoneDigits}
-                    isoCode={isoCode}
-                    onChangePhoneCode={(code, iso) => {
-                      setPhoneCode(code);
-                      setIsoCode(iso);
-                    }}
-                    onChangePhone={(digits) => setPhoneDigits(digits)}
-                  />
-
-                  <Pressable
+            {!isOtpStep ? (
+              <View className="w-full">
+                <Text
+                  className="mb-2 text-[14px] text-[#111111]"
+                  style={{ fontFamily: ListifyFonts.semiBold }}
+                >
+                  Phone
+                </Text>
+                <PhoneInputWithCountry
+                  phoneCode={phoneCode}
+                  phone={phoneDigits}
+                  isoCode={isoCode}
+                  onChangePhoneCode={(code, iso) => {
+                    setPhoneCode(code);
+                    setIsoCode(iso);
+                  }}
+                  onChangePhone={(digits) => setPhoneDigits(digits)}
+                />
+                <View className="mt-6">
+                  <AuthPrimaryButton
+                    label="Send OTP"
                     onPress={handleSendOtp}
-                    disabled={isLoading}
-                    style={({ pressed }) => [{ opacity: pressed || isLoading ? 0.75 : 1 }]}
-                    className="w-full bg-black px-4 py-3 rounded-full items-center"
-                  >
-                    {isLoading ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <Text className="text-white font-semibold">Send OTP</Text>
-                    )}
-                  </Pressable>
+                    loading={isLoading}
+                  />
                 </View>
-              ) : (
-                <View className="w-full">
-                  <View className="w-full flex-row justify-between gap-2 mb-4">
-                    {otpDigits.map((digit, index) => (
-                      <TextInput
-                        key={index}
-                        ref={(ref) => {
-                          inputRefs.current[index] = ref;
-                        }}
-                        value={digit}
-                        onChangeText={(value) => {
-                          handleDigitChange(value, index);
-                        }}
-                        onKeyPress={({ nativeEvent }) => {
-                          handleKeyPress(nativeEvent.key, index);
-                        }}
-                        keyboardType="number-pad"
-                        maxLength={1}
-                        placeholder="-"
-                        placeholderTextColor="#9CA3AF"
-                        style={{
-                          height: 48,
-                          width: 48,
-                          borderRadius: 12,
-                          borderWidth: 1,
-                          borderColor: "#D1D5DB",
-                          textAlign: "center",
-                          color: "#1F2937",
-                        }}
-                      />
-                    ))}
-                  </View>
+              </View>
+            ) : (
+              <View className="w-full">
+                <View className="mb-6 w-full flex-row justify-center gap-2.5">
+                  {otpDigits.map((digit, index) => (
+                    <TextInput
+                      key={index}
+                      ref={(ref) => {
+                        inputRefs.current[index] = ref;
+                      }}
+                      value={digit}
+                      onChangeText={(value) => handleDigitChange(value, index)}
+                      onKeyPress={({ nativeEvent }) => {
+                        handleKeyPress(nativeEvent.key, index);
+                      }}
+                      keyboardType="number-pad"
+                      maxLength={1}
+                      placeholder="–"
+                      placeholderTextColor={AuthUI.muted}
+                      style={{
+                        width: 48,
+                        height: 52,
+                        borderRadius: 10,
+                        backgroundColor: AuthUI.inputBg,
+                        textAlign: "center",
+                        color: AuthUI.text,
+                        fontSize: 22,
+                        fontWeight: "600",
+                      }}
+                    />
+                  ))}
+                </View>
 
-                  <Pressable
-                    onPress={handleVerifyOtp}
-                    disabled={isLoading || !isVerifyEnabled}
-                    style={({ pressed }) => [
-                      { opacity: pressed ? 0.9 : 1 },
-                      { opacity: isLoading || !isVerifyEnabled ? 0.7 : 1 },
-                    ]}
-                    className="bg-black text-white px-5 py-3 rounded-full w-full items-center"
-                  >
-                    {isLoading ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <Text className="text-white text-center font-semibold">
-                        Verify OTP
-                      </Text>
-                    )}
-                  </Pressable>
+                <AuthPrimaryButton
+                  label="Verify"
+                  onPress={handleVerifyOtp}
+                  loading={isLoading}
+                  disabled={!isVerifyEnabled}
+                />
 
-                  <View className="mt-4 items-center gap-3">
-                    <Text className="text-gray-500">Resend OTP in {timerLabel}</Text>
-                    <Pressable
-                      onPress={handleResendOtp}
-                      disabled={secondsRemaining > 0 || isLoading}
-                    >
-                      <Text
-                        className={`font-semibold ${
-                          secondsRemaining > 0 || isLoading
-                            ? "text-gray-400"
-                            : "text-gray-800"
-                        }`}
-                      >
-                        Resend OTP
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => {
-                        setRequestedPhone(null);
-                        setPhoneDigits("");
-                        setOtpDigits(Array(OTP_LENGTH).fill(""));
+                <View className="mt-6 items-center gap-3">
+                  {secondsRemaining > 0 ? (
+                    <Text
+                      style={{
+                        color: AuthUI.subtitle,
+                        fontFamily: ListifyFonts.regular,
+                        fontSize: 14,
                       }}
                     >
-                      <Text className="font-semibold text-gray-700">Change Number</Text>
+                      Resend OTP in {timerLabel}
+                    </Text>
+                  ) : (
+                    <Pressable onPress={handleResendOtp} disabled={isLoading}>
+                      <Text
+                        style={{
+                          fontFamily: ListifyFonts.semiBold,
+                          color: AuthUI.text,
+                          textDecorationLine: "underline",
+                          fontSize: 14,
+                        }}
+                      >
+                        Resend code
+                      </Text>
                     </Pressable>
-                  </View>
+                  )}
+                  <Pressable
+                    onPress={() => {
+                      setRequestedPhone(null);
+                      setPhoneDigits("");
+                      setOtpDigits(Array(OTP_LENGTH).fill(""));
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: ListifyFonts.medium,
+                        color: AuthUI.link,
+                        fontSize: 14,
+                      }}
+                    >
+                      Change Number
+                    </Text>
+                  </Pressable>
                 </View>
-              )}
-            </View>
+              </View>
+            )}
 
-            <Text className="text-gray-500 text-center mt-5">
+            <Text
+              className="mt-8 text-center text-[14px]"
+              style={{ fontFamily: ListifyFonts.regular, color: AuthUI.subtitle }}
+            >
               Prefer password login?{" "}
               <Text
-                className="text-[14px] font-bold text-gray-800"
-                onPress={() => {
-                  router.push("/sign-in" as Href);
-                }}
+                style={{ fontFamily: ListifyFonts.semiBold, color: AuthUI.link }}
+                onPress={() => router.push("/sign-in" as Href)}
               >
-                Back to Login
+                Sign In
               </Text>
             </Text>
           </View>

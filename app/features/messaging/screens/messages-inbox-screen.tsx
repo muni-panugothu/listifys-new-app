@@ -1,9 +1,10 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { type Href, useRouter } from "@/lib/safe-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   BackHandler,
+  FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,7 +14,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
 import { resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
 import {
@@ -27,11 +27,9 @@ import {
 } from "@/features/messaging/services/socket-service";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { Image } from "@/lib/nativewind-interop";
+import { useTheme } from "@/providers/theme-provider";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
 import { useAppSelector } from "@/store/hooks";
-
-const BRAND = "#27BB97";
-const BG = APP_SCREEN_BG;
 
 type FilterKey = "all" | "unread";
 
@@ -50,9 +48,124 @@ function formatChatTime(dateStr: string) {
   });
 }
 
+type ConversationRowProps = {
+  conv: Conversation;
+  userId?: string | null;
+  onPress: (conv: Conversation) => void;
+};
+
+function ConversationRowImpl({ conv, userId, onPress }: ConversationRowProps) {
+  const { colors } = useTheme();
+  const other =
+    conv.participants.find((p) => {
+      const pid = p.id || p._id;
+      return pid && pid !== userId && pid !== "me";
+    }) ?? conv.participants[0];
+
+  const otherName = other?.name ?? "User";
+  const avatar = resolveAbsoluteMediaUrl(other?.profileImageUrl);
+  const lastMsg = conv.lastMessage;
+  const productTitle = conv.listing?.listingTitle?.trim();
+  const productImage = resolveAbsoluteMediaUrl(conv.listing?.listingImage);
+  const lastMsgText =
+    lastMsg?.messageType === "offer"
+      ? "Offer update"
+      : lastMsg?.content ??
+        (lastMsg?.attachments?.length ? "Attachment" : productTitle ?? "");
+  const lastMsgTime = lastMsg?.createdAt
+    ? formatChatTime(lastMsg.createdAt)
+    : "";
+  const myUnread = conv.unreadCount ?? 0;
+
+  return (
+    <Pressable
+      onPress={() => onPress(conv)}
+      className="flex-row items-center px-5 py-3.5"
+      style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
+    >
+      {productImage ? (
+        <Image
+          source={productImage}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          className="h-14 w-14 rounded-xl border border-slate-100"
+        />
+      ) : avatar ? (
+        <Image
+          source={avatar}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          className="h-14 w-14 rounded-full"
+        />
+      ) : (
+        <View
+          className="h-14 w-14 items-center justify-center rounded-full"
+          style={{ backgroundColor: colors.surfaceMuted }}
+        >
+          <MaterialIcons name="person" size={28} color={colors.iconMuted} />
+        </View>
+      )}
+
+      <View className="ml-3.5 min-w-0 flex-1">
+        <View className="flex-row items-start justify-between gap-2">
+          <Text
+            className="flex-1 text-[17px]"
+            style={{ fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
+            numberOfLines={1}
+          >
+            {productTitle || otherName}
+          </Text>
+          <View className="items-end">
+            {lastMsgTime ? (
+              <Text
+                className="text-[13px]"
+                style={{ fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
+              >
+                {lastMsgTime}
+              </Text>
+            ) : null}
+            {myUnread > 0 ? (
+              <View
+                className="mt-1 min-h-5 min-w-5 items-center justify-center rounded-full px-1.5"
+                style={{ backgroundColor: colors.primary }}
+              >
+                <Text
+                  className="text-[11px] text-white"
+                  style={{ fontFamily: ListifyFonts.bold }}
+                >
+                  {myUnread > 99 ? "99+" : myUnread}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+        {productTitle ? (
+          <Text
+            className="mt-0.5 text-[12px]"
+            style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
+            numberOfLines={1}
+          >
+            {otherName}
+          </Text>
+        ) : null}
+        <Text
+          className="mt-0.5 text-[15px]"
+          style={{ fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
+          numberOfLines={2}
+        >
+          {lastMsgText}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+const ConversationRow = memo(ConversationRowImpl);
+
 export function MessagesInboxScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
   const handleBottomTabPress = useTabNavigation();
 
@@ -204,13 +317,22 @@ export function MessagesInboxScreen() {
     [getOtherParticipant, router],
   );
 
+  const convKeyExtractor = useCallback((item: Conversation) => item._id, []);
+
+  const renderConversation = useCallback(
+    ({ item }: { item: Conversation }) => (
+      <ConversationRow conv={item} userId={user?.id} onPress={openChat} />
+    ),
+    [openChat, user?.id],
+  );
+
   const getFilterLabel = (key: FilterKey, base: string) => {
     if (key === "unread" && unreadCount > 0) return `${base} ${unreadCount}`;
     return base;
   };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: BG }}>
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20 }}>
         <View className="mb-5 flex-row items-center justify-between">
           <View className="min-w-0 flex-1 flex-row items-center">
@@ -220,11 +342,11 @@ export function MessagesInboxScreen() {
               className="mr-1 h-10 w-10 items-center justify-center"
               style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
             >
-              <MaterialIcons name="chevron-left" size={32} color="#1A1A1A" />
+              <MaterialIcons name="chevron-left" size={32} color={colors.icon} />
             </Pressable>
             <Text
-              className="text-[22px] text-[#1A1A1A]"
-              style={{ fontFamily: ListifyFonts.bold }}
+              className="text-[22px]"
+              style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
             >
               Chats
             </Text>
@@ -233,16 +355,20 @@ export function MessagesInboxScreen() {
 
         <View
           className="mb-4 h-12 flex-row items-center rounded-full px-4"
-          style={{ backgroundColor: "#F3F4F6" }}
+          style={{ backgroundColor: colors.surfaceMuted }}
         >
-          <MaterialIcons name="search" size={22} color="#9CA3AF" />
+          <MaterialIcons name="search" size={22} color={colors.iconMuted} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search"
-            placeholderTextColor="#9CA3AF"
-            className="ml-3 flex-1 text-[16px] text-[#1A1A1A]"
-            style={{ fontFamily: ListifyFonts.regular, paddingVertical: 0 }}
+            placeholderTextColor={colors.inputPlaceholder}
+            className="ml-3 flex-1 text-[16px]"
+            style={{
+              fontFamily: ListifyFonts.regular,
+              paddingVertical: 0,
+              color: colors.textPrimary,
+            }}
           />
         </View>
 
@@ -260,14 +386,14 @@ export function MessagesInboxScreen() {
                 onPress={() => setActiveFilter(opt.key)}
                 className="rounded-full px-4 py-2"
                 style={{
-                  backgroundColor: isActive ? "rgba(39,187,151,0.14)" : "#F3F4F6",
+                  backgroundColor: isActive ? colors.primarySoft : colors.surfaceMuted,
                 }}
               >
                 <Text
                   className="text-[14px]"
                   style={{
                     fontFamily: isActive ? ListifyFonts.semiBold : ListifyFonts.medium,
-                    color: isActive ? BRAND : "#4B5563",
+                    color: isActive ? colors.primary : colors.textSecondary,
                   }}
                 >
                   {getFilterLabel(opt.key, opt.label)}
@@ -278,136 +404,48 @@ export function MessagesInboxScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView
+      <FlatList
+        data={filtered}
+        keyExtractor={convKeyExtractor}
+        renderItem={renderConversation}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        removeClippedSubviews
+        maxToRenderPerBatch={10}
+        initialNumToRender={12}
+        windowSize={7}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[BRAND]}
-            tintColor={BRAND}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
         contentContainerStyle={{
           paddingBottom: Math.max(insets.bottom, 16) + 24,
+          ...(filtered.length === 0 ? { flex: 1 } : {}),
         }}
-      >
-        {filtered.length === 0 ? (
+        ListEmptyComponent={
           <View className="items-center px-6 py-16">
-            <MaterialIcons name="chat-bubble-outline" size={48} color="#D1D5DB" />
+            <MaterialIcons name="chat-bubble-outline" size={48} color={colors.iconMuted} />
             <Text
-              className="mt-3 text-[15px] text-[#6B7280]"
-              style={{ fontFamily: ListifyFonts.regular }}
+              className="mt-3 text-[15px]"
+              style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
             >
               {loadError ?? "No chats yet"}
             </Text>
             {!loadError ? (
               <Text
-                className="mt-1 text-center text-[13px] text-[#9CA3AF]"
-                style={{ fontFamily: ListifyFonts.regular }}
+                className="mt-1 text-center text-[13px]"
+                style={{ fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
               >
                 Message a seller from a listing to start a conversation
               </Text>
             ) : null}
           </View>
-        ) : (
-          filtered.map((conv) => {
-            const other = getOtherParticipant(conv);
-            const otherName = other?.name ?? "User";
-            const avatar = resolveAbsoluteMediaUrl(other?.profileImageUrl);
-            const lastMsg = conv.lastMessage;
-            const productTitle = conv.listing?.listingTitle?.trim();
-            const productImage = resolveAbsoluteMediaUrl(conv.listing?.listingImage);
-            const lastMsgText =
-              lastMsg?.messageType === "offer"
-                ? "Offer update"
-                : lastMsg?.content ??
-                  (lastMsg?.attachments?.length ? "Attachment" : productTitle ?? "");
-            const lastMsgTime = lastMsg?.createdAt
-              ? formatChatTime(lastMsg.createdAt)
-              : "";
-            const myUnread = conv.unreadCount ?? 0;
-
-            return (
-              <Pressable
-                key={conv._id}
-                onPress={() => openChat(conv)}
-                className="flex-row items-center px-5 py-3.5"
-                style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
-              >
-                {productImage ? (
-                  <Image
-                    source={productImage}
-                    contentFit="cover"
-                    className="h-14 w-14 rounded-xl border border-slate-100"
-                  />
-                ) : avatar ? (
-                  <Image
-                    source={avatar}
-                    contentFit="cover"
-                    className="h-14 w-14 rounded-full"
-                  />
-                ) : (
-                  <View className="h-14 w-14 items-center justify-center rounded-full bg-[#F3F4F6]">
-                    <MaterialIcons name="person" size={28} color="#9CA3AF" />
-                  </View>
-                )}
-
-                <View className="ml-3.5 min-w-0 flex-1">
-                  <View className="flex-row items-start justify-between gap-2">
-                    <Text
-                      className="flex-1 text-[17px] text-[#1A1A1A]"
-                      style={{ fontFamily: ListifyFonts.semiBold }}
-                      numberOfLines={1}
-                    >
-                      {productTitle || otherName}
-                    </Text>
-                    <View className="items-end">
-                      {lastMsgTime ? (
-                        <Text
-                          className="text-[13px] text-[#9CA3AF]"
-                          style={{ fontFamily: ListifyFonts.regular }}
-                        >
-                          {lastMsgTime}
-                        </Text>
-                      ) : null}
-                      {myUnread > 0 ? (
-                        <View
-                          className="mt-1 min-h-5 min-w-5 items-center justify-center rounded-full px-1.5"
-                          style={{ backgroundColor: BRAND }}
-                        >
-                          <Text
-                            className="text-[11px] text-white"
-                            style={{ fontFamily: ListifyFonts.bold }}
-                          >
-                            {myUnread > 99 ? "99+" : myUnread}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  </View>
-                  {productTitle ? (
-                    <Text
-                      className="mt-0.5 text-[12px] text-[#6B7280]"
-                      style={{ fontFamily: ListifyFonts.regular }}
-                      numberOfLines={1}
-                    >
-                      {otherName}
-                    </Text>
-                  ) : null}
-                  <Text
-                    className="mt-0.5 text-[15px] text-[#9CA3AF]"
-                    style={{ fontFamily: ListifyFonts.regular }}
-                    numberOfLines={2}
-                  >
-                    {lastMsgText}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })
-        )}
-      </ScrollView>
+        }
+      />
     </View>
   );
 }

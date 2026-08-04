@@ -20,6 +20,7 @@ import {
 } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 
 type Props = {
   visible: boolean;
@@ -50,6 +51,7 @@ function cleanVoiceQuery(text: string): string {
 }
 
 export function VoiceSearchModal({ visible, onResult, onClose, onPartialResult }: Props) {
+  const { colors, isDark } = useTheme();
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [partialText, setPartialText] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -215,15 +217,17 @@ export function VoiceSearchModal({ visible, onResult, onClose, onPartialResult }
   // ── Derived UI values ──────────────────────────────────────────────────────
   const isListening = voiceState === "listening";
   const micBg = isListening
-    ? "#27BB97"
+    ? colors.primary
     : voiceState === "error"
-      ? "#FEF2F2"
-      : "#F3F4F6";
+      ? isDark
+        ? "rgba(239,68,68,0.15)"
+        : "#FEF2F2"
+      : colors.surfaceMuted;
   const micIconColor = isListening
-    ? "#FFFFFF"
+    ? colors.textOnPrimary
     : voiceState === "error"
-      ? "#EF4444"
-      : "#6B7280";
+      ? colors.danger
+      : colors.textSecondary;
   const micIconName =
     voiceState === "error" ? "mic-off" : isListening ? "mic" : "mic";
 
@@ -261,22 +265,26 @@ export function VoiceSearchModal({ visible, onResult, onClose, onPartialResult }
       >
         {/* Sheet — stop press events propagating to backdrop */}
         <Pressable
-          className="items-center rounded-t-3xl bg-white px-6 pb-12 pt-5"
+          className="items-center rounded-t-3xl px-6 pb-12 pt-5"
+          style={{ backgroundColor: colors.surface }}
           onPress={(e) => e.stopPropagation()}
         >
           {/* Drag handle */}
-          <View className="mb-6 h-1 w-10 rounded-full bg-[#E5E7EB]" />
+          <View
+            className="mb-6 h-1 w-10 rounded-full"
+            style={{ backgroundColor: colors.borderStrong }}
+          />
 
           {/* Title */}
           <Text
-            className="mb-1 text-[22px] text-[#1A1A1A]"
-            style={{ fontFamily: ListifyFonts.bold }}
+            className="mb-1 text-[22px]"
+            style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
           >
             {titleText}
           </Text>
           <Text
-            className="mb-8 text-center text-[14px] text-[#9CA3AF]"
-            style={{ fontFamily: ListifyFonts.regular }}
+            className="mb-8 text-center text-[14px]"
+            style={{ fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
           >
             {subtitleText}
           </Text>
@@ -290,7 +298,7 @@ export function VoiceSearchModal({ visible, onResult, onClose, onPartialResult }
                 width: 80,
                 height: 80,
                 borderRadius: 40,
-                backgroundColor: "#27BB97",
+                backgroundColor: colors.primary,
                 transform: [{ scale: ring1 }],
                 opacity: ring1Opacity,
               }}
@@ -302,7 +310,7 @@ export function VoiceSearchModal({ visible, onResult, onClose, onPartialResult }
                 width: 80,
                 height: 80,
                 borderRadius: 40,
-                backgroundColor: "#27BB97",
+                backgroundColor: colors.primary,
                 transform: [{ scale: ring2 }],
                 opacity: ring2Opacity,
               }}
@@ -319,7 +327,7 @@ export function VoiceSearchModal({ visible, onResult, onClose, onPartialResult }
                 justifyContent: "center",
                 opacity: pressed ? 0.85 : 1,
                 elevation: isListening ? 6 : 2,
-                shadowColor: isListening ? "#27BB97" : "#000",
+                shadowColor: isListening ? colors.primary : "#000",
                 shadowOffset: { width: 0, height: isListening ? 4 : 2 },
                 shadowOpacity: isListening ? 0.35 : 0.1,
                 shadowRadius: isListening ? 8 : 4,
@@ -333,8 +341,8 @@ export function VoiceSearchModal({ visible, onResult, onClose, onPartialResult }
           <View style={{ minHeight: 52, alignItems: "center", paddingHorizontal: 16, marginBottom: 16 }}>
             {partialText ? (
               <Text
-                className="text-center text-[20px] text-[#1A1A1A]"
-                style={{ fontFamily: ListifyFonts.semiBold }}
+                className="text-center text-[20px]"
+                style={{ fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
                 numberOfLines={2}
               >
                 &quot;{partialText}&quot;
@@ -343,8 +351,8 @@ export function VoiceSearchModal({ visible, onResult, onClose, onPartialResult }
               // Placeholder dots while listening
               isListening ? (
                 <Text
-                  className="text-[28px] tracking-widest text-[#27BB97]"
-                  style={{ fontFamily: ListifyFonts.bold }}
+                  className="text-[28px] tracking-widest"
+                  style={{ fontFamily: ListifyFonts.bold, color: colors.primary }}
                 >
                   • • •
                 </Text>
@@ -362,8 +370,8 @@ export function VoiceSearchModal({ visible, onResult, onClose, onPartialResult }
             })}
           >
             <Text
-              className="text-[15px] text-[#9CA3AF]"
-              style={{ fontFamily: ListifyFonts.medium }}
+              className="text-[15px]"
+              style={{ fontFamily: ListifyFonts.medium, color: colors.textTertiary }}
             >
               Cancel
             </Text>

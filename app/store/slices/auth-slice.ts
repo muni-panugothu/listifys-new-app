@@ -617,6 +617,13 @@ const authSlice = createSlice({
         AsyncStorage.setItem(FLOW_STATE_KEY, JSON.stringify({ resetEmail: state.resetEmail, resetToken: action.payload.resetToken }));
       })
       .addCase(verifyResetOtp.rejected, (state, action) => {
+        // A concurrent verify may have already succeeded and cleared the Redis session.
+        // Keep the successful resetToken and ignore the late failure.
+        if (state.resetToken) {
+          state.status = "succeeded";
+          state.error = null;
+          return;
+        }
         state.status = "failed";
         state.error = action.payload as string;
       });

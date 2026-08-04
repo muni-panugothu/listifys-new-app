@@ -197,6 +197,8 @@ export function JobDetailScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        removeClippedSubviews
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#27BB97"]} tintColor="#27BB97" progressViewOffset={topBarHeight} />
         }
@@ -205,7 +207,7 @@ export function JobDetailScreen() {
         {/* Hero */}
         {images.length > 0 ? (
           <View className="relative h-48 w-full">
-            <Image source={images[0]} contentFit="cover" transition={200} className="h-full w-full" />
+            <Image source={images[0]} contentFit="cover" cachePolicy="memory-disk" transition={200} className="h-full w-full" />
             <View className="absolute inset-0 bg-black/20" />
           </View>
         ) : (

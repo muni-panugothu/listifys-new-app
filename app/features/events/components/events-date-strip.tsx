@@ -5,6 +5,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { ListifyFonts } from "@/constants/typography";
 import type { DateStripItem } from "@/lib/event-dates";
 import { formatStripDay, formatStripMonth } from "@/lib/event-dates";
+import { useTheme } from "@/providers/theme-provider";
 
 type EventsDateStripProps = {
   items: DateStripItem[];
@@ -20,6 +21,7 @@ export function EventsDateStrip({
   onOpenCalendar,
 }: EventsDateStripProps) {
   const scrollRef = useRef<ScrollView>(null);
+  const { colors } = useTheme();
 
   useEffect(() => {
     const idx = items.findIndex((d) => d.key === selectedKey);
@@ -48,10 +50,10 @@ export function EventsDateStrip({
                 width: 56,
                 minHeight: 72,
                 paddingVertical: 4,
-                backgroundColor: isActive ? "#27BB97" : "#FFFFFF",
+                backgroundColor: isActive ? colors.primary : colors.surface,
                 borderWidth: 1,
-                borderColor: isActive ? "#27BB97" : "#D1D5DB",
-                shadowColor: "#27BB97",
+                borderColor: isActive ? colors.primary : colors.border,
+                shadowColor: colors.primary,
                 shadowOffset: { width: 0, height: isActive ? 4 : 0 },
                 shadowOpacity: isActive ? 0.3 : 0,
                 shadowRadius: isActive ? 8 : 0,
@@ -62,7 +64,9 @@ export function EventsDateStrip({
                 className="text-[11px]"
                 style={{
                   fontFamily: ListifyFonts.medium,
-                  color: isActive ? "rgba(255,255,255,0.85)" : "#6C7A74",
+                  color: isActive
+                    ? "rgba(255,255,255,0.85)"
+                    : colors.textSecondary,
                   letterSpacing: 0.5,
                 }}
               >
@@ -72,7 +76,7 @@ export function EventsDateStrip({
                 className="text-[22px]"
                 style={{
                   fontFamily: ListifyFonts.bold,
-                  color: isActive ? "#FFFFFF" : "#161D1A",
+                  color: isActive ? "#FFFFFF" : colors.textPrimary,
                 }}
               >
                 {formatStripDay(item.date)}
@@ -82,7 +86,9 @@ export function EventsDateStrip({
                   className="text-[9px]"
                   style={{
                     fontFamily: ListifyFonts.medium,
-                    color: isActive ? "rgba(255,255,255,0.9)" : "#27BB97",
+                    color: isActive
+                      ? "rgba(255,255,255,0.9)"
+                      : colors.primary,
                     marginTop: 2,
                   }}
                   numberOfLines={1}
@@ -99,7 +105,7 @@ export function EventsDateStrip({
         style={{ width: 48, alignItems: "center", justifyContent: "center" }}
         hitSlop={8}
       >
-        <MaterialIcons name="calendar-month" size={24} color="#27BB97" />
+        <MaterialIcons name="calendar-month" size={24} color={colors.primary} />
       </Pressable>
     </View>
   );

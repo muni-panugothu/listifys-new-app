@@ -46,8 +46,8 @@ import {
   LocationPermissionSheet,
   type LocationPermissionSheetReason,
 } from "@/components/location-permission-sheet";
-import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 import {
   extractIsoCountryCode,
   fetchPlaceDetails,
@@ -161,6 +161,7 @@ export function LocationPickerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
+  const { colors } = useTheme();
 
   const locationLat = useAppSelector((s) => s.location.lat);
   const locationLng = useAppSelector((s) => s.location.lng);
@@ -541,14 +542,14 @@ export function LocationPickerScreen() {
   const showErrorState = isQueryActive && !!predictionsError && !predictionsLoading;
 
   return (
-    <View style={{ flex: 1, backgroundColor: APP_SCREEN_BG }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* ── Header ── */}
       <View
         style={{
           paddingTop: insets.top + 8,
           paddingHorizontal: 20,
           paddingBottom: 12,
-          backgroundColor: APP_SCREEN_BG,
+          backgroundColor: colors.background,
         }}
       >
         <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -564,13 +565,13 @@ export function LocationPickerScreen() {
               justifyContent: "center",
             })}
           >
-            <MaterialIcons name="chevron-left" size={32} color="#1A1A1A" />
+            <MaterialIcons name="chevron-left" size={32} color={colors.icon} />
           </Pressable>
           <Text
             style={{
               fontSize: 22,
               fontFamily: ListifyFonts.bold,
-              color: "#1A1A1A",
+              color: colors.textPrimary,
             }}
           >
             Choose location
@@ -584,7 +585,7 @@ export function LocationPickerScreen() {
             flexDirection: "row",
             alignItems: "center",
             height: 52,
-            backgroundColor: "#FFFFFF",
+            backgroundColor: colors.surface,
             borderRadius: 14,
             paddingHorizontal: 14,
             gap: 10,
@@ -657,7 +658,7 @@ export function LocationPickerScreen() {
               alignItems: "center",
               paddingHorizontal: 20,
               paddingVertical: 15,
-              backgroundColor: pressed ? "#F0FDF9" : "#FFFFFF",
+              backgroundColor: pressed ? "#F0FDF9" : colors.surface,
               marginHorizontal: 16,
               marginTop: 6,
               borderRadius: 14,
@@ -733,7 +734,7 @@ export function LocationPickerScreen() {
               flex: 1,
               marginTop: isQueryActive ? 10 : 8,
               marginHorizontal: 16,
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.surface,
               borderRadius: 16,
               overflow: "hidden",
               shadowColor: "#000",

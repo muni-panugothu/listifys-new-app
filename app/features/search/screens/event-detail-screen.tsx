@@ -174,6 +174,8 @@ export function EventDetailScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        removeClippedSubviews
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#27BB97"]} tintColor="#27BB97" progressViewOffset={topBarHeight} />}
         contentContainerStyle={{ paddingTop: topBarHeight, paddingBottom: isOwn ? 24 + footerBottomPadding : 96 + footerBottomPadding }}
       >
@@ -191,7 +193,7 @@ export function EventDetailScreen() {
             >
               {images.map((img, idx) => (
                 <View key={img + idx.toString()} style={{ width: SCREEN_WIDTH, aspectRatio: 4 / 5 }}>
-                  <Image source={img} contentFit="cover" transition={200} className="h-full w-full" />
+                  <Image source={img} contentFit="cover" cachePolicy="memory-disk" transition={200} className="h-full w-full" />
                 </View>
               ))}
             </ScrollView>

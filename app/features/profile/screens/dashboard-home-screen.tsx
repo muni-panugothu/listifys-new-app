@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { type Href, useRouter } from "@/lib/safe-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   BackHandler,
   Linking,
@@ -21,19 +21,19 @@ import { ListifyFonts } from "@/constants/typography";
 import { getUnreadCount as getNotificationUnreadCount } from "@/features/auth/services/auth-api";
 import { fetchSavedListings } from "@/features/listing/services/listing-api";
 import { getUnreadCount as getChatUnreadCount } from "@/features/messaging/services/chat-api";
+import { AppearanceBottomSheet } from "@/features/profile/components/appearance-bottom-sheet";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { useProtectedNavigation } from "@/lib/use-protected-navigation";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useTheme } from "@/providers/theme-provider";
+import type { ThemeColors } from "@/theme/theme-tokens";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchProfile } from "@/store/slices/auth-slice";
 import { showAuthGate } from "@/store/slices/auth-gate-slice";
 
 const HEADER_ART_HEIGHT = 248;
 const AVATAR_SIZE = 108;
-const AVATAR_LEFT = 20;
 const AVATAR_OVERLAP = AVATAR_SIZE / 2;
-
-const PRO_BADGE_COLOR = "#27bb97";
 
 type MenuRowProps = {
   icon: React.ComponentProps<typeof MaterialIcons>["name"];
@@ -41,10 +41,21 @@ type MenuRowProps = {
   iconColor: string;
   label: string;
   badge?: number;
+  trailingText?: string;
   onPress: () => void;
+  colors: ThemeColors;
 };
 
-function MenuRow({ icon, iconBg, iconColor, label, badge, onPress }: MenuRowProps) {
+function MenuRow({
+  icon,
+  iconBg,
+  iconColor,
+  label,
+  badge,
+  trailingText,
+  onPress,
+  colors,
+}: MenuRowProps) {
   return (
     <Pressable
       onPress={onPress}
@@ -59,31 +70,56 @@ function MenuRow({ icon, iconBg, iconColor, label, badge, onPress }: MenuRowProp
           <MaterialIcons name={icon} size={22} color={iconColor} />
         </View>
         <Text
-          className="text-[16px] text-[#1A1A1A]"
-          style={{ fontFamily: ListifyFonts.medium }}
+          className="text-[16px]"
+          style={{
+            fontFamily: ListifyFonts.medium,
+            color: colors.textPrimary,
+          }}
         >
           {label}
         </Text>
       </View>
       <View className="flex-row items-center gap-2">
+        {trailingText ? (
+          <Text
+            className="text-[13px]"
+            style={{
+              fontFamily: ListifyFonts.medium,
+              color: colors.textSecondary,
+            }}
+          >
+            {trailingText}
+          </Text>
+        ) : null}
         {badge != null && badge > 0 ? (
-          <View className="min-w-5 rounded-full bg-[#27BB97] px-1.5 py-0.5">
+          <View
+            className="min-w-5 rounded-full px-1.5 py-0.5"
+            style={{ backgroundColor: colors.primary }}
+          >
             <Text
-              className="text-center text-[10px] text-white"
-              style={{ fontFamily: ListifyFonts.bold }}
+              className="text-center text-[10px]"
+              style={{
+                fontFamily: ListifyFonts.bold,
+                color: colors.textOnPrimary,
+              }}
             >
               {badge > 99 ? "99+" : badge}
             </Text>
           </View>
         ) : null}
-        <MaterialIcons name="chevron-right" size={22} color="#C4C4C4" />
+        <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
       </View>
     </Pressable>
   );
 }
 
-function StatDivider() {
-  return <View className="h-8 w-px bg-[#E5E7EB]" />;
+function StatDivider({ colors }: { colors: ThemeColors }) {
+  return (
+    <View
+      className="h-8 w-px"
+      style={{ backgroundColor: colors.border }}
+    />
+  );
 }
 
 export function DashboardHomeScreen() {
@@ -91,6 +127,7 @@ export function DashboardHomeScreen() {
   const insets = useSafeAreaInsets();
   const bottomNavPadding = Math.max(insets.bottom, 8);
   const dispatch = useAppDispatch();
+  const { mode: themeMode, colors } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const network = useAppSelector((s) => s.network);
@@ -100,9 +137,9 @@ export function DashboardHomeScreen() {
     unreadMessages: 0,
     unreadNotifications: 0,
   });
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
 
   const loadDashboardData = useCallback(async () => {
-    // When offline, skip live API calls — keep last-known counts and cached profile
     if (isOffline) return;
 
     await dispatch(fetchProfile()).unwrap().catch(() => {});
@@ -199,8 +236,15 @@ export function DashboardHomeScreen() {
     [navigateProtected, user?.followersCount, user?.followingCount, user?.listingsCount],
   );
 
+  const appearanceLabel =
+    themeMode === "dark"
+      ? "Dark"
+      : themeMode === "light"
+        ? "Light"
+        : "System";
+
   return (
-    <View className="flex-1 bg-[#F6F7F8]">
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <View
         className="absolute inset-x-0 top-0 z-30 flex-row items-center justify-between px-5"
         style={{ paddingTop: insets.top + 8 }}
@@ -209,22 +253,31 @@ export function DashboardHomeScreen() {
         <Pressable
           onPress={() => handleBottomTabPress("home")}
           hitSlop={12}
-          className="h-10 w-10 items-center justify-center rounded-full bg-white/90"
-          style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+          className="h-10 w-10 items-center justify-center rounded-full"
+          style={({ pressed }) => ({
+            opacity: pressed ? 0.75 : 1,
+            backgroundColor: colors.surface + "E6",
+          })}
         >
-          <MaterialIcons name="arrow-back-ios" size={18} color="#1A1A1A" style={{marginLeft: 6}} />
+          <MaterialIcons
+            name="arrow-back-ios"
+            size={18}
+            color={colors.icon}
+            style={{ marginLeft: 6 }}
+          />
         </Pressable>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         bounces
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={["#27BB97"]}
-            tintColor="#27BB97"
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
         contentContainerStyle={{
@@ -239,18 +292,23 @@ export function DashboardHomeScreen() {
 
         {/* Avatar left (half on banner) — PRO / name / stats stacked below, left aligned */}
         <View
-          className="z-10 bg-white px-5 pb-2"
-          style={{ marginTop: -AVATAR_OVERLAP }}
+          className="z-10 px-5 pb-2"
+          style={{
+            marginTop: -AVATAR_OVERLAP,
+            backgroundColor: colors.surface,
+          }}
         >
           <View
             className="self-start"
             style={{ marginTop: -AVATAR_OVERLAP, marginBottom: 12 }}
           >
             <View
-              className="overflow-hidden rounded-full border-[4px] border-white bg-white"
+              className="overflow-hidden rounded-full border-[4px]"
               style={{
                 width: AVATAR_SIZE,
                 height: AVATAR_SIZE,
+                borderColor: colors.surface,
+                backgroundColor: colors.surface,
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.14,
@@ -268,15 +326,21 @@ export function DashboardHomeScreen() {
           </View>
 
           <Text
-            className="text-[26px] leading-8 text-[#1A1A1A]"
-            style={{ fontFamily: ListifyFonts.bold }}
+            className="text-[26px] leading-8"
+            style={{
+              fontFamily: ListifyFonts.bold,
+              color: colors.textPrimary,
+            }}
           >
             {displayName}
           </Text>
           {displayEmail ? (
             <Text
-              className="mt-1 text-[15px] text-[#9CA3AF]"
-              style={{ fontFamily: ListifyFonts.regular }}
+              className="mt-1 text-[15px]"
+              style={{
+                fontFamily: ListifyFonts.regular,
+                color: colors.textTertiary,
+              }}
               numberOfLines={1}
             >
               {displayEmail}
@@ -285,16 +349,24 @@ export function DashboardHomeScreen() {
 
           {/* Offline indicator */}
           {isOffline ? (
-            <View className="mt-2 flex-row items-center gap-1.5 self-start rounded-full bg-[#10231D] px-3 py-1">
+            <View
+              className="mt-2 flex-row items-center gap-1.5 self-start rounded-full px-3 py-1"
+              style={{ backgroundColor: "#10231D" }}
+            >
               <MaterialIcons name="cloud-off" size={12} color="#6EE7C7" />
-              <Text className="text-[11px] font-medium text-[#6EE7C7]">Offline — showing cached data</Text>
+              <Text
+                className="text-[11px] font-medium"
+                style={{ color: "#6EE7C7" }}
+              >
+                Offline — showing cached data
+              </Text>
             </View>
           ) : null}
 
           <View className="mt-5 flex-row items-center self-start">
             {stats.map((stat, index) => (
               <View key={stat.label} className="flex-row items-center">
-                {index > 0 ? <StatDivider /> : null}
+                {index > 0 ? <StatDivider colors={colors} /> : null}
                 <Pressable
                   onPress={stat.onPress}
                   style={({ pressed }) => ({
@@ -305,14 +377,20 @@ export function DashboardHomeScreen() {
                   })}
                 >
                   <Text
-                    className="text-[18px] text-[#1A1A1A]"
-                    style={{ fontFamily: ListifyFonts.bold }}
+                    className="text-[18px]"
+                    style={{
+                      fontFamily: ListifyFonts.bold,
+                      color: colors.textPrimary,
+                    }}
                   >
                     {stat.value}
                   </Text>
                   <Text
-                    className="mt-0.5 text-[12px] text-[#9CA3AF]"
-                    style={{ fontFamily: ListifyFonts.regular }}
+                    className="mt-0.5 text-[12px]"
+                    style={{
+                      fontFamily: ListifyFonts.regular,
+                      color: colors.textTertiary,
+                    }}
                   >
                     {stat.label}
                   </Text>
@@ -323,87 +401,116 @@ export function DashboardHomeScreen() {
         </View>
 
         {/* Menu list */}
-        <View className="mt-2 bg-white px-5 pt-4">
+        <View
+          className="mt-2 px-5 pt-4"
+          style={{ backgroundColor: colors.surface }}
+        >
           <MenuRow
+            colors={colors}
             icon="person-outline"
-            iconBg="rgba(244,63,156,0.15)"
-            iconColor={PRO_BADGE_COLOR}
+            iconBg={colors.primarySoft}
+            iconColor={colors.primary}
             label="Edit profile"
             onPress={() => navigateProtected("/profile-details-edit" as Href)}
           />
           <MenuRow
+            colors={colors}
             icon="bar-chart"
             iconBg="rgba(139,92,246,0.15)"
-            iconColor="#8B5CF6"
+            iconColor={colors.accentPurple}
             label="My listings"
             onPress={() => navigateProtected("/my-listings-active" as Href)}
           />
           <MenuRow
+            colors={colors}
             icon="favorite-border"
-            iconBg="rgba(39,187,151,0.12)"
-            iconColor="#27BB97"
+            iconBg={colors.primarySoft}
+            iconColor={colors.primary}
             label="Saved items"
             badge={menuCounts.savedItems}
             onPress={() => navigateProtected("/saved-items" as Href)}
           />
           <MenuRow
+            colors={colors}
             icon="chat-bubble-outline"
             iconBg="rgba(59,130,246,0.15)"
-            iconColor="#3B82F6"
+            iconColor={colors.accentBlue}
             label="Messages"
             badge={menuCounts.unreadMessages}
             onPress={() => navigateProtected("/messages-inbox" as Href, "messages")}
           />
           <MenuRow
+            colors={colors}
             icon="notifications-none"
-            iconBg="rgba(39,187,151,0.15)"
-            iconColor="#27BB97"
+            iconBg={colors.primarySoft}
+            iconColor={colors.primary}
             label="Notifications"
             badge={menuCounts.unreadNotifications}
             onPress={() => navigateProtected("/notifications-center" as Href, "notifications")}
           />
+
+          {/* ⇢ Appearance — new row placed between Notifications and Settings */}
           <MenuRow
+            colors={colors}
+            icon="palette"
+            iconBg="rgba(244,63,156,0.15)"
+            iconColor={colors.accentPink}
+            label="Appearance"
+            trailingText={appearanceLabel}
+            onPress={() => setAppearanceOpen(true)}
+          />
+
+          <MenuRow
+            colors={colors}
             icon="settings"
             iconBg="rgba(251,146,60,0.2)"
-            iconColor="#FB923C"
+            iconColor={colors.accentOrange}
             label="Settings"
             onPress={() => navigate("/app-settings" as Href)}
           />
           <MenuRow
+            colors={colors}
             icon="history"
             iconBg="rgba(99,102,241,0.12)"
-            iconColor="#6366F1"
+            iconColor={colors.accentIndigo}
             label="Activity Log"
             onPress={() => navigateProtected("/activity-log" as Href)}
           />
           <MenuRow
+            colors={colors}
             icon="devices"
             iconBg="rgba(59,130,246,0.12)"
-            iconColor="#3B82F6"
+            iconColor={colors.accentBlue}
             label="Devices"
             onPress={() => navigateProtected("/devices" as Href)}
           />
           <MenuRow
+            colors={colors}
             icon="security"
             iconBg="rgba(99,102,241,0.15)"
-            iconColor="#6366F1"
+            iconColor={colors.accentIndigo}
             label="Security"
             onPress={() => navigateProtected("/security" as Href)}
           />
 
-          <View className="my-2 h-px bg-[#F0F0F0]" />
+          <View
+            className="my-2 h-px"
+            style={{ backgroundColor: colors.border }}
+          />
 
           <MenuRow
+            colors={colors}
             icon="person-add-alt-1"
-            iconBg="#E5E7EB"
-            iconColor="#4B5563"
+            iconBg={colors.surfaceMuted}
+            iconColor={colors.textSecondary}
             label="Invite a friend"
             onPress={handleInviteFriend}
           />
           <MenuRow
+            colors={colors}
             icon="help-outline"
-            iconBg="#E5E7EB"
-            iconColor="#4B5563"
+            iconBg={colors.surfaceMuted}
+            iconColor={colors.textSecondary}
             label="Help"
             onPress={() => Linking.openURL("mailto:support@listifys.com")}
           />
@@ -419,11 +526,14 @@ export function DashboardHomeScreen() {
                 )
               }
               className="mt-4 items-center rounded-2xl py-4"
-              style={{ backgroundColor: PRO_BADGE_COLOR }}
+              style={{ backgroundColor: colors.primary }}
             >
               <Text
-                className="text-[16px] text-white"
-                style={{ fontFamily: ListifyFonts.semiBold }}
+                className="text-[16px]"
+                style={{
+                  fontFamily: ListifyFonts.semiBold,
+                  color: colors.textOnPrimary,
+                }}
               >
                 Sign in
               </Text>
@@ -431,12 +541,18 @@ export function DashboardHomeScreen() {
           ) : (
             <Pressable
               onPress={() => router.push("/logout-modal" as Href)}
-              className="mt-6 items-center rounded-xl bg-red-500 py-4"
-              style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
+              className="mt-6 items-center rounded-xl py-4"
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.9 : 1,
+                backgroundColor: colors.danger,
+              })}
             >
               <Text
-                className="text-[16px] text-white"
-                style={{ fontFamily: ListifyFonts.semiBold }}
+                className="text-[16px]"
+                style={{
+                  fontFamily: ListifyFonts.semiBold,
+                  color: colors.textOnPrimary,
+                }}
               >
                 Sign out
               </Text>
@@ -444,6 +560,12 @@ export function DashboardHomeScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* Appearance bottom sheet */}
+      <AppearanceBottomSheet
+        visible={appearanceOpen}
+        onClose={() => setAppearanceOpen(false)}
+      />
     </View>
   );
 }

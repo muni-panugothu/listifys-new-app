@@ -8,6 +8,7 @@ import {
   type MessageModalPayload,
   type MessageModalType,
 } from "@/lib/message-modal";
+import { useTheme } from "@/providers/theme-provider";
 
 const ICON_BY_TYPE: Record<MessageModalType, { name: keyof typeof MaterialIcons.glyphMap; color: string; bg: string }> = {
   error: { name: "error-outline", color: "#BA1A1A", bg: "rgba(186,26,26,0.1)" },
@@ -18,6 +19,7 @@ const ICON_BY_TYPE: Record<MessageModalType, { name: keyof typeof MaterialIcons.
 export function AppMessageModal() {
   const [visible, setVisible] = useState(false);
   const [payload, setPayload] = useState<MessageModalPayload | null>(null);
+  const { colors } = useTheme();
 
   useEffect(() => {
     return subscribeMessageModals((next) => {
@@ -37,11 +39,15 @@ export function AppMessageModal() {
       animationType="fade"
       onRequestClose={dismiss}
     >
-      <View className="flex-1 items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
+      <View
+        className="flex-1 items-center justify-center p-4"
+        style={{ backgroundColor: colors.scrim }}
+      >
         <Pressable className="absolute inset-0" onPress={dismiss} />
         <View
-          className="w-full max-w-sm overflow-hidden rounded-2xl bg-white"
+          className="w-full max-w-sm overflow-hidden rounded-2xl"
           style={{
+            backgroundColor: colors.surface,
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 8 },
             shadowOpacity: 0.25,
@@ -58,15 +64,21 @@ export function AppMessageModal() {
             </View>
 
             <Text
-              className="mb-2 text-center text-[20px] text-[#161D1A]"
-              style={{ fontFamily: ListifyFonts.semiBold }}
+              className="mb-2 text-center text-[20px]"
+              style={{
+                fontFamily: ListifyFonts.semiBold,
+                color: colors.textPrimary,
+              }}
             >
               {payload?.title}
             </Text>
             {payload?.message && payload.message !== payload.title ? (
               <Text
-                className="mb-6 text-center text-[14px] leading-5 text-[#3C4A44]"
-                style={{ fontFamily: ListifyFonts.regular }}
+                className="mb-6 text-center text-[14px] leading-5"
+                style={{
+                  fontFamily: ListifyFonts.regular,
+                  color: colors.textSecondary,
+                }}
               >
                 {payload.message}
               </Text>
@@ -76,12 +88,18 @@ export function AppMessageModal() {
 
             <Pressable
               onPress={dismiss}
-              className="h-12 w-full items-center justify-center rounded-xl bg-[#1A1A1A]"
-              style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
+              className="h-12 w-full items-center justify-center rounded-xl"
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.88 : 1,
+                backgroundColor: colors.textPrimary,
+              })}
             >
               <Text
-                className="text-[16px] text-white"
-                style={{ fontFamily: ListifyFonts.semiBold }}
+                className="text-[16px]"
+                style={{
+                  fontFamily: ListifyFonts.semiBold,
+                  color: colors.background,
+                }}
               >
                 OK
               </Text>

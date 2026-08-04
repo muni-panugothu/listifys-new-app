@@ -1,10 +1,12 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { memo } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { formatEventDisplayLabel } from "@/lib/event-dates";
 import { Image } from "@/lib/nativewind-interop";
+import { useTheme } from "@/providers/theme-provider";
 
 type EventListingCardProps = {
   event: ListingItem;
@@ -14,13 +16,14 @@ type EventListingCardProps = {
   onToggleSave: () => void;
 };
 
-export function EventListingCard({
+function EventListingCardImpl({
   event,
   priceLabel,
   isSaved,
   onPress,
   onToggleSave,
 }: EventListingCardProps) {
+  const { colors, isDark } = useTheme();
   const eventDate = (event as { eventDate?: string }).eventDate ?? "";
   const eventTime = (event as { eventTime?: string }).eventTime ?? "";
   const startDate = (event as { startDate?: string }).startDate;
@@ -31,20 +34,29 @@ export function EventListingCard({
   return (
     <Pressable
       onPress={onPress}
-      className="overflow-hidden rounded-xl bg-white"
       style={({ pressed }) => ({
+        overflow: "hidden",
+        borderRadius: 12,
+        backgroundColor: isDark ? colors.surfaceElevated : colors.surface,
         opacity: pressed ? 0.97 : 1,
         borderWidth: 1,
-        borderColor: "#F1F5F9",
+        borderColor: colors.border,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.06,
+        shadowOpacity: isDark ? 0.28 : 0.06,
         shadowRadius: 6,
         elevation: 2,
       })}
     >
-      {/* Image Section */}
-      <View className="relative h-56 w-full overflow-hidden bg-[#F3F4F6]">
+      <View
+        style={{
+          position: "relative",
+          height: 224,
+          width: "100%",
+          overflow: "hidden",
+          backgroundColor: colors.surfaceMuted,
+        }}
+      >
         {event.images?.[0] ? (
           <Image
             source={event.images[0]}
@@ -52,18 +64,23 @@ export function EventListingCard({
             transition={120}
             cachePolicy="memory-disk"
             recyclingKey={event.images[0]}
-            className="h-full w-full"
+            style={{ height: "100%", width: "100%" }}
           />
         ) : (
-          <View className="h-full w-full items-center justify-center">
-            <MaterialIcons name="event" size={44} color="#D1D5DB" />
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+            <MaterialIcons name="event" size={44} color={colors.iconMuted} />
           </View>
         )}
-        {/* Trending badge */}
         {featured ? (
           <View
-            className="absolute left-3 top-3 rounded-full bg-[#27BB97] px-3 py-1"
             style={{
+              position: "absolute",
+              left: 12,
+              top: 12,
+              borderRadius: 999,
+              backgroundColor: colors.primary,
+              paddingHorizontal: 12,
+              paddingVertical: 4,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.2,
@@ -72,94 +89,133 @@ export function EventListingCard({
             }}
           >
             <Text
-              className="text-[10px] uppercase text-white"
-              style={{ fontFamily: ListifyFonts.bold, letterSpacing: 1.5 }}
+              style={{
+                fontSize: 10,
+                textTransform: "uppercase",
+                color: colors.textOnPrimary,
+                fontFamily: ListifyFonts.bold,
+                letterSpacing: 1.5,
+              }}
             >
               Trending
             </Text>
           </View>
         ) : null}
-        {/* Save / Favourite button */}
         <Pressable
           onPress={onToggleSave}
-          className="absolute right-3 top-3 h-10 w-10 items-center justify-center rounded-full bg-white/70"
           style={{
+            position: "absolute",
+            right: 12,
+            top: 12,
+            height: 40,
+            width: 40,
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 20,
+            backgroundColor: isDark ? "rgba(22,26,31,0.75)" : "rgba(255,255,255,0.7)",
             borderWidth: 1,
-            borderColor: "rgba(255,255,255,0.5)",
+            borderColor: isDark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.5)",
           }}
         >
           <MaterialIcons
             name={isSaved ? "favorite" : "favorite-border"}
             size={20}
-            color={isSaved ? "#BA1A1A" : "#161D1A"}
+            color={isSaved ? "#BA1A1A" : colors.textPrimary}
           />
         </Pressable>
       </View>
 
-      {/* Content Section */}
-      <View className="p-4">
-        {/* Date & time */}
+      <View style={{ padding: 16 }}>
         {dateLabel ? (
-          <View className="mb-1 flex-row items-center gap-1">
-            <MaterialIcons name="schedule" size={14} color="#27BB97" />
+          <View style={{ marginBottom: 4, flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <MaterialIcons name="schedule" size={14} color={colors.primary} />
             <Text
-              className="text-[12px] text-[#27BB97]"
-              style={{ fontFamily: ListifyFonts.medium }}
+              style={{
+                fontSize: 12,
+                color: colors.primary,
+                fontFamily: ListifyFonts.medium,
+              }}
             >
               {dateLabel}
             </Text>
           </View>
         ) : null}
-        {/* Title */}
         <Text
           numberOfLines={2}
-          className="mb-1 text-[18px] text-[#161D1A]"
-          style={{ fontFamily: ListifyFonts.semiBold, lineHeight: 24 }}
+          style={{
+            marginBottom: 4,
+            fontSize: 18,
+            color: colors.textPrimary,
+            fontFamily: ListifyFonts.semiBold,
+            lineHeight: 24,
+          }}
         >
           {event.title}
         </Text>
-        {/* Location */}
         {event.location ? (
-          <View className="mb-4 flex-row items-center gap-1">
-            <MaterialIcons name="location-on" size={15} color="#6C7A74" />
+          <View style={{ marginBottom: 16, flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <MaterialIcons name="location-on" size={15} color={colors.iconMuted} />
             <Text
               numberOfLines={1}
-              className="flex-1 text-[14px] text-[#6C7A74]"
-              style={{ fontFamily: ListifyFonts.regular }}
+              style={{
+                flex: 1,
+                fontSize: 14,
+                color: colors.textSecondary,
+                fontFamily: ListifyFonts.regular,
+              }}
             >
               {event.location}
             </Text>
           </View>
         ) : (
-          <View className="mb-4" />
+          <View style={{ marginBottom: 16 }} />
         )}
-        {/* Price row + Book Now button */}
         <View
-          className="flex-row items-end justify-between pt-3"
-          style={{ borderTopWidth: 1, borderTopColor: "#F8FAFC" }}
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            paddingTop: 12,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+          }}
         >
           <View>
             <Text
-              className="text-[12px] text-[#6C7A74]"
-              style={{ fontFamily: ListifyFonts.medium }}
+              style={{
+                fontSize: 12,
+                color: colors.textSecondary,
+                fontFamily: ListifyFonts.medium,
+              }}
             >
               Entry Price
             </Text>
             <Text
-              className="text-[16px] text-[#161D1A]"
-              style={{ fontFamily: ListifyFonts.bold }}
+              style={{
+                fontSize: 16,
+                color: colors.textPrimary,
+                fontFamily: ListifyFonts.bold,
+              }}
             >
               {priceLabel}
             </Text>
           </View>
           <Pressable
             onPress={onPress}
-            className="rounded-lg bg-[#27BB97] px-6 py-2"
-            style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+            style={({ pressed }) => ({
+              borderRadius: 8,
+              backgroundColor: colors.primary,
+              paddingHorizontal: 24,
+              paddingVertical: 8,
+              opacity: pressed ? 0.85 : 1,
+            })}
           >
             <Text
-              className="text-[12px] text-white"
-              style={{ fontFamily: ListifyFonts.semiBold }}
+              style={{
+                fontSize: 12,
+                color: colors.textOnPrimary,
+                fontFamily: ListifyFonts.semiBold,
+              }}
             >
               Book Now
             </Text>
@@ -169,3 +225,5 @@ export function EventListingCard({
     </Pressable>
   );
 }
+
+export const EventListingCard = memo(EventListingCardImpl);

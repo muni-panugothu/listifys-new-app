@@ -1,21 +1,22 @@
-﻿import { MaterialIcons } from "@expo/vector-icons";
 import { type Href, useRouter } from "@/lib/safe-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AuthUI } from "@/constants/auth-ui";
+import { ListifyFonts } from "@/constants/typography";
+import { AuthField } from "@/features/auth/components/auth-field";
+import { AuthPrimaryButton } from "@/features/auth/components/auth-primary-button";
 import { AuthSkipButton } from "@/features/auth/components/auth-skip-button";
+import { AuthSocialRow } from "@/features/auth/components/auth-social-row";
 import { validateSignUpInput } from "@/lib/auth-validation";
 import { reportAuthSliceError, reportGoogleSignInFailure } from "@/lib/auth-error-display";
 import { navigateAfterAuthentication } from "@/lib/auth-navigation";
@@ -26,7 +27,12 @@ import {
 } from "@/lib/google-sign-in";
 import { showErrorToast } from "@/lib/toast";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { clearError, clearRegistrationEmail, googleLogin, register } from "@/store/slices/auth-slice";
+import {
+  clearError,
+  clearRegistrationEmail,
+  googleLogin,
+  register,
+} from "@/store/slices/auth-slice";
 
 export function SignUpScreen() {
   const router = useRouter();
@@ -39,9 +45,9 @@ export function SignUpScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  // Track previous registrationEmail so we only navigate when it freshly becomes non-null
   const prevRegEmail = useRef<string | null>(registrationEmail);
 
   const contentPaddingBottom = useMemo(
@@ -50,12 +56,10 @@ export function SignUpScreen() {
   );
   const isLoading = status === "loading";
 
-  // Clear any stale registration session the moment this screen mounts so going back
-  // from OTP doesn't immediately redirect here again.
   useEffect(() => {
     dispatch(clearRegistrationEmail());
     prevRegEmail.current = null;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -65,7 +69,6 @@ export function SignUpScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
-  // Only navigate when registrationEmail transitions from null → value (fresh registration)
   useEffect(() => {
     if (registrationEmail && registrationEmail !== prevRegEmail.current) {
       prevRegEmail.current = registrationEmail;
@@ -85,6 +88,11 @@ export function SignUpScreen() {
   }, []);
 
   const handleCreateAccount = () => {
+    if (!acceptedTerms) {
+      showErrorToast("Terms required", "Please accept the Terms & Condition to continue.");
+      return;
+    }
+
     const validation = validateSignUpInput(fullName, email, password);
     if (!validation.ok) {
       showErrorToast("Sign Up", validation.message);
@@ -117,7 +125,7 @@ export function SignUpScreen() {
   };
 
   return (
-    <View className="flex-1 bg-white">
+    <View className="flex-1" style={{ backgroundColor: AuthUI.bg }}>
       <StatusBar style="dark" />
       <AuthSkipButton />
 
@@ -129,121 +137,113 @@ export function SignUpScreen() {
           bounces={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
-            paddingTop: insets.top + 16,
+            paddingTop: insets.top + 48,
             paddingBottom: contentPaddingBottom,
-            paddingHorizontal: 16,
+            paddingHorizontal: 24,
             flexGrow: 1,
             justifyContent: "center",
           }}
         >
-          <View className="w-full self-center" style={{ maxWidth: 430 }}>
-            <View className="w-full items-center">
-              <Text className="text-gray-800 text-[30px] font-extrabold mb-5">
-                Sign Up
-              </Text>
+          <View className="w-full self-center" style={{ maxWidth: AuthUI.maxWidth }}>
+            <Text
+              className="text-center text-[28px] text-[#111111]"
+              style={{ fontFamily: ListifyFonts.bold }}
+            >
+              Create Account
+            </Text>
+            <Text
+              className="mb-8 mt-2 px-2 text-center text-[14px] leading-5"
+              style={{ fontFamily: ListifyFonts.regular, color: AuthUI.subtitle }}
+            >
+              Fill your information below or register with your social account.
+            </Text>
 
-              <View className="w-full flex flex-col gap-3">
-                <TextInput
-                  value={fullName}
-                  onChangeText={setFullName}
-                  placeholder="Full Name"
-                  placeholderTextColor="#9CA3AF"
-                  autoCapitalize="words"
-                  className="border border-gray-300 p-4 rounded-full w-full text-gray-800"
-                />
-                <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="Email"
-                  placeholderTextColor="#9CA3AF"
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  className="border border-gray-300 p-4 rounded-full w-full text-gray-800"
-                />
-                <View className="border border-gray-300 rounded-full w-full flex-row items-center pr-4">
-                  <TextInput
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="Password"
-                    placeholderTextColor="#9CA3AF"
-                    secureTextEntry={!showPassword}
-                    className="flex-1 p-4 text-gray-800"
-                  />
-                  <Pressable onPress={() => setShowPassword((v) => !v)} hitSlop={8}>
-                    <MaterialIcons
-                      name={showPassword ? "visibility" : "visibility-off"}
-                      size={20}
-                      color="#9CA3AF"
-                    />
-                  </Pressable>
-                </View>
-              </View>
+            <AuthField
+              label="Name"
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="John Doe"
+              autoCapitalize="words"
+            />
+            <AuthField
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="example@gmail.com"
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <AuthField
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              isPassword
+              showPassword={showPassword}
+              onTogglePassword={() => setShowPassword((v) => !v)}
+            />
 
-              <Pressable
-                onPress={handleCreateAccount}
-                disabled={isLoading || isGoogleLoading}
-                style={({ pressed }) => [
-                  { opacity: pressed ? 0.9 : 1 },
-                  { opacity: isLoading ? 0.7 : 1 },
-                ]}
-                className="bg-black text-white px-5 py-3 rounded-full w-full items-center mt-5"
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text className="text-white text-center font-semibold">
-                    Create Account
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-
-            <View className="flex-row items-center gap-3 w-full my-7">
-              <View className="flex-1 bg-gray-400 h-px" />
-              <Text className="text-gray-400">or</Text>
-              <View className="flex-1 bg-gray-400 h-px" />
-            </View>
-
-            <View className="w-full flex flex-col gap-2">
-              <Pressable
-                onPress={handleGoogleSignIn}
-                disabled={isLoading || isGoogleLoading}
-                style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}
-                className="bg-gray-200 text-black px-6 py-3 rounded-full flex-row items-center justify-center gap-4"
-              >
-                <Image
-                  source={require("../../../assets/google.jpg")}
-                  className="h-8 w-8 rounded-full"
-                />
-                <Text className="font-semibold text-black">
-                  {isGoogleLoading ? "Connecting..." : "Continue with Google"}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => {
-                  router.push("/mobile" as Href);
+            <Pressable
+              onPress={() => setAcceptedTerms((v) => !v)}
+              className="mb-6 flex-row items-center"
+              hitSlop={6}
+            >
+              <View
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 5,
+                  borderWidth: acceptedTerms ? 0 : 1.5,
+                  borderColor: AuthUI.muted,
+                  backgroundColor: acceptedTerms ? AuthUI.primary : "transparent",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
-                className="bg-gray-200 text-black px-6 py-3 rounded-full flex-row items-center justify-center gap-4"
               >
-                <Image
-                  source={require("../../../assets/mobile.jpg")}
-                  className="h-8 w-10 rounded-lg"
-                  resizeMode="contain"
-                />
-                <Text className="font-semibold text-black">Continue with Mobile</Text>
-              </Pressable>
-            </View>
+                {acceptedTerms ? (
+                  <Text style={{ color: "#FFF", fontSize: 12, fontWeight: "700" }}>✓</Text>
+                ) : null}
+              </View>
+              <Text
+                className="ml-2.5 text-[14px]"
+                style={{
+                  fontFamily: ListifyFonts.medium,
+                  color: AuthUI.text,
+                  textDecorationLine: "underline",
+                }}
+              >
+                Agree with Terms & Condition
+              </Text>
+            </Pressable>
 
-            <Text className="text-gray-500 text-center mt-4">
+            <AuthPrimaryButton
+              label="Sign Up"
+              onPress={handleCreateAccount}
+              loading={isLoading}
+              disabled={isGoogleLoading}
+            />
+
+            <AuthSocialRow
+              mode="sign-up"
+              onGooglePress={handleGoogleSignIn}
+              googleLoading={isGoogleLoading}
+              disabled={isLoading}
+            />
+
+            <Text
+              className="mt-8 text-center text-[14px]"
+              style={{ fontFamily: ListifyFonts.regular, color: AuthUI.subtitle }}
+            >
               Already have an account?{" "}
               <Text
-                className="text-[14px] font-bold text-gray-800"
-                onPress={() => {
-                  router.push("/sign-in" as Href);
+                style={{
+                  fontFamily: ListifyFonts.semiBold,
+                  color: AuthUI.text,
+                  textDecorationLine: "underline",
                 }}
+                onPress={() => router.push("/sign-in" as Href)}
               >
-                Login
+                Sign In
               </Text>
             </Text>
           </View>

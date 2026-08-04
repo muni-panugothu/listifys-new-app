@@ -82,22 +82,26 @@ function isAndroidEmulator(): boolean {
   return Platform.OS === "android" && !Device.isDevice;
 }
 
-function getMetroPackagerHost(): string | undefined {
+function getRawMetroHost(): string | undefined {
   try {
     const scriptURL = NativeModules.SourceCode?.scriptURL as string | undefined;
     if (!scriptURL) return undefined;
-    const match = scriptURL.match(/^https?:\/\/([^/:]+)/i);
-    const host = match?.[1];
-    if (
-      host &&
-      host.includes(".") &&
-      host !== "127.0.0.1" &&
-      host !== "localhost"
-    ) {
-      return host;
-    }
+    return scriptURL.match(/^https?:\/\/([^/:]+)/i)?.[1];
   } catch {
-    // ignore
+    return undefined;
+  }
+}
+
+/** True when Metro is reached through `adb reverse tcp:8081`, so port 5000 tunnels too. */
+function isMetroOverLoopback(): boolean {
+  const host = getRawMetroHost();
+  return host === "127.0.0.1" || host === "localhost";
+}
+
+function getMetroPackagerHost(): string | undefined {
+  const host = getRawMetroHost();
+  if (host && host.includes(".") && host !== "127.0.0.1" && host !== "localhost") {
+    return host;
   }
   return undefined;
 }
@@ -161,12 +165,42 @@ function getConfiguredApiBaseUrl(): string | undefined {
   return value ? value.replace(/\/$/, "") : undefined;
 }
 
+function getUrlHost(url: string): string | undefined {
+  return url.match(/^https?:\/\/([^/:]+)/i)?.[1];
+}
+
+function isPrivateLanHost(host: string | undefined): boolean {
+  if (!host) return false;
+  return /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+}
+
+/**
+ * A `.env` LAN IP goes stale every time the dev machine changes Wi-Fi network.
+ * The Metro packager host is known-reachable (the bundle loaded from it), so it
+ * wins over a configured private IP that no longer matches.
+ */
+function getDevSelfHealingBaseUrl(): string | undefined {
+  if (typeof __DEV__ === "undefined" || !__DEV__) return undefined;
+
+  const configured = getConfiguredApiBaseUrl();
+  if (!configured || !isPrivateLanHost(getUrlHost(configured))) return undefined;
+
+  // Bundle arrived over the USB tunnel, so the LAN IP is unusable but port 5000 is not.
+  if (isMetroOverLoopback()) return "http://127.0.0.1:5000";
+
+  const lanHost = getDevLanHost();
+  if (!lanHost || lanHost === getUrlHost(configured)) return undefined;
+
+  return `http://${lanHost}:5000`;
+}
+
 function resolveApiBaseUrl(): string {
   const explicitBaseUrl = getConfiguredApiBaseUrl();
 
-  // User-configured URL always wins (physical device + local server).
+  // User-configured URL always wins (physical device + local server), unless its
+  // LAN IP is stale relative to the Metro host we are already talking to.
   if (explicitBaseUrl) {
-    return explicitBaseUrl;
+    return getDevSelfHealingBaseUrl() ?? explicitBaseUrl;
   }
 
   if (typeof __DEV__ !== "undefined" && __DEV__) {
@@ -228,24 +262,26 @@ function getCandidateApiBaseUrls() {
   };
 
   const configured = getConfiguredApiBaseUrl();
-  if (configured) {
-    add(configured, { prepend: true });
-  }
+  const selfHealing = getDevSelfHealingBaseUrl();
 
   if (typeof __DEV__ !== "undefined" && __DEV__) {
-    const lanHost = getDevLanHost();
-    if (lanHost) {
-      add(`http://${lanHost}:5000`);
-    }
-    // USB dev: adb reverse tcp:5000 tcp:5000 — works when Wi-Fi to PC IP is blocked/isolated
+    // Reachable hosts first so a stale configured LAN IP never costs a full timeout.
+    add(selfHealing);
     if (isAndroidPhysicalDevice()) {
+      // USB dev: adb reverse tcp:5000 tcp:5000 — works when Wi-Fi to the PC is blocked/isolated.
       add("http://127.0.0.1:5000");
     }
     if (isAndroidEmulator()) {
       add("http://10.0.2.2:5000");
     }
+    const lanHost = getDevLanHost();
+    if (lanHost) {
+      add(`http://${lanHost}:5000`);
+    }
   }
 
+  // A stale LAN IP stays as a last resort rather than blocking every request.
+  add(configured, { prepend: !selfHealing });
   add(getAuthApiBaseUrl());
 
   return candidates;

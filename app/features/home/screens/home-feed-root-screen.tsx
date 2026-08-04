@@ -5,7 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     AppState,
     Dimensions,
+    FlatList,
     Modal,
+    Platform,
     Pressable,
     RefreshControl,
     ScrollView,
@@ -14,13 +16,25 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  HomeCategoryMoreTile,
-  HomeCategoryTile,
-} from "@/components/home-category-tile";
 import { ListingItemsGridCard, getListingGridCarouselHeight } from "@/components/listing-items-grid-card";
-import { TrendingListingCard } from "@/components/trending-listing-card";
-import { CATEGORIES, type CategorySlug } from "@/constants/categories";
+import {
+  ExploreNearYouCard,
+} from "@/features/home/components/explore-near-you-card";
+import {
+  FeaturedProfileCard,
+} from "@/features/home/components/featured-profile-card";
+import { HomeExploreCategoryCard } from "@/features/home/components/home-explore-category-card";
+import {
+  HomeSpotlightCarousel,
+  type HomeSpotlightItem,
+} from "@/features/home/components/home-spotlight-carousel";
+import {
+  EXPLORE_NEAR_YOU,
+  FEATURED_ARTISTS,
+  type ExploreNearYouItem,
+  type FeaturedArtistItem,
+} from "@/features/home/data/featured-mock-data";
+import { HOME_EXPLORE_CATEGORIES } from "@/features/home/data/home-explore-categories";
 import { ListifyFonts, ListifyTypography } from "@/constants/typography";
 import { getUnreadCount as getNotificationUnreadCount } from "@/features/auth/services/auth-api";
 import { subscribeNotificationUnreadAdjust } from "@/lib/notification-unread-bus";
@@ -39,17 +53,17 @@ import { useHomeNotificationPrompt } from "@/hooks/use-home-notification-prompt"
 import { ProfileAvatarImage } from "@/components/profile-avatar-image";
 import { Image } from "@/lib/nativewind-interop";
 import { useLocale } from "@/providers/locale-provider";
+import { useTheme } from "@/providers/theme-provider";
 import { filterOutOwnListings } from "@/lib/is-own-listing";
+import { formatPrice } from "@/lib/currency";
 import { resolveListingDistanceKm, getListingDistanceLabel } from "@/lib/listing-distance";
 import {
   ensureDeviceLocationAccess,
   extractCityFromLocationLabel,
 } from "@/lib/location-service";
-import { getCategoryHref } from "@/lib/navigate-to-category";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchProfile } from "@/store/slices/auth-slice";
-import { showAuthGate } from "@/store/slices/auth-gate-slice";
 import {
   hydrateAppLocation,
   refreshDeviceLocation,
@@ -69,21 +83,50 @@ const RECENTLY_VIEWED_ROW_HEIGHT = getListingGridCarouselHeight(GRID_CARD_WIDTH)
 const SLOW_HOME_FEED_MS = 3500;
 const SELL_BANNER_CAMERA_IMAGE =
   "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=500&q=80";
-const GRID_GAP = 10;
-const GRID_H_PADDING = 16;
-const HOME_GRID_COLS = 4;
-const HOME_PREVIEW_COUNT = 7;
-const CATEGORY_CARD_SIZE =
-  (SCREEN_WIDTH - GRID_H_PADDING * 2 - GRID_GAP * (HOME_GRID_COLS - 1)) /
-  HOME_GRID_COLS;
+const EXPLORE_GAP = 8;
+const EXPLORE_ROW_GAP = 6;
+const EXPLORE_H_PAD = 16;
+/** Two-row horizontal Explore — marketplace categories. */
+const EXPLORE_CARD_W = Math.round(SCREEN_WIDTH * 0.28);
+/** Card body only — icon overflow sits above this. */
+const EXPLORE_CARD_H = Math.round(EXPLORE_CARD_W * 0.78);
+/** Pair categories into vertical columns for a 2-row horizontal scroller. */
+function chunkExploreColumns<T>(items: T[], rows = 2): T[][] {
+  const columns: T[][] = [];
+  for (let i = 0; i < items.length; i += rows) {
+    columns.push(items.slice(i, i + rows));
+  }
+  return columns;
+}
 
-const gridCategories = CATEGORIES.map((c) => ({
-  id: c.slug,
-  label: c.name,
-  icon: c.icon,
-}));
+function splitHomeLocationLabel(label: string) {
+  const trimmed = label?.trim() || "Set location";
+  if (trimmed === "Set location" || trimmed.startsWith("Detecting")) {
+    return { primary: trimmed, secondary: "" };
+  }
+  const parts = trimmed
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length <= 1) {
+    return { primary: parts[0] ?? trimmed, secondary: "" };
+  }
+  return {
+    primary: parts[0],
+    secondary: parts.slice(1).join(", "),
+  };
+}
 
-const homePreviewCategories = gridCategories.slice(0, HOME_PREVIEW_COUNT);
+type FreshRecommendationItem = {
+  id: string;
+  title: string;
+  price: number | null;
+  currency?: string;
+  image: string;
+  category: string;
+  createdAt?: string;
+  distanceLabel?: string;
+};
 
 function buildSavedIds(feedData: FeedResponse | null, userId?: string | null) {
   const ids = new Set<string>();
@@ -108,6 +151,7 @@ export function HomeFeedRootScreen() {
   useHomeNotificationPrompt();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
+  const { colors, isDark } = useTheme();
   const { isoCountryCode: localeCountryCode } = useLocale();
   const user = useAppSelector((s) => s.auth.user);
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
@@ -374,29 +418,200 @@ export function HomeFeedRootScreen() {
   const { refreshing, onRefresh } = usePullToRefresh(handleRefresh);
 
   useEffect(() => {
-    return subscribeNotificationUnreadAdjust((delta) => {
+    const unsub = subscribeNotificationUnreadAdjust((delta) => {
       setNotificationUnreadCount((count) => Math.max(0, count + delta));
     });
+    return () => { unsub(); };
   }, []);
 
   const handleBottomTabPress = useTabNavigation(() => setShowLoginSheet(true));
 
   const displayName = user?.name?.trim() || "Guest";
 
-  const topBarHeight = insets.top + 80;
+  // Pre-filter recently viewed once instead of inside renderItem
+  const filteredRecentlyViewed = useMemo(
+    () => filterOutOwnListings(recentlyViewed, user?.id).slice(0, 12),
+    [recentlyViewed, user?.id],
+  );
 
-  const trendingCardWidth = SCREEN_WIDTH * 0.58;
 
-  type FreshRecommendationItem = {
-    id: string;
-    title: string;
-    price: number | null;
-    currency?: string;
-    image: string;
-    category: string;
-    createdAt?: string;
-    distanceLabel?: string;
-  };
+  const handleToggleSave = useCallback(async (item: ListingItem) => {
+    if (isOffline) {
+      return;
+    }
+
+    try {
+      const category = (item as any)._source ?? item.category ?? "electronics";
+      const res = await toggleSaveListing(category, item._id);
+      setSavedIds((prev) => {
+        const next = new Set(prev);
+        if (res.saved) next.add(item._id);
+        else next.delete(item._id);
+        return next;
+      });
+    } catch {
+      // silently fail
+    }
+  }, [isOffline]);
+
+  const recentKeyExtractor = useCallback(
+    (item: RecentlyViewedItem) => item._id,
+    [],
+  );
+
+  const handleSpotlightPress = useCallback(
+    (item: HomeSpotlightItem) => {
+      pushToDetail(item.category, item.id);
+    },
+    [pushToDetail],
+  );
+
+  const handleSpotlightSave = useCallback(
+    (item: HomeSpotlightItem) => {
+      const listing = allListings.find((l) => l._id === item.id);
+      if (listing) void handleToggleSave(listing);
+    },
+    [allListings, handleToggleSave],
+  );
+
+  // Stable renderItem for recently viewed
+  const renderRecentItem = useCallback(
+    ({ item }: { item: RecentlyViewedItem }) => {
+      const feedListing = allListings.find((l) => l._id === item._id);
+      const userLatLng =
+        canShowDistanceOnCards &&
+        locationCoords.lat != null &&
+        locationCoords.lng != null
+          ? { lat: locationCoords.lat, lng: locationCoords.lng }
+          : null;
+
+      const distanceKm = userLatLng
+        ? resolveListingDistanceKm(
+            {
+              _id: item._id,
+              category: item.category,
+              coordinates: item.coordinates ?? feedListing?.coordinates,
+              distance: (feedListing as { distance?: number } | undefined)?.distance,
+            },
+            userLatLng,
+          )
+        : null;
+
+      const distanceLabel =
+        distanceKm != null
+          ? getListingDistanceLabel(
+              {
+                _id: item._id,
+                category: item.category,
+                distance: distanceKm,
+                coordinates: item.coordinates ?? feedListing?.coordinates,
+                countryCode: item.countryCode ?? item.isoCountryCode,
+                currency: item.currency,
+              },
+              userLatLng,
+              isoCountryCode || item.countryCode || item.isoCountryCode,
+            )
+          : undefined;
+
+      return (
+        <ListingItemsGridCard
+          layout="carousel"
+          width={GRID_CARD_WIDTH}
+          title={item.title}
+          price={item.price}
+          currency={item.currency}
+          image={item.images?.[0]}
+          createdAt={item.createdAt}
+          distanceLabel={distanceLabel}
+          isSaved={savedIds.has(item._id)}
+          onPress={() => pushToDetail(item.category, item._id)}
+          onToggleSave={() => {
+            const listing = allListings.find((l) => l._id === item._id);
+            if (listing) void handleToggleSave(listing);
+          }}
+        />
+      );
+    },
+    [allListings, canShowDistanceOnCards, handleToggleSave, isoCountryCode, locationCoords.lat, locationCoords.lng, pushToDetail, savedIds],
+  );
+
+  // ============================================================
+  // Local UI state for the "Featured Artists" & "Explore Near You"
+  // demo sections (visual-only, no API/business-logic changes).
+  // ============================================================
+  const [savedArtistIds, setSavedArtistIds] = useState<Set<string>>(new Set());
+  const [savedExploreIds, setSavedExploreIds] = useState<Set<string>>(new Set());
+
+  const featuredCardWidth = SCREEN_WIDTH * 0.48;
+  const exploreCardWidth = SCREEN_WIDTH * 0.5;
+
+  const handleToggleArtistSave = useCallback((id: string) => {
+    setSavedArtistIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleToggleExploreSave = useCallback((id: string) => {
+    setSavedExploreIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const featuredArtistKeyExtractor = useCallback(
+    (item: FeaturedArtistItem) => item.id,
+    [],
+  );
+  const exploreKeyExtractor = useCallback(
+    (item: ExploreNearYouItem) => item.id,
+    [],
+  );
+
+  const renderFeaturedArtistItem = useCallback(
+    ({ item }: { item: FeaturedArtistItem }) => (
+      <FeaturedProfileCard
+        id={item.id}
+        name={item.name}
+        subtitle={item.subtitle}
+        avatar={item.avatar}
+        stats={item.stats}
+        eventDate={item.eventDate}
+        cardWidth={featuredCardWidth}
+        isSaved={savedArtistIds.has(item.id)}
+        onPress={() => {}}
+        onToggleSave={() => handleToggleArtistSave(item.id)}
+      />
+    ),
+    [featuredCardWidth, handleToggleArtistSave, savedArtistIds],
+  );
+
+  const renderExploreItem = useCallback(
+    ({ item }: { item: ExploreNearYouItem }) => (
+      <ExploreNearYouCard
+        id={item.id}
+        image={item.image}
+        location={item.location}
+        title={item.title}
+        dateTime={item.dateTime}
+        cardWidth={exploreCardWidth}
+        isSaved={savedExploreIds.has(item.id)}
+        onPress={() => {}}
+        onToggleSave={() => handleToggleExploreSave(item.id)}
+      />
+    ),
+    [exploreCardWidth, handleToggleExploreSave, savedExploreIds],
+  );
+
+  const topBarHeight = insets.top + 64;
+  const locationParts = useMemo(
+    () => splitHomeLocationLabel(displayLocation),
+    [displayLocation],
+  );
 
   const freshRecommendations = useMemo((): FreshRecommendationItem[] => {
     const userLatLng = canShowDistanceOnCards
@@ -453,166 +668,124 @@ export function HomeFeedRootScreen() {
     }));
   }, [allListings, canShowDistanceOnCards, isoCountryCode, locationCoords.lat, locationCoords.lng]);
 
-  const navigateToCategory = useCallback(
-    (catId: CategorySlug) => {
-      router.push(getCategoryHref(catId));
-    },
-    [router],
-  );
-
-  const handleToggleSave = useCallback(async (item: ListingItem) => {
-    if (isOffline) {
-      return;
-    }
-
-    try {
-      const category = (item as any)._source ?? item.category ?? "electronics";
-      const res = await toggleSaveListing(category, item._id);
-      setSavedIds((prev) => {
-        const next = new Set(prev);
-        if (res.saved) next.add(item._id);
-        else next.delete(item._id);
-        return next;
-      });
-    } catch {
-      // silently fail
-    }
-  }, [isOffline]);
+  const spotlightItems = useMemo((): HomeSpotlightItem[] => {
+    return freshRecommendations.map((item) => ({
+      id: item.id,
+      title: item.title,
+      image: item.image,
+      category: item.category,
+      isSaved: savedIds.has(item.id),
+      distanceLabel: item.distanceLabel,
+      priceLabel:
+        item.price != null
+          ? formatPrice(item.price, item.currency, isoCountryCode)
+          : undefined,
+    }));
+  }, [freshRecommendations, isoCountryCode, savedIds]);
 
   return (
-    <View className="flex-1 bg-[#F6F7F8]">
-      {/* ===== TOP APP BAR ===== */}
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
+      {/* ===== TOP APP BAR — location + profile (reference layout) ===== */}
       <View
-        className="absolute inset-x-0 top-0 z-50 flex-row items-start justify-between bg-[#F6F7F8] px-4"
         style={{
-          paddingTop: insets.top + 6,
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: 0,
+          zIndex: 50,
+          paddingTop: insets.top + 8,
+          paddingHorizontal: 16,
+          paddingBottom: 10,
           height: topBarHeight,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.05,
-          shadowRadius: 2,
-          elevation: 2,
+          backgroundColor: colors.background,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
         }}
       >
-  <View>
-<View className="flex flex-row items-center justify-between w-full" >
-<View className="flex flex-row items-center gap-3">
-          <View className="relative">
-            <Pressable
-              onPress={() => handleBottomTabPress("profile")}
-              className="h-15 w-15 overflow-hidden rounded-full border-2 border-white"
-              style={({ pressed }) => ({
-                opacity: pressed ? 0.85 : 1,
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-                elevation: 3,
-              })}
+        <Pressable
+          onPress={() => router.push("/location-picker" as Href)}
+          style={({ pressed }) => ({
+            flex: 1,
+            flexDirection: "row",
+            alignItems: "flex-start",
+            marginRight: 12,
+            opacity: pressed ? 0.75 : 1,
+          })}
+        >
+          <MaterialIcons
+            name="location-on"
+            size={22}
+            color={colors.textPrimary}
+            style={{ marginTop: 1, marginRight: 4 }}
+          />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 2,
+              }}
             >
-              <ProfileAvatarImage
-                user={user}
-                fallbackName={displayName}
-                className="h-full w-full"
-                iconSize={24}
+              <Text
+                numberOfLines={1}
+                style={{
+                  flexShrink: 1,
+                  fontFamily: ListifyFonts.bold,
+                  fontSize: 17,
+                  color: colors.textPrimary,
+                  ...(Platform.OS === "android"
+                    ? { includeFontPadding: false }
+                    : {}),
+                }}
+              >
+                {locationParts.primary}
+              </Text>
+              <MaterialIcons
+                name="keyboard-arrow-down"
+                size={20}
+                color={colors.textPrimary}
               />
-            </Pressable>
+            </View>
+            {locationParts.secondary ? (
+              <Text
+                numberOfLines={1}
+                style={{
+                  marginTop: 1,
+                  fontFamily: ListifyFonts.regular,
+                  fontSize: 13,
+                  color: colors.textSecondary,
+                  ...(Platform.OS === "android"
+                    ? { includeFontPadding: false }
+                    : {}),
+                }}
+              >
+                {locationParts.secondary}
+              </Text>
+            ) : null}
           </View>
-
-          <View className="pt-0.5 leading-tight">
-            <Text className="text-[18px]" style={ListifyTypography.label}>
-              Welcome
-            </Text>
-            <Text
-              className=" text-[13px]"
-              style={ListifyTypography.name}
-              numberOfLines={1}
-            >
-              {displayName}
-            </Text>
-          </View>
-
-        </View>
-
-        <View className="flex-row items-center gap-4">
-          <Pressable
-            onPress={() => {
-              if (isAuthenticated) {
-                router.push("/messages-inbox" as Href);
-                return;
-              }
-              dispatch(showAuthGate({ action: "messages", redirectTo: "/messages-inbox" }));
-            }}
-            className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-xl"
-            style={({ pressed }) => ({
-              opacity: pressed ? 0.7 : 1,
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.08,
-              shadowRadius: 4,
-              elevation: 2,
-            })}
-          >
-            <MaterialIcons name="chat-bubble-outline" size={24} color="#161D1A" />
-            {chatUnreadCount > 0 && (
-              <View className="absolute -right-0.5 -top-0.5 min-w-4.5 items-center justify-center rounded-full bg-red-500 px-1 py-0.5">
-                <Text className="text-[10px] font-bold text-white">
-                  {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
-                </Text>
-              </View>
-            )}
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              if (isAuthenticated) {
-                router.push("/notifications-center" as Href);
-                return;
-              }
-              dispatch(showAuthGate({ action: "notifications", redirectTo: "/notifications-center" }));
-            }}
-            className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-xl"
-            style={({ pressed }) => ({
-              opacity: pressed ? 0.7 : 1,
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.08,
-              shadowRadius: 4,
-              elevation: 2,
-            })}
-          >
-            <MaterialIcons name="notifications-none" size={24} color="#161D1A" />
-            {notificationUnreadCount > 0 && (
-              <View className="absolute -right-0.5 -top-0.5 min-w-4.5 items-center justify-center rounded-full bg-red-500 px-1 py-0.5">
-                <Text className="text-[10px] font-bold text-white">
-                  {notificationUnreadCount > 99 ? "99+" : notificationUnreadCount}
-                </Text>
-              </View>
-            )}
-          </Pressable>
-        </View>
-</View>
+        </Pressable>
 
         <Pressable
-              onPress={() => router.push("/location-picker" as Href)}
-              className="my-1 flex-row items-center gap-1"
-              style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
-            >
-              <MaterialIcons name="location-on" size={14} color="#27BB97" />
-              <Text
-                className="flex-1 text-[12px]"
-                style={ListifyTypography.label}
-                numberOfLines={1}
-              >
-                {displayLocation}
-              </Text>
-              <MaterialIcons name="keyboard-arrow-down" size={18} color="#9CA3AF" />
-            </Pressable>
-  </View>
-
-        
-
-
+          onPress={() => handleBottomTabPress("profile")}
+          style={({ pressed }) => ({
+            width: 42,
+            height: 42,
+            borderRadius: 21,
+            overflow: "hidden",
+            opacity: pressed ? 0.88 : 1,
+            borderWidth: 2,
+            borderColor: isDark ? "rgba(167,139,250,0.55)" : "#5B4B8A",
+            backgroundColor: colors.surface,
+          })}
+        >
+          <ProfileAvatarImage
+            user={user}
+            fallbackName={displayName}
+            className="h-full w-full"
+            iconSize={22}
+          />
+        </Pressable>
       </View>
 
       {/* ===== SCROLLABLE CONTENT ===== */}
@@ -622,8 +795,8 @@ export function HomeFeedRootScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={["#27BB97"]}
-            tintColor="#27BB97"
+            colors={[colors.primary]}
+            tintColor={colors.primary}
             progressViewOffset={topBarHeight}
           />
         }
@@ -635,45 +808,49 @@ export function HomeFeedRootScreen() {
       >
         <View className="mb-5 px-4">
           <Text
-            className="mb-4 text-[26px] leading-8"
-            style={ListifyTypography.heading}
-          >
-            What are you looking for?
-          </Text>
-
-          <Pressable
-            onPress={() => router.push("/search-home" as Href)}
-            className="mb-5 h-18 flex-row items-center rounded-full border border-[#E8E8E8] bg-white px-4"
             style={{
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.04,
-              shadowRadius: 6,
-              elevation: 1,
+              fontFamily: ListifyFonts.bold,
+              fontSize: 22,
+              color: colors.textPrimary,
+              marginBottom: 6,
+              ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
             }}
           >
-            <MaterialIcons name="search" size={22} color="#B8B8B8" />
-            <Text className="ml-3 flex-1 text-[15px]" style={ListifyTypography.label}>
-              Search here
-            </Text>
-          </Pressable>
+            Explore
+          </Text>
 
-          <View className="flex-row flex-wrap" style={{ gap: GRID_GAP }}>
-            {homePreviewCategories.map((cat) => (
-              <HomeCategoryTile
-                key={cat.id}
-                slug={cat.id}
-                label={cat.label}
-                icon={cat.icon}
-                size={CATEGORY_CARD_SIZE}
-                onPress={() => navigateToCategory(cat.id)}
-              />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingRight: EXPLORE_H_PAD,
+              paddingTop: 6,
+              paddingBottom: 4,
+              gap: EXPLORE_GAP,
+            }}
+            decelerationRate="fast"
+            nestedScrollEnabled
+          >
+            {chunkExploreColumns(HOME_EXPLORE_CATEGORIES, 2).map((column, colIndex) => (
+              <View
+                key={`explore-col-${colIndex}`}
+                style={{
+                  width: EXPLORE_CARD_W,
+                  gap: EXPLORE_ROW_GAP,
+                }}
+              >
+                {column.map((cat) => (
+                  <HomeExploreCategoryCard
+                    key={cat.id}
+                    category={cat}
+                    width={EXPLORE_CARD_W}
+                    height={EXPLORE_CARD_H}
+                    onPress={() => router.push(cat.href)}
+                  />
+                ))}
+              </View>
             ))}
-            <HomeCategoryMoreTile
-              size={CATEGORY_CARD_SIZE}
-              onPress={() => handleBottomTabPress("search")}
-            />
-          </View>
+          </ScrollView>
         </View>
 
         {/* Sell Banner */}
@@ -742,72 +919,127 @@ export function HomeFeedRootScreen() {
           </View>
         </View> */}
 
-        {/* Fresh recommendations � hidden when offline (cached content only) */}
+        {/* In the spotlight — same feed data as Fresh recommendations */}
         {!isOffline ? (
-        <View className="mb-6 mt-5">
-          <View className="mb-4 flex-row items-center justify-between px-4">
-            <Text className="text-[22px] text-gray-600 font-bold" >
-              Fresh recommendations
-            </Text>
-            <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: "/search-results-entity-tabs",
-                  params: {
-                    q: "",
-                    title: "Fresh recommendations",
-                    countryCode: effectiveCountryCode ?? "",
-                  },
-                } as Href)
-              }
-            >
-              <Text className="text-[12px] font-medium text-[#27BB97]">See all</Text>
-            </Pressable>
-          </View>
-
-          {freshRecommendations.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16, gap: 16 }}
-              decelerationRate="fast"
-              snapToInterval={trendingCardWidth + 16}
-            >
-              {freshRecommendations.map((item) => (
-                <TrendingListingCard
-                  key={item.id}
-                  id={item.id}
-                  title={item.title}
-                  price={item.price}
-                  currency={item.currency}
-                  image={item.image}
-                  cardWidth={trendingCardWidth}
-                  createdAt={item.createdAt}
-                  distanceLabel={item.distanceLabel}
-                  isSaved={savedIds.has(item.id)}
-                  isOffline={isOffline}
-                  onPress={() => pushToDetail(item.category, item.id)}
-                  onToggleSave={() => {
-                    const listing = allListings.find((l) => l._id === item.id);
-                    if (listing) void handleToggleSave(listing);
-                  }}
-                />
-              ))}
-            </ScrollView>
+          spotlightItems.length > 0 ? (
+            <View className="mb-6 mt-5">
+              <HomeSpotlightCarousel
+                items={spotlightItems}
+                onPressItem={handleSpotlightPress}
+                onToggleSave={handleSpotlightSave}
+                onSeeAll={() =>
+                  router.push({
+                    pathname: "/search-results-entity-tabs",
+                    params: {
+                      q: "",
+                      title: "In the spotlight",
+                      countryCode: effectiveCountryCode ?? "",
+                    },
+                  } as Href)
+                }
+              />
+            </View>
           ) : (
-            <View className="mx-4 items-center rounded-2xl bg-white px-6 py-10">
-              <MaterialIcons name="location-on" size={36} color="#D1D5DB" />
+            <View className="mb-6 mt-5 mx-4 items-center rounded-2xl px-6 py-10" style={{ backgroundColor: colors.surface }}>
+              <MaterialIcons name="location-on" size={36} color={colors.iconMuted} />
               <Text
-                className="mt-3 text-center text-[14px] text-[#6B7280]"
-                style={ListifyTypography.label}
+                className="mt-3 text-center text-[14px]"
+                style={{ ...ListifyTypography.label, color: colors.textSecondary }}
               >
                 {displayLocation && displayLocation !== "Set location"
                   ? `No listings found near ${displayLocation}`
                   : "Set your location to see nearby listings"}
               </Text>
             </View>
-          )}
-        </View>
+          )
+        ) : null}
+
+        {/* ===== Featured Profiles — "Artists in your District" ===== */}
+        {!isOffline ? (
+          <View className="mb-6">
+            <View className=" flex-row items-center justify-between px-4">
+              <Text
+                className="text-[22px] font-bold"
+                style={{
+                  color: colors.textPrimary,
+                  ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
+                }}
+              >
+                Artists in your City
+              </Text>
+              <Pressable hitSlop={8}>
+                <Text
+                  className="text-[12px] font-medium"
+                  style={{ color: colors.primary }}
+                >
+                  See all
+                </Text>
+              </Pressable>
+            </View>
+
+            <FlatList
+              horizontal
+              data={FEATURED_ARTISTS}
+              keyExtractor={featuredArtistKeyExtractor}
+              renderItem={renderFeaturedArtistItem}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{
+                paddingHorizontal: 16,
+                paddingTop: featuredCardWidth * 0.24,
+                paddingBottom: 8,
+                gap: 14,
+              }}
+              decelerationRate="fast"
+              snapToInterval={featuredCardWidth + 14}
+              snapToAlignment="start"
+              removeClippedSubviews
+              initialNumToRender={3}
+              maxToRenderPerBatch={3}
+              windowSize={5}
+              scrollEventThrottle={16}
+            />
+          </View>
+        ) : null}
+
+        {/* ===== Explore Near You — image cards ===== */}
+        {!isOffline ? (
+          <View className="mb-8">
+            <View className="mb-4 flex-row items-center justify-between px-4">
+              <Text
+                className="text-[22px] font-bold"
+                style={{
+                  color: colors.textPrimary,
+                  ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
+                }}
+              >
+                Explore music events near you
+              </Text>
+              <Pressable hitSlop={8}>
+                <MaterialIcons name="chevron-right" size={22} color={colors.icon} />
+              </Pressable>
+            </View>
+
+            <FlatList
+              horizontal
+              data={EXPLORE_NEAR_YOU}
+              keyExtractor={exploreKeyExtractor}
+              renderItem={renderExploreItem}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{
+                paddingHorizontal: 16,
+                paddingBottom: 6,
+                gap: 14,
+              }}
+              decelerationRate="fast"
+              snapToInterval={exploreCardWidth + 14}
+              snapToAlignment="start"
+              removeClippedSubviews
+              initialNumToRender={3}
+              maxToRenderPerBatch={3}
+              windowSize={5}
+              scrollEventThrottle={16}
+            />
+          </View>
         ) : null}
 
         {/* Offline notice � shown instead of fresh/recent sections */}
@@ -825,16 +1057,21 @@ export function HomeFeedRootScreen() {
         {!isOffline ? (
         <View className="mb-8">
           <View className="mb-4 px-4">
-            <Text className="text-[22px] text-gray-600 font-bold">
+            <Text
+              className="text-[22px] font-bold"
+              style={{ color: colors.textPrimary }}
+            >
               Recently viewed
             </Text>
           </View>
 
           {recentlyViewed.length > 0 ? (
-            <ScrollView
+            <FlatList
               horizontal
+              data={filteredRecentlyViewed}
+              keyExtractor={recentKeyExtractor}
+              renderItem={renderRecentItem}
               showsHorizontalScrollIndicator={false}
-              removeClippedSubviews={false}
               nestedScrollEnabled
               style={{ minHeight: RECENTLY_VIEWED_ROW_HEIGHT, overflow: "visible" }}
               contentContainerStyle={{
@@ -843,73 +1080,20 @@ export function HomeFeedRootScreen() {
                 paddingBottom: 8,
               }}
               decelerationRate="fast"
-            >
-              {filterOutOwnListings(recentlyViewed, user?.id)
-                .slice(0, 12)
-                .map((item) => {
-                const feedListing = allListings.find((l) => l._id === item._id);
-                const userLatLng =
-                  canShowDistanceOnCards &&
-                  locationCoords.lat != null &&
-                  locationCoords.lng != null
-                    ? { lat: locationCoords.lat, lng: locationCoords.lng }
-                    : null;
-
-                const distanceKm = userLatLng
-                  ? resolveListingDistanceKm(
-                      {
-                        _id: item._id,
-                        category: item.category,
-                        coordinates: item.coordinates ?? feedListing?.coordinates,
-                        distance: (feedListing as { distance?: number } | undefined)?.distance,
-                      },
-                      userLatLng,
-                    )
-                  : null;
-
-                const distanceLabel =
-                  distanceKm != null
-                    ? getListingDistanceLabel(
-                        {
-                          _id: item._id,
-                          category: item.category,
-                          distance: distanceKm,
-                          coordinates: item.coordinates ?? feedListing?.coordinates,
-                          countryCode: item.countryCode ?? item.isoCountryCode,
-                          currency: item.currency,
-                        },
-                        userLatLng,
-                        isoCountryCode || item.countryCode || item.isoCountryCode,
-                      )
-                    : undefined;
-
-                return (
-                  <ListingItemsGridCard
-                    key={item._id}
-                    layout="carousel"
-                    width={GRID_CARD_WIDTH}
-                    title={item.title}
-                    price={item.price}
-                    currency={item.currency}
-                    image={item.images?.[0]}
-                    createdAt={item.createdAt}
-                    distanceLabel={distanceLabel}
-                    isSaved={savedIds.has(item._id)}
-                    onPress={() => pushToDetail(item.category, item._id)}
-                    onToggleSave={() => {
-                      const listing = allListings.find((l) => l._id === item._id);
-                      if (listing) void handleToggleSave(listing);
-                    }}
-                  />
-                );
-              })}
-            </ScrollView>
+              removeClippedSubviews
+              initialNumToRender={3}
+              maxToRenderPerBatch={3}
+              windowSize={3}
+            />
           ) : (
-            <View className="mx-4 items-center rounded-2xl bg-white px-6 py-10">
-              <MaterialIcons name="history" size={36} color="#D1D5DB" />
+            <View
+              className="mx-4 items-center rounded-2xl px-6 py-10"
+              style={{ backgroundColor: colors.surface }}
+            >
+              <MaterialIcons name="history" size={36} color={colors.iconMuted} />
               <Text
-                className="mt-3 text-center text-[14px] text-[#6B7280]"
-                style={ListifyTypography.label}
+                className="mt-3 text-center text-[14px]"
+                style={{ ...ListifyTypography.label, color: colors.textSecondary }}
               >
                 Items you view will appear here
               </Text>
@@ -931,34 +1115,57 @@ export function HomeFeedRootScreen() {
           onPress={() => setShowLoginSheet(false)}
         />
         <View
-          className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white px-6 pt-6"
-          style={{ paddingBottom: Math.max(insets.bottom, 24) }}
+          className="absolute inset-x-0 bottom-0 rounded-t-3xl px-6 pt-6"
+          style={{
+            paddingBottom: Math.max(insets.bottom, 24),
+            backgroundColor: colors.surface,
+          }}
         >
-          <View className="mb-4 self-center h-1 w-10 rounded-full bg-slate-200" />
+          <View
+            className="mb-4 self-center h-1 w-10 rounded-full"
+            style={{ backgroundColor: colors.border }}
+          />
           <View className="items-center mb-4">
-            <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-[rgba(39,187,151,0.1)]">
-              <MaterialIcons name="lock-outline" size={32} color="#27BB97" />
+            <View
+              className="mb-3 h-16 w-16 items-center justify-center rounded-full"
+              style={{ backgroundColor: colors.primarySoft }}
+            >
+              <MaterialIcons name="lock-outline" size={32} color={colors.primary} />
             </View>
-            <Text className="text-[20px] font-bold text-[#161D1A] mb-1">
+            <Text
+              className="text-[20px] font-bold mb-1"
+              style={{ color: colors.textPrimary }}
+            >
               Login Required
             </Text>
-            <Text className="text-[14px] text-center text-[#6C7A74] leading-5">
+            <Text
+              className="text-[14px] text-center leading-5"
+              style={{ color: colors.textSecondary }}
+            >
               Please sign in to post your products and start selling on Listifys.
             </Text>
           </View>
           <Pressable
             onPress={() => { setShowLoginSheet(false); router.push("/sign-in" as Href); }}
-            className="mb-3 h-14 items-center justify-center rounded-2xl bg-[#27BB97]"
+            className="mb-3 h-14 items-center justify-center rounded-2xl"
+            style={{ backgroundColor: colors.primary }}
           >
-            <Text className="text-[16px] font-semibold text-white">
+            <Text
+              className="text-[16px] font-semibold"
+              style={{ color: colors.textOnPrimary }}
+            >
               Sign In
             </Text>
           </Pressable>
           <Pressable
             onPress={() => { setShowLoginSheet(false); router.push("/sign-up" as Href); }}
-            className="mb-2 h-14 items-center justify-center rounded-2xl border border-[#27BB97]"
+            className="mb-2 h-14 items-center justify-center rounded-2xl border"
+            style={{ borderColor: colors.primary }}
           >
-            <Text className="text-[16px] font-semibold text-[#27BB97]">
+            <Text
+              className="text-[16px] font-semibold"
+              style={{ color: colors.primary }}
+            >
               Create Account
             </Text>
           </Pressable>

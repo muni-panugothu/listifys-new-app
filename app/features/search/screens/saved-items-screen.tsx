@@ -8,9 +8,13 @@ import {
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { FloatingBottomNav } from "@/components/floating-bottom-nav";
 import { ListingItemsGridCard } from "@/components/listing-items-grid-card";
 import { ProfileSubScreenLayout } from "@/components/profile-sub-screen-layout";
+import { FLOATING_BOTTOM_NAV_OFFSET } from "@/constants/bottom-nav-tabs";
+import { ListifyFonts } from "@/constants/typography";
 import {
   fetchSavedListings,
   toggleSaveListing,
@@ -18,7 +22,8 @@ import {
 } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
-import { ListifyFonts } from "@/constants/typography";
+import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
 import {
   selectCanShowDistanceOnCards,
@@ -39,6 +44,9 @@ const SPECIAL_DETAIL_ROUTES: Record<string, string> = {
 
 export function SavedItemsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const handleBottomTabPress = useTabNavigation();
+  const { colors } = useTheme();
   const locationCoords = useAppSelector(selectLocationCoords);
   const isoCountryCode = useAppSelector(selectIsoCountryCode);
   const canShowDistanceOnCards = useAppSelector(selectCanShowDistanceOnCards);
@@ -90,99 +98,117 @@ export function SavedItemsScreen() {
   }, []);
 
   return (
-    <ProfileSubScreenLayout
-      title="Saved items"
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={["#27BB97"]}
-          tintColor="#27BB97"
-        />
-      }
-    >
-      <Text
-        className="mb-4 text-[14px] text-[#6B7280]"
-        style={{ fontFamily: ListifyFonts.regular }}
+    <View className="flex-1">
+      <ProfileSubScreenLayout
+        title="Hotlists"
+        fallbackRoute={"/(tabs)/home-feed-root" as Href}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#27BB97"]}
+            tintColor="#27BB97"
+          />
+        }
+        contentContainerStyle={{
+          paddingBottom:
+            FLOATING_BOTTOM_NAV_OFFSET + Math.max(insets.bottom, 10) + 24,
+        }}
       >
-        <Text style={{ fontFamily: ListifyFonts.bold, color: "#27BB97" }}>
-          {items.length}
-        </Text>{" "}
-        saved {items.length === 1 ? "item" : "items"}
-      </Text>
-
-      {loading && items.length === 0 ? (
-        <View className="items-center py-16">
-          <ActivityIndicator size="large" color="#27BB97" />
-        </View>
-      ) : null}
-
-      {!loading && items.length === 0 ? (
-        <View className="items-center rounded-2xl bg-white px-6 py-14">
-          <MaterialIcons name="favorite-border" size={48} color="#D1D5DB" />
-          <Text
-            className="mt-3 text-[16px] text-[#1A1A1A]"
-            style={{ fontFamily: ListifyFonts.semiBold }}
-          >
-            No saved items yet
-          </Text>
-          <Text
-            className="mt-1 text-center text-[13px] text-[#9CA3AF]"
-            style={{ fontFamily: ListifyFonts.regular }}
-          >
-            Tap the heart on listings to save them here
-          </Text>
-        </View>
-      ) : null}
-
-      {items.length > 0 ? (
-        <View
-          className="flex-row flex-wrap"
-          style={{ columnGap: GRID_GUTTER, rowGap: GRID_GUTTER }}
+        <Text
+          className="mb-4 text-[14px]"
+          style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
         >
-          {items.map((item) => {
-            const category =
-              (item as ListingItem & { _source?: string })._source ?? item.category;
-            const distanceLabel = canShowDistanceOnCards
-              ? getListingDistanceLabel(
-                  {
-                    _id: item._id,
-                    category,
-                    countryCode: item.countryCode,
-                    currency: item.currency,
-                    coordinates: item.coordinates,
-                    distance: (item as { distance?: number }).distance,
-                  },
-                  { lat: locationCoords.lat!, lng: locationCoords.lng! },
-                  isoCountryCode,
-                )
-              : undefined;
+          <Text style={{ fontFamily: ListifyFonts.bold, color: colors.primary }}>
+            {items.length}
+          </Text>{" "}
+          saved {items.length === 1 ? "item" : "items"}
+        </Text>
 
-            return (
-              <ListingItemsGridCard
-                key={item._id}
-                width={CARD_WIDTH}
-                title={item.title}
-                subtitle={
-                  item.condition ||
-                  (typeof item.location === "string"
-                    ? item.location
-                    : item.location?.address ?? item.location?.city ?? undefined)
-                }
-                price={item.price}
-                currency={item.currency}
-                isoCountryCode={item.countryCode ?? isoCountryCode}
-                image={item.images?.[0]}
-                createdAt={item.createdAt}
-                distanceLabel={distanceLabel}
-                isSaved
-                onPress={() => openDetail(item)}
-                onToggleSave={() => void handleUnsave(item)}
-              />
-            );
-          })}
-        </View>
-      ) : null}
-    </ProfileSubScreenLayout>
+        {loading && items.length === 0 ? (
+          <View className="items-center py-16">
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : null}
+
+        {!loading && items.length === 0 ? (
+          <View
+            className="items-center rounded-2xl px-6 py-14"
+            style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+          >
+            <MaterialIcons name="favorite-border" size={48} color={colors.iconMuted} />
+            <Text
+              className="mt-3 text-[16px]"
+              style={{ fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
+            >
+              No saved items yet
+            </Text>
+            <Text
+              className="mt-1 text-center text-[13px]"
+              style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
+            >
+              Tap the heart on listings to save them here
+            </Text>
+          </View>
+        ) : null}
+
+        {items.length > 0 ? (
+          <View
+            className="flex-row flex-wrap"
+            style={{ columnGap: GRID_GUTTER, rowGap: GRID_GUTTER }}
+          >
+            {items.map((item) => {
+              const category =
+                (item as ListingItem & { _source?: string })._source ??
+                item.category;
+              const distanceLabel = canShowDistanceOnCards
+                ? getListingDistanceLabel(
+                    {
+                      _id: item._id,
+                      category,
+                      countryCode: item.countryCode,
+                      currency: item.currency,
+                      coordinates: item.coordinates,
+                      distance: (item as { distance?: number }).distance,
+                    },
+                    { lat: locationCoords.lat!, lng: locationCoords.lng! },
+                    isoCountryCode,
+                  )
+                : undefined;
+
+              return (
+                <ListingItemsGridCard
+                  key={item._id}
+                  width={CARD_WIDTH}
+                  title={item.title}
+                  subtitle={
+                    item.condition ||
+                    (typeof item.location === "string"
+                      ? item.location
+                      : item.location?.address ??
+                        item.location?.city ??
+                        undefined)
+                  }
+                  price={item.price}
+                  currency={item.currency}
+                  isoCountryCode={item.countryCode ?? isoCountryCode}
+                  image={item.images?.[0]}
+                  createdAt={item.createdAt}
+                  distanceLabel={distanceLabel}
+                  isSaved
+                  onPress={() => openDetail(item)}
+                  onToggleSave={() => void handleUnsave(item)}
+                />
+              );
+            })}
+          </View>
+        ) : null}
+      </ProfileSubScreenLayout>
+
+      <FloatingBottomNav
+        activeTabId="hotlists"
+        onTabPress={handleBottomTabPress}
+      />
+    </View>
   );
 }

@@ -15,13 +15,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { HomeCategoryTile } from "@/components/home-category-tile";
 import { VoiceSearchModal } from "@/components/voice-search-modal";
 import { CATEGORIES, type CategorySlug } from "@/constants/categories";
 import { ListifyFonts } from "@/constants/typography";
+import { SearchCategoryTile } from "@/features/search/components/search-category-tile";
 import { fetchSavedListings } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { getCategoryHref } from "@/lib/navigate-to-category";
+import { useTheme } from "@/providers/theme-provider";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
@@ -46,13 +47,13 @@ const searchCategoriesOrdered = [
 ].map((c) => ({
   id: c.slug as CategorySlug,
   label: c.name,
-  icon: c.icon,
 }));
 
 export function SearchHomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
+  const { colors } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const displayLocation = useAppSelector(selectLocationLabel);
@@ -158,7 +159,7 @@ export function SearchHomeScreen() {
   );
 
   return (
-    <View className="flex-1 bg-[#F6F7F8]">
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <VoiceSearchModal
         visible={voiceVisible}
         onResult={handleVoiceResult}
@@ -169,12 +170,13 @@ export function SearchHomeScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            colors={["#1A1A1A"]}
-            tintColor="#1A1A1A"
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
         contentContainerStyle={{
@@ -191,19 +193,29 @@ export function SearchHomeScreen() {
             style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
           >
             <View className="flex-row items-center gap-0.5">
-              <MaterialIcons name="location-on" size={16} color="#27BB97" />
+              <MaterialIcons name="location-on" size={16} color={colors.primary} />
               <Text
-                className="flex-1 text-[16px] text-[#1A1A1A]"
-                style={{ fontFamily: ListifyFonts.bold }}
+                className="flex-1 text-[16px]"
+                style={{
+                  fontFamily: ListifyFonts.bold,
+                  color: colors.textPrimary,
+                }}
                 numberOfLines={1}
               >
                 {displayLocationText}
               </Text>
-              <MaterialIcons name="keyboard-arrow-down" size={20} color="#9CA3AF" />
+              <MaterialIcons
+                name="keyboard-arrow-down"
+                size={20}
+                color={colors.iconMuted}
+              />
             </View>
             <Text
-              className="mt-0.5 text-[13px] text-[#9CA3AF]"
-              style={{ fontFamily: ListifyFonts.regular }}
+              className="mt-0.5 text-[13px]"
+              style={{
+                fontFamily: ListifyFonts.regular,
+                color: colors.textTertiary,
+              }}
             >
               {isAuthenticated ? "Tap to change location" : "Tap to choose location"}
             </Text>
@@ -211,13 +223,20 @@ export function SearchHomeScreen() {
 
           <Pressable
             onPress={() => router.push("/saved-items" as Href)}
-            className="flex-row items-center gap-1.5 rounded-full border border-[#E5E7EB] bg-white px-3 py-2"
-            style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+            className="flex-row items-center gap-1.5 rounded-full border px-3 py-2"
+            style={({ pressed }) => ({
+              opacity: pressed ? 0.85 : 1,
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            })}
           >
-            <MaterialIcons name="bookmark-outline" size={18} color="#1A1A1A" />
+            <MaterialIcons name="bookmark-outline" size={18} color={colors.icon} />
             <Text
-              className="text-[14px] text-[#1A1A1A]"
-              style={{ fontFamily: ListifyFonts.semiBold }}
+              className="text-[14px]"
+              style={{
+                fontFamily: ListifyFonts.semiBold,
+                color: colors.textPrimary,
+              }}
             >
               {formattedSavedCount}
             </Text>
@@ -226,8 +245,10 @@ export function SearchHomeScreen() {
 
         {/* Search bar */}
         <View
-          className="mb-6 h-17 shadow-xl flex-row items-center rounded-full border border-[#ECECEC] bg-white px-4"
+          className="mb-6 h-17 shadow-xl flex-row items-center rounded-full border px-4"
           style={{
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 2 },
             shadowOpacity: 0.04,
@@ -240,41 +261,47 @@ export function SearchHomeScreen() {
             onChangeText={handleQueryChange}
             onSubmitEditing={() => void openSearchResults()}
             placeholder="Search"
-            placeholderTextColor="#B0B0B0"
-            className="flex-1 text-[15px] text-[#1A1A1A]"
-            style={{ fontFamily: ListifyFonts.regular, paddingVertical: 0 }}
+            placeholderTextColor={colors.inputPlaceholder}
+            className="flex-1 text-[15px]"
+            style={{
+              fontFamily: ListifyFonts.regular,
+              paddingVertical: 0,
+              color: colors.textPrimary,
+            }}
           />
           <Pressable
             onPress={() => setVoiceVisible(true)}
             hitSlop={8}
             style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginRight: 6 })}
           >
-            <MaterialIcons name="mic" size={22} color="#9CA3AF" />
+            <MaterialIcons name="mic" size={22} color={colors.iconMuted} />
           </Pressable>
           <Pressable
             onPress={() => void openSearchResults()}
             hitSlop={8}
             style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
           >
-            <MaterialIcons name="search" size={22} color="#9CA3AF" />
+            <MaterialIcons name="search" size={22} color={colors.iconMuted} />
           </Pressable>
         </View>
 
         {/* Categories grid */}
         <Text
-          className="mb-4 text-[18px] text-[#1A1A1A]"
-          style={{ fontFamily: ListifyFonts.bold }}
+          className="mb-4 text-[18px]"
+          style={{
+            fontFamily: ListifyFonts.bold,
+            color: colors.textPrimary,
+          }}
         >
           Categories
         </Text>
 
         <View className="flex-row flex-wrap" style={{ gap: GRID_GAP }}>
           {searchCategoriesOrdered.map((cat) => (
-            <HomeCategoryTile
+            <SearchCategoryTile
               key={cat.id}
               slug={cat.id}
               label={cat.label}
-              icon={cat.icon}
               size={CATEGORY_CARD_SIZE}
               onPress={() => navigateToCategory(cat.id)}
             />

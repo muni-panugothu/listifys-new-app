@@ -1,8 +1,10 @@
 import { Tabs } from "expo-router";
 
 import { MainTabBar } from "@/components/main-tab-bar";
+import { useTheme } from "@/providers/theme-provider";
 
 export default function MainTabsLayout() {
+  const { colors } = useTheme();
   return (
     <Tabs
       tabBar={(props) => <MainTabBar {...props} />}
@@ -10,8 +12,9 @@ export default function MainTabsLayout() {
         headerShown: false,
         animation: "fade",
         lazy: true,
-        sceneStyle: { backgroundColor: "#F6F7F8" },
-        freezeOnBlur: true,
+        sceneStyle: { backgroundColor: colors.background },
+        // Disabled so inactive tabs still re-render when the theme context changes.
+        freezeOnBlur: false,
       }}
     >
       <Tabs.Screen name="home-feed-root" />

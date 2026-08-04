@@ -1,4 +1,5 @@
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import { useRouter } from "@/lib/safe-router";
 import * as Haptics from "expo-haptics";
 import { Platform } from "react-native";
 
@@ -12,7 +13,7 @@ const ROUTE_TO_TAB: Record<string, BottomNavTabId> = {
   "dashboard-home": "profile",
 };
 
-const TAB_TO_ROUTE: Record<BottomNavTabId, string> = {
+const TAB_TO_ROUTE: Partial<Record<BottomNavTabId, string>> = {
   home: "home-feed-root",
   search: "search-home",
   sell: "sell-entry",
@@ -24,10 +25,19 @@ function getRouteSegment(routeName: string) {
 }
 
 export function MainTabBar({ state, navigation }: BottomTabBarProps) {
+  const router = useRouter();
   const activeRouteName = state.routes[state.index]?.name ?? "home-feed-root";
   const activeTabId = ROUTE_TO_TAB[getRouteSegment(activeRouteName)] ?? "home";
 
   const handleTabPress = (tabId: string) => {
+    if (tabId === "hotlists") {
+      if (Platform.OS !== "web") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      }
+      router.push("/saved-items" as never);
+      return;
+    }
+
     const routeName = TAB_TO_ROUTE[tabId as BottomNavTabId];
     if (!routeName) return;
 

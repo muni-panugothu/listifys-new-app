@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 /**
  * chat.controller.js
  * Thin HTTP layer: validate → delegate to chat.service → respond.

@@ -488,6 +488,8 @@ export function SellerPublicProfileScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        removeClippedSubviews
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

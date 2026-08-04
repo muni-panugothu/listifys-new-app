@@ -1,403 +1,660 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { type Href, useRouter } from "@/lib/safe-router";
-import { useCallback, useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "@/lib/safe-router";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  FlatList,
+  Dimensions,
+  Platform,
   Pressable,
-  RefreshControl,
-  StatusBar,
+  ScrollView,
   Text,
-  TextInput,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
+import { useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { VoiceSearchModal } from "@/components/voice-search-modal";
-import { EventListingCard } from "@/features/category/components/event-listing-card";
-import { EventsCalendarModal } from "@/features/events/components/events-calendar-modal";
-import { EventsDateStrip } from "@/features/events/components/events-date-strip";
-import { useEventsFeed } from "@/features/events/hooks/use-events-feed";
+import { ListifyFonts } from "@/constants/typography";
+import { EventsCustomDatesSheet } from "@/features/events/components/events-custom-dates-sheet";
+import { EventsExploreGrid } from "@/features/events/components/events-explore-grid";
+import { EventsFilterBar } from "@/features/events/components/events-filter-bar";
 import {
-  toggleSaveListing,
-  type ListingItem,
-} from "@/features/listing/services/listing-api";
-import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
-import { useDynamicSubcategories } from "@/hooks/use-dynamic-subcategories";
-import { dateKey } from "@/lib/event-dates";
-import { getCurrencyCodeFromCountry, getCurrencySymbol } from "@/lib/currency";
-import { ListifyFonts, ListifyTypography } from "@/constants/typography";
-import { useLocale } from "@/providers/locale-provider";
-import { useAppSelector } from "@/store/hooks";
+  EventsFloatingNav,
+  type EventsFloatingNavTab,
+} from "@/features/events/components/events-floating-nav";
+import { EventsHubSwitcherModal } from "@/features/events/components/events-hub-switcher-modal";
+import type { EventsHubTab } from "@/features/events/data/events-hub-discovery";
+import { EventsGridCard } from "@/features/events/components/events-grid-card";
+import { EventsHeroCarousel } from "@/features/events/components/events-hero-carousel";
+import { EventsSectionCarousel } from "@/features/events/components/events-section-carousel";
+import { EventsWeekCategoryStrip } from "@/features/events/components/events-week-category-strip";
 import {
-  selectIsoCountryCode,
-  selectLocationCoords,
-  selectLocationLabel,
-} from "@/store/slices/location-slice";
+  buildWeekPeriodOptions,
+  EventsWeekPeriodMenu,
+  weekPeriodLabel,
+  type WeekPeriodId,
+} from "@/features/events/components/events-week-period-menu";
+import type { EventsAllFilterId } from "@/features/events/data/events-all-filters";
+import {
+  EVENTS_CATEGORY_SECTIONS,
+  FEATURED_EVENTS_DUMMY,
+  type EventsExploreCategory,
+  type EventsWeekCategory,
+  type FeaturedEventDummy,
+} from "@/features/events/data/events-discovery";
+import { FeaturedProfileCard } from "@/features/home/components/featured-profile-card";
+import {
+  FEATURED_ARTISTS,
+  type FeaturedArtistItem,
+} from "@/features/home/data/featured-mock-data";
+import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useTheme } from "@/providers/theme-provider";
 
-const BG = "#F6F7F8";
-const BRAND = "#27BB97";
-const GRID_SIDE_PADDING = 16;
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const H_PAD = 16;
+const ARTIST_CARD_WIDTH = SCREEN_WIDTH * 0.48;
+const ARTIST_GAP = 14;
+const GRID_GAP = 12;
+const GRID_CARD_WIDTH = (SCREEN_WIDTH - H_PAD * 2 - GRID_GAP) / 2;
 
-function formatEventPrice(
-  price?: number,
-  currency?: string,
-  isoCountryCode?: string | null,
-): string {
-  if (!price || price === 0) return "FREE";
-  const symbol = getCurrencySymbol(currency ?? getCurrencyCodeFromCountry(isoCountryCode));
-  return `${symbol}${Number(price).toLocaleString("en-IN")}`;
+function filterByQuery(events: FeaturedEventDummy[], q: string) {
+  if (!q) return events;
+  return events.filter(
+    (e) =>
+      e.title.toLowerCase().includes(q) || e.venue.toLowerCase().includes(q),
+  );
+}
+
+function eventsForSection(
+  sectionCategoryId: string,
+  all: FeaturedEventDummy[],
+  q: string,
+): FeaturedEventDummy[] {
+  const filtered = filterByQuery(all, q);
+  if (sectionCategoryId === "featured") {
+    return filtered.slice(0, 6);
+  }
+  return filtered.filter((e) => e.category === sectionCategoryId);
+}
+
+function applyAllEventsFilter(
+  events: FeaturedEventDummy[],
+  filterId: EventsAllFilterId,
+): FeaturedEventDummy[] {
+  switch (filterId) {
+    case "all":
+    case "tomorrow":
+    case "weekend":
+    case "under_10km":
+      return events;
+    case "social":
+      return events.filter(
+        (e) =>
+          e.category === "social" ||
+          e.title.toLowerCase().includes("social") ||
+          e.venue.toLowerCase().includes("social"),
+      );
+    default:
+      return events.filter((e) => e.category === filterId);
+  }
+}
+
+function formatCustomRangeLabel(start: Date, end: Date) {
+  const sameMonth =
+    start.getMonth() === end.getMonth() &&
+    start.getFullYear() === end.getFullYear();
+  if (sameMonth && start.getDate() === end.getDate()) {
+    return `${start.getDate()} ${start.toLocaleString("en-GB", { month: "short" })}`;
+  }
+  if (sameMonth) {
+    return `${start.getDate()}-${end.getDate()} ${end.toLocaleString("en-GB", { month: "short" })}`;
+  }
+  return `${start.getDate()} ${start.toLocaleString("en-GB", { month: "short" })} – ${end.getDate()} ${end.toLocaleString("en-GB", { month: "short" })}`;
 }
 
 export function EventsListingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isoCountryCode: localeCountryCode } = useLocale();
-  const user = useAppSelector((s) => s.auth.user);
-  const userCoords = useAppSelector(selectLocationCoords);
-  const locationLabel = useAppSelector(selectLocationLabel);
-  const rawCountryCode = useAppSelector(selectIsoCountryCode);
-  const hasLocationCoords = userCoords.lat != null && userCoords.lng != null;
-  const isoCountryCode = (rawCountryCode ?? localeCountryCode ?? null)?.toUpperCase() ?? null;
-  const shouldApplyCountryFilter = hasLocationCoords || isoCountryCode === "US";
+  const { colors, isDark } = useTheme();
+  const scrollRef = useRef<ScrollView>(null);
+  const filtersAnchorY = useRef(0);
+  const lastScrollY = useRef(0);
+  const navCollapse = useSharedValue(0);
 
-  const { subcategories } = useDynamicSubcategories("events");
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [appliedSearch, setAppliedSearch] = useState("");
-  const [selectedSubcategory, setSelectedSubcategory] = useState("All");
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
-  const [voiceVisible, setVoiceVisible] = useState(false);
-  const [showCalendar, setShowCalendar] = useState(false);
-
-  const isRealLabel =
-    hasLocationCoords &&
-    Boolean(locationLabel) &&
-    locationLabel !== "Set location" &&
-    !locationLabel.startsWith("Detecting");
-  const locationForApi = isRealLabel
-    ? locationLabel
-        .split(",")
-        .map((p) => p.trim())
-        .filter(Boolean)
-        .slice(0, 2)
-        .join(", ") || undefined
-    : undefined;
-
-  const queryParams = useMemo(
-    () => ({
-      search: appliedSearch.trim() || undefined,
-      subcategory: selectedSubcategory === "All" ? undefined : selectedSubcategory,
-      location: locationForApi,
-      lat: hasLocationCoords ? userCoords.lat! : undefined,
-      lng: hasLocationCoords ? userCoords.lng! : undefined,
-      radius: hasLocationCoords ? 500 : undefined,
-      countryCode: shouldApplyCountryFilter ? isoCountryCode : undefined,
-      sort: hasLocationCoords ? "nearest" : "newest",
-      limit: 30,
-    }),
-    [
-      appliedSearch,
-      selectedSubcategory,
-      locationForApi,
-      hasLocationCoords,
-      userCoords.lat,
-      userCoords.lng,
-      shouldApplyCountryFilter,
-      isoCountryCode,
-    ],
+  const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
+  const [selectedExploreId, setSelectedExploreId] = useState<string | null>(
+    null,
   );
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [savedArtistIds, setSavedArtistIds] = useState<Set<string>>(new Set());
+  const [activeNavTab, setActiveNavTab] =
+    useState<EventsFloatingNavTab>("events");
+  const [hubVisible, setHubVisible] = useState(false);
+  const [allFilterId, setAllFilterId] = useState<EventsAllFilterId>("all");
+  const [filtersSticky, setFiltersSticky] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const handleTabPress = useTabNavigation();
 
-  const {
-    selectedDateKey,
-    selectedDate,
-    selectDate,
-    calendar,
-    feed,
-    loadMore,
-    refresh,
-  } = useEventsFeed(queryParams);
+  const [periodMenuVisible, setPeriodMenuVisible] = useState(false);
+  const [customDatesVisible, setCustomDatesVisible] = useState(false);
+  const [selectedPeriod, setSelectedPeriod] = useState<WeekPeriodId>("week");
+  const [customRange, setCustomRange] = useState<{
+    start: Date;
+    end: Date;
+  } | null>(null);
+  const [periodMenuTop, setPeriodMenuTop] = useState(0);
 
   const headerHeight = insets.top + 12 + 52;
-  const titleHeight = 64;
-  const dateStripHeight = 96;
-  const categoryTabsHeight = 52;
-  const stickyOffset = headerHeight + titleHeight + dateStripHeight + categoryTabsHeight;
+  const query = "";
 
-  const { refreshing, onRefresh } = usePullToRefresh(refresh);
+  const periodOptions = useMemo(() => buildWeekPeriodOptions(new Date()), []);
 
-  const handleToggleSave = useCallback(
-    async (id: string) => {
-      try {
-        const res = await toggleSaveListing("events", id);
-        setSavedIds((prev) => {
-          const next = new Set(prev);
-          if (res.saved) next.add(id);
-          else next.delete(id);
-          return next;
-        });
-      } catch {
-        // ignore
-      }
-    },
-    [],
-  );
+  const customLabel = customRange
+    ? formatCustomRangeLabel(customRange.start, customRange.end)
+    : null;
+  const periodText = weekPeriodLabel(selectedPeriod, customLabel);
 
-  const openDetail = useCallback(
-    (item: ListingItem) => {
-      router.push(`/event-detail?category=events&id=${item._id}` as Href);
+  const artists = useMemo(() => {
+    if (!query) return FEATURED_ARTISTS;
+    return FEATURED_ARTISTS.filter(
+      (a) =>
+        a.name.toLowerCase().includes(query) ||
+        a.subtitle.toLowerCase().includes(query),
+    );
+  }, [query]);
+
+  const featuredSection = EVENTS_CATEGORY_SECTIONS[0];
+  const comedySection = EVENTS_CATEGORY_SECTIONS[1];
+
+  const allEventsFiltered = useMemo(() => {
+    const base = filterByQuery(FEATURED_EVENTS_DUMMY, query);
+    const filtered = applyAllEventsFilter(base, allFilterId);
+    return filtered.length > 0 ? filtered : base;
+  }, [allFilterId, query]);
+
+  const eventRows = useMemo(() => {
+    const rows: Array<{
+      id: string;
+      left: FeaturedEventDummy;
+      right?: FeaturedEventDummy;
+    }> = [];
+    for (let i = 0; i < allEventsFiltered.length; i += 2) {
+      rows.push({
+        id: `row-${allEventsFiltered[i].id}`,
+        left: allEventsFiltered[i],
+        right: allEventsFiltered[i + 1],
+      });
+    }
+    return rows;
+  }, [allEventsFiltered]);
+
+  const handleToggleSave = useCallback((id: string) => {
+    setSavedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleToggleArtistSave = useCallback((id: string) => {
+    setSavedArtistIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleWeekSelect = useCallback((cat: EventsWeekCategory) => {
+    setSelectedWeekId((prev) => (prev === cat.id ? null : cat.id));
+  }, []);
+
+  const handleExploreSelect = useCallback(
+    (cat: EventsExploreCategory) => {
+      setSelectedExploreId(cat.id);
+      router.push({
+        pathname: "/events-category",
+        params: {
+          categoryId: cat.id,
+          categoryLabel: cat.label,
+        },
+      });
     },
     [router],
   );
 
-  const handleSubmitSearch = useCallback(() => {
-    setAppliedSearch(searchQuery.trim());
-  }, [searchQuery]);
-
-  const handleVoiceResult = useCallback((text: string) => {
-    setSearchQuery(text);
-    setAppliedSearch(text);
+  const handlePressPeriodTitle = useCallback((anchorBottom: number) => {
+    setPeriodMenuTop(anchorBottom);
+    setPeriodMenuVisible((prev) => !prev);
   }, []);
 
-  const handleCalendarSelect = useCallback(
-    (date: Date) => {
-      selectDate(dateKey(date));
+  const handlePeriodSelect = useCallback(
+    (id: Exclude<WeekPeriodId, "week">) => {
+      setPeriodMenuVisible(false);
+      if (id === "custom") {
+        setCustomDatesVisible(true);
+        return;
+      }
+      setSelectedPeriod(id);
     },
-    [selectDate],
+    [],
   );
 
-  const renderItem = useCallback(
-    ({ item }: { item: ListingItem }) => (
-      <View style={{ paddingHorizontal: GRID_SIDE_PADDING, marginBottom: 16 }}>
-        <EventListingCard
-          event={item}
-          priceLabel={formatEventPrice(item.price, item.currency, isoCountryCode)}
-          isSaved={savedIds.has(item._id) || Boolean(user?.id && item.savedBy?.includes(user.id))}
-          onPress={() => openDetail(item)}
-          onToggleSave={() => handleToggleSave(item._id)}
-        />
-      </View>
+  const handleCustomApply = useCallback(
+    (range: { start: Date; end: Date }) => {
+      setCustomRange(range);
+      setSelectedPeriod("custom");
+    },
+    [],
+  );
+
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const y = e.nativeEvent.contentOffset.y;
+      const dy = y - lastScrollY.current;
+      if (y <= 16) {
+        navCollapse.value = withTiming(0, { duration: 240 });
+      } else if (dy > 6) {
+        navCollapse.value = withTiming(1, { duration: 240 });
+      } else if (dy < -6) {
+        navCollapse.value = withTiming(0, { duration: 240 });
+      }
+      lastScrollY.current = y;
+
+      const stickyAt = filtersAnchorY.current;
+      const sticky = stickyAt > 80 && y >= stickyAt - 2;
+      const back = sticky && y > stickyAt + 140;
+      setFiltersSticky((prev) => (prev === sticky ? prev : sticky));
+      setShowBackToTop((prev) => (prev === back ? prev : back));
+    },
+    [navCollapse],
+  );
+
+  const openEventsSearch = useCallback(() => {
+    router.push("/events-search");
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setActiveNavTab("events");
+    }, []),
+  );
+
+  const handleFloatingNavPress = useCallback(
+    (tab: EventsFloatingNavTab) => {
+      if (tab === "search") {
+        openEventsSearch();
+        return;
+      }
+      setActiveNavTab("events");
+      setHubVisible(true);
+    },
+    [openEventsSearch],
+  );
+
+  const handleHubSelect = useCallback(
+    (tab: EventsHubTab) => {
+      setHubVisible(false);
+      if (tab.id === "home") {
+        handleTabPress("home");
+        return;
+      }
+      if (tab.id === "events") {
+        setActiveNavTab("events");
+      }
+    },
+    [handleTabPress],
+  );
+
+  const handleBackToTop = useCallback(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, []);
+
+  const artistKeyExtractor = useCallback(
+    (item: FeaturedArtistItem) => item.id,
+    [],
+  );
+
+  const renderArtist = useCallback(
+    ({ item }: { item: FeaturedArtistItem }) => (
+      <FeaturedProfileCard
+        id={item.id}
+        name={item.name}
+        subtitle={item.subtitle}
+        avatar={item.avatar}
+        stats={item.stats}
+        eventDate={item.eventDate}
+        cardWidth={ARTIST_CARD_WIDTH}
+        isSaved={savedArtistIds.has(item.id)}
+        onPress={() => {}}
+        onToggleSave={() => handleToggleArtistSave(item.id)}
+      />
     ),
-    [handleToggleSave, isoCountryCode, openDetail, savedIds, user?.id],
+    [handleToggleArtistSave, savedArtistIds],
   );
-
-  const listHeader = useMemo(
-    () => (
-      <View>
-        <View style={{ height: stickyOffset }} />
-        {feed.isLoading && feed.listings.length === 0 ? (
-          <View className="items-center py-16">
-            <ActivityIndicator size="large" color={BRAND} />
-            <Text className="mt-3 text-[14px]" style={ListifyTypography.label}>
-              Loading events…
-            </Text>
-          </View>
-        ) : null}
-      </View>
-    ),
-    [feed.isLoading, feed.listings.length, stickyOffset],
-  );
-
-  const listEmpty = useMemo(() => {
-    if (feed.isLoading) return null;
-    return (
-      <View className="items-center px-6 py-20">
-        <MaterialIcons name="event-busy" size={56} color="#D1D5DB" />
-        <Text className="mt-4 text-[18px]" style={ListifyTypography.sectionTitle}>
-          No events on this date
-        </Text>
-        <Text className="mt-2 text-center text-[14px] text-[#6C7A74]">
-          Try another date or adjust your filters.
-        </Text>
-      </View>
-    );
-  }, [feed.isLoading]);
-
-  const listFooter = useMemo(() => {
-    if (!feed.hasMore) return <View style={{ height: Math.max(insets.bottom, 16) + 24 }} />;
-    return (
-      <View className="items-center py-6">
-        {feed.isLoadingMore ? (
-          <ActivityIndicator color={BRAND} />
-        ) : (
-          <Pressable onPress={loadMore}>
-            <Text style={{ fontFamily: ListifyFonts.semiBold, color: BRAND }}>Load more</Text>
-          </Pressable>
-        )}
-        <View style={{ height: Math.max(insets.bottom, 16) }} />
-      </View>
-    );
-  }, [feed.hasMore, feed.isLoadingMore, insets.bottom, loadMore]);
 
   return (
-    <View className="flex-1" style={{ backgroundColor: BG }}>
-      <StatusBar barStyle="dark-content" backgroundColor={BG} />
-
-      <VoiceSearchModal
-        visible={voiceVisible}
-        onResult={handleVoiceResult}
-        onClose={() => setVoiceVisible(false)}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <EventsHubSwitcherModal
+        visible={hubVisible}
+        activeTab="events"
+        onClose={() => setHubVisible(false)}
+        onSelect={handleHubSelect}
       />
 
-      <EventsCalendarModal
-        visible={showCalendar}
-        onClose={() => setShowCalendar(false)}
-        selectedDate={selectedDate}
-        counts={calendar.counts}
-        onSelectDate={handleCalendarSelect}
+      <EventsWeekPeriodMenu
+        visible={periodMenuVisible}
+        topOffset={periodMenuTop || headerHeight + 120}
+        selectedId={selectedPeriod}
+        options={periodOptions}
+        onSelect={handlePeriodSelect}
+        onClose={() => setPeriodMenuVisible(false)}
       />
 
-      {/* Fixed header */}
+      <EventsCustomDatesSheet
+        visible={customDatesVisible}
+        onClose={() => setCustomDatesVisible(false)}
+        initialStart={customRange?.start}
+        initialEnd={customRange?.end}
+        onApply={handleCustomApply}
+      />
+
       <View
-        className="absolute inset-x-0 top-0 z-50 px-4"
-        style={{ paddingTop: insets.top + 8, height: headerHeight, backgroundColor: BG }}
+        style={{
+          zIndex: 50,
+          paddingTop: insets.top + 8,
+          paddingBottom: 8,
+          paddingHorizontal: H_PAD,
+          backgroundColor: colors.background,
+        }}
       >
-        <View className="h-11 flex-row items-center gap-3">
+        <View
+          style={{
+            height: 44,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
           <Pressable
             onPress={() => router.back()}
             hitSlop={12}
-            className="h-10 w-10 items-center justify-center"
-            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            style={({ pressed }) => ({
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: pressed ? 0.7 : 1,
+            })}
           >
-            <MaterialIcons name="arrow-back-ios" size={20} color="#1A1A1A" />
+            <MaterialIcons name="arrow-back-ios" size={20} color={colors.icon} />
           </Pressable>
-          <View
-            className="h-17 flex-1 flex-row items-center rounded-full border border-[#E8E8E8] bg-white px-4"
-            style={{
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.04,
-              shadowRadius: 6,
-              elevation: 1,
-            }}
+
+          <Pressable
+            onPress={openEventsSearch}
+            style={({ pressed }) => ({
+              flex: 1,
+              height: 48,
+              flexDirection: "row",
+              alignItems: "center",
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surface,
+              paddingHorizontal: 14,
+              opacity: pressed ? 0.9 : 1,
+            })}
           >
-            <MaterialIcons name="search" size={22} color="#B8B8B8" />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onSubmitEditing={handleSubmitSearch}
-              returnKeyType="search"
-              placeholder="Search here"
-              placeholderTextColor="#B0B0B0"
-              className="ml-3 flex-1 text-[15px] text-[#1A1A1A]"
-              style={{ fontFamily: ListifyFonts.regular, paddingVertical: 0 }}
-            />
-            {searchQuery.length > 0 ? (
-              <Pressable
-                onPress={() => {
-                  setSearchQuery("");
-                  setAppliedSearch("");
-                }}
-                hitSlop={8}
-              >
-                <MaterialIcons name="close" size={20} color="#9CA3AF" />
-              </Pressable>
-            ) : (
-              <Pressable onPress={() => setVoiceVisible(true)} hitSlop={8}>
-                <MaterialIcons name="mic" size={20} color="#9CA3AF" />
-              </Pressable>
-            )}
-          </View>
+            <MaterialIcons name="search" size={22} color={colors.iconMuted} />
+            <Text
+              numberOfLines={1}
+              style={{
+                marginLeft: 10,
+                flex: 1,
+                fontSize: 15,
+                fontFamily: ListifyFonts.regular,
+                color: colors.inputPlaceholder,
+              }}
+            >
+              Search for events
+            </Text>
+            <MaterialIcons name="mic" size={20} color={colors.iconMuted} />
+          </Pressable>
         </View>
       </View>
 
-      <View
-        className="absolute inset-x-0 z-45 px-4"
-        style={{ top: headerHeight, height: titleHeight, backgroundColor: BG, paddingVertical: 16 }}
+      {filtersSticky ? (
+        <View
+          style={{
+            position: "absolute",
+            top: headerHeight,
+            left: 0,
+            right: 0,
+            zIndex: 48,
+            backgroundColor: colors.background,
+          }}
+        >
+          <EventsFilterBar
+            selectedId={allFilterId}
+            onSelect={setAllFilterId}
+          />
+        </View>
+      ) : null}
+
+      <ScrollView
+        ref={scrollRef}
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={handleScroll}
+        contentContainerStyle={{
+          paddingTop: 8,
+          paddingBottom: Math.max(insets.bottom, 16) + 120,
+        }}
       >
+        <EventsHeroCarousel onExplore={() => {}} />
+
+        <EventsWeekCategoryStrip
+          selectedId={selectedWeekId}
+          onSelect={handleWeekSelect}
+          periodLabel={periodText}
+          menuOpen={periodMenuVisible}
+          onPressTitle={handlePressPeriodTitle}
+        />
+
+        <EventsSectionCarousel
+          title={featuredSection.title}
+          events={eventsForSection(
+            featuredSection.categoryId,
+            FEATURED_EVENTS_DUMMY,
+            query,
+          )}
+          savedIds={savedIds}
+          onToggleSave={handleToggleSave}
+          showOffers
+        />
+
+        <EventsExploreGrid
+          selectedId={selectedExploreId}
+          onSelect={handleExploreSelect}
+        />
+
+        {artists.length > 0 ? (
+          <View style={{ marginTop: 28, marginBottom: 4 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                paddingHorizontal: H_PAD,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: ListifyFonts.bold,
+                  fontSize: 22,
+                  color: colors.textPrimary,
+                  ...(Platform.OS === "android"
+                    ? { includeFontPadding: false }
+                    : {}),
+                }}
+              >
+                Artists in your District
+              </Text>
+              <Pressable hitSlop={8}>
+                <Text
+                  style={{
+                    fontFamily: ListifyFonts.medium,
+                    fontSize: 12,
+                    color: colors.primary,
+                  }}
+                >
+                  See all
+                </Text>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{
+                paddingHorizontal: H_PAD,
+                paddingTop: ARTIST_CARD_WIDTH * 0.24,
+                paddingBottom: 8,
+                gap: ARTIST_GAP,
+              }}
+              decelerationRate="fast"
+              snapToInterval={ARTIST_CARD_WIDTH + ARTIST_GAP}
+              snapToAlignment="start"
+            >
+              {artists.map((item) => (
+                <View key={artistKeyExtractor(item)}>
+                  {renderArtist({ item })}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {comedySection ? (
+          <EventsSectionCarousel
+            title={comedySection.title}
+            events={eventsForSection(
+              comedySection.categoryId,
+              FEATURED_EVENTS_DUMMY,
+              query,
+            )}
+            savedIds={savedIds}
+            onToggleSave={handleToggleSave}
+          />
+        ) : null}
+
         <Text
           style={{
             fontFamily: ListifyFonts.bold,
             fontSize: 24,
-            lineHeight: 32,
-            color: "#161D1A",
+            color: colors.textPrimary,
+            paddingHorizontal: H_PAD,
+            marginTop: 28,
+            marginBottom: 8,
+            ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
           }}
         >
-          Upcoming Events
+          All Events
         </Text>
-      </View>
 
-      <View
-        className="absolute inset-x-0 z-44 px-4"
-        style={{
-          top: headerHeight + titleHeight,
-          height: dateStripHeight,
-          backgroundColor: BG,
-        }}
-      >
-        {calendar.isLoading && calendar.stripItems.length === 0 ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator color={BRAND} size="small" />
-          </View>
-        ) : (
-          <EventsDateStrip
-            items={calendar.stripItems}
-            selectedKey={selectedDateKey}
-            onSelect={selectDate}
-            onOpenCalendar={() => setShowCalendar(true)}
+        <View
+          onLayout={(e) => {
+            filtersAnchorY.current = e.nativeEvent.layout.y;
+          }}
+          style={{ opacity: filtersSticky ? 0 : 1 }}
+          pointerEvents={filtersSticky ? "none" : "auto"}
+        >
+          <EventsFilterBar
+            selectedId={allFilterId}
+            onSelect={setAllFilterId}
           />
-        )}
-      </View>
+        </View>
 
-      <View
-        className="absolute inset-x-0 z-40 bg-[#F6F7F8]"
-        style={{ top: headerHeight + titleHeight + dateStripHeight, height: categoryTabsHeight }}
-      >
-        <FlatList
-          horizontal
-          data={subcategories}
-          keyExtractor={(chip) => chip}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: GRID_SIDE_PADDING,
-            paddingVertical: 10,
-            gap: 20,
+        {/* Spacer when sticky clone is showing so content doesn't jump */}
+        {filtersSticky ? <View style={{ height: 54 }} /> : null}
+
+        <View style={{ paddingBottom: 8 }}>
+          {eventRows.map((row) => (
+            <View
+              key={row.id}
+              style={{
+                flexDirection: "row",
+                paddingHorizontal: H_PAD,
+                paddingTop: GRID_GAP,
+                gap: GRID_GAP,
+              }}
+            >
+              <EventsGridCard
+                event={row.left}
+                cardWidth={GRID_CARD_WIDTH}
+                isSaved={savedIds.has(row.left.id)}
+                onPress={() => {}}
+                onToggleSave={() => handleToggleSave(row.left.id)}
+              />
+              {row.right ? (
+                <EventsGridCard
+                  event={row.right}
+                  cardWidth={GRID_CARD_WIDTH}
+                  isSaved={savedIds.has(row.right.id)}
+                  onPress={() => {}}
+                  onToggleSave={() => handleToggleSave(row.right!.id)}
+                />
+              ) : (
+                <View style={{ width: GRID_CARD_WIDTH }} />
+              )}
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+
+      {showBackToTop ? (
+        <Pressable
+          onPress={handleBackToTop}
+          style={{
+            position: "absolute",
+            top: headerHeight + 58,
+            zIndex: 55,
+            left: SCREEN_WIDTH / 2 - 64,
+            height: 34,
+            paddingHorizontal: 14,
+            borderRadius: 999,
+            backgroundColor: isDark ? colors.surfaceElevated : colors.surface,
+            borderWidth: 1,
+            borderColor: colors.border,
+            flexDirection: "row",
             alignItems: "center",
+            gap: 4,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.12,
+            shadowRadius: 8,
+            elevation: 6,
           }}
-          renderItem={({ item: chip }) => {
-            const isActive = selectedSubcategory === chip;
-            return (
-              <Pressable onPress={() => setSelectedSubcategory(chip)}>
-                <Text
-                  className="text-[22px] tracking-tight"
-                  style={{
-                    fontFamily: ListifyFonts.bold,
-                    color: isActive ? "#1A1A1A" : "#C8CDD2",
-                  }}
-                >
-                  {chip}
-                </Text>
-              </Pressable>
-            );
-          }}
-        />
-      </View>
+        >
+          <MaterialIcons name="arrow-upward" size={16} color={colors.icon} />
+          <Text
+            style={{
+              fontFamily: ListifyFonts.medium,
+              fontSize: 12,
+              color: colors.textPrimary,
+            }}
+          >
+            Back to top
+          </Text>
+        </Pressable>
+      ) : null}
 
-      <FlatList
-        data={feed.listings}
-        keyExtractor={(item) => item._id}
-        renderItem={renderItem}
-        ListHeaderComponent={listHeader}
-        ListEmptyComponent={listEmpty}
-        ListFooterComponent={listFooter}
-        onEndReached={() => {
-          if (feed.hasMore && !feed.isLoadingMore) loadMore();
-        }}
-        onEndReachedThreshold={0.4}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[BRAND]}
-            tintColor={BRAND}
-            progressViewOffset={stickyOffset}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-        initialNumToRender={6}
-        maxToRenderPerBatch={8}
-        windowSize={7}
-        removeClippedSubviews
+      <EventsFloatingNav
+        activeTab={activeNavTab}
+        onTabPress={handleFloatingNavPress}
+        collapseProgress={navCollapse}
       />
     </View>
   );

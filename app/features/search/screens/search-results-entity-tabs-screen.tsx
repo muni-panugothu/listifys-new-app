@@ -44,6 +44,7 @@ import {
   selectLocationSource,
 } from "@/store/slices/location-slice";
 import { useLocale } from "@/providers/locale-provider";
+import { useTheme } from "@/providers/theme-provider";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GRID_GUTTER = 14;
@@ -222,6 +223,7 @@ export function SearchResultsEntityTabsScreen() {
     countryCode?: string | string[];
   }>();
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
   const { isoCountryCode: localeCountryCode } = useLocale();
   const locationCoords = useAppSelector(selectLocationCoords);
   const locationLabel = useAppSelector(selectLocationLabel);
@@ -602,7 +604,10 @@ export function SearchResultsEntityTabsScreen() {
       return (
         <View className="items-center py-20">
           <ActivityIndicator size="large" color="#27BB97" />
-          <Text className="mt-3 text-[14px]" style={ListifyTypography.label}>
+          <Text
+            className="mt-3 text-[14px]"
+            style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
+          >
             Loading listings…
           </Text>
         </View>
@@ -611,24 +616,27 @@ export function SearchResultsEntityTabsScreen() {
 
     return (
       <View className="items-center px-6 py-20">
-        <MaterialIcons name="inventory-2" size={56} color="#D1D5DB" />
+        <MaterialIcons name="inventory-2" size={56} color={colors.iconMuted} />
         <Text
           className="mt-4 text-center text-[18px]"
-          style={ListifyTypography.sectionTitle}
+          style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
         >
           No listings found
           {locationLabel && locationLabel !== "Set location" && locationLabel !== "Detecting location…"
             ? ` in ${locationLabel.split(",")[0]}`
             : ""}
         </Text>
-        <Text className="mt-2 text-center text-[14px]" style={ListifyTypography.body}>
+        <Text
+          className="mt-2 text-center text-[14px]"
+          style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
+        >
           Try another filter or search term
         </Text>
         {trendingSearches.length > 0 ? (
           <View className="mt-6 w-full">
             <Text
               className="mb-3 text-center text-[13px]"
-              style={{ fontFamily: ListifyFonts.medium, color: "#6B7280" }}
+              style={{ fontFamily: ListifyFonts.medium, color: colors.textSecondary }}
             >
               Trending searches
             </Text>
@@ -637,10 +645,19 @@ export function SearchResultsEntityTabsScreen() {
                 <Pressable
                   key={term}
                   onPress={() => handleTrendingTap(term)}
-                  className="rounded-full border border-[#E5E7EB] bg-white px-4 py-2"
+                  className="rounded-full px-4 py-2"
+                  style={{
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surface,
+                  }}
                 >
                   <Text
-                    style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: "#374151" }}
+                    style={{
+                      fontFamily: ListifyFonts.regular,
+                      fontSize: 13,
+                      color: colors.textPrimary,
+                    }}
                   >
                     {term}
                   </Text>
@@ -651,10 +668,10 @@ export function SearchResultsEntityTabsScreen() {
         ) : null}
       </View>
     );
-  }, [handleTrendingTap, loading, locationLabel, trendingSearches]);
+  }, [colors.iconMuted, colors.border, colors.surface, colors.textPrimary, colors.textSecondary, handleTrendingTap, loading, locationLabel, trendingSearches]);
 
   return (
-    <View className="flex-1 bg-[#F6F7F8]">
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <VoiceSearchModal
         visible={voiceVisible}
         onResult={handleVoiceResult}
@@ -672,8 +689,12 @@ export function SearchResultsEntityTabsScreen() {
 
       {/* Header: Back + home-style search */}
       <View
-        className="absolute inset-x-0 top-0 z-50 bg-[#F6F7F8] px-4"
-        style={{ paddingTop: insets.top + 8, height: headerHeight }}
+        className="absolute inset-x-0 top-0 z-50 px-4"
+        style={{
+          paddingTop: insets.top + 8,
+          height: headerHeight,
+          backgroundColor: colors.background,
+        }}
       >
         <View className="h-11 flex-row items-center gap-3">
           <Pressable
@@ -683,34 +704,37 @@ export function SearchResultsEntityTabsScreen() {
           >
             <Text
               className="text-[17px]"
-              style={{ fontFamily: ListifyFonts.semiBold, color: "#27BB97" }}
+              style={{ fontFamily: ListifyFonts.semiBold, color: colors.primary }}
             >
               Back
             </Text>
           </Pressable>
 
           <View
-            className="h-11 flex-1 flex-row items-center rounded-full border border-[#E8E8E8] bg-white px-4"
+            className="h-11 flex-1 flex-row items-center rounded-full border px-4"
             style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.04,
+              shadowOpacity: isDark ? 0.2 : 0.04,
               shadowRadius: 6,
               elevation: 1,
             }}
           >
-            <MaterialIcons name="search" size={22} color="#B8B8B8" />
+            <MaterialIcons name="search" size={22} color={colors.iconMuted} />
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={handleSubmitSearch}
               returnKeyType="search"
               placeholder="Search here"
-              placeholderTextColor="#B0B0B0"
-              className="ml-3 flex-1 text-[15px] text-[#1A1A1A]"
+              placeholderTextColor={colors.inputPlaceholder}
+              className="ml-3 flex-1 text-[15px]"
               style={{
                 fontFamily: ListifyFonts.regular,
                 paddingVertical: 0,
+                color: colors.textPrimary,
               }}
             />
             {searchQuery.length > 0 ? (
@@ -722,7 +746,7 @@ export function SearchResultsEntityTabsScreen() {
                 hitSlop={8}
                 style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               >
-                <MaterialIcons name="close" size={20} color="#9CA3AF" />
+                <MaterialIcons name="close" size={20} color={colors.iconMuted} />
               </Pressable>
             ) : (
               <Pressable
@@ -730,7 +754,7 @@ export function SearchResultsEntityTabsScreen() {
                 hitSlop={8}
                 style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               >
-                <MaterialIcons name="mic" size={20} color="#9CA3AF" />
+                <MaterialIcons name="mic" size={20} color={colors.iconMuted} />
               </Pressable>
             )}
           </View>
@@ -742,7 +766,9 @@ export function SearchResultsEntityTabsScreen() {
       <FlatList
         data={displayResults}
         numColumns={2}
+        key={isDark ? "dark" : "light"}
         keyExtractor={(item) => `${item._entity}_${item._id}`}
+        extraData={isDark}
         renderItem={renderResultCard}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -794,7 +820,7 @@ export function SearchResultsEntityTabsScreen() {
                       className="text-[22px] tracking-tight"
                       style={{
                         fontFamily: ListifyFonts.bold,
-                        color: isActive ? "#1A1A1A" : "#C8CDD2",
+                        color: isActive ? colors.textPrimary : colors.textTertiary,
                       }}
                     >
                       {tab.label}
@@ -822,16 +848,16 @@ export function SearchResultsEntityTabsScreen() {
                     onPress={() => setActiveSort(opt.key)}
                     className="rounded-full px-3.5 py-2"
                     style={{
-                      backgroundColor: isActive ? "rgba(39,187,151,0.12)" : "#FFFFFF",
+                      backgroundColor: isActive ? colors.primarySoft : colors.surface,
                       borderWidth: 1,
-                      borderColor: isActive ? "rgba(39,187,151,0.35)" : "#E5E7EB",
+                      borderColor: isActive ? colors.primarySoftStrong : colors.border,
                     }}
                   >
                     <Text
                       className="text-[12px]"
                       style={{
                         fontFamily: ListifyFonts.medium,
-                        color: isActive ? "#27BB97" : "#4B5563",
+                        color: isActive ? colors.primary : colors.textSecondary,
                       }}
                     >
                       {opt.label}
@@ -847,12 +873,17 @@ export function SearchResultsEntityTabsScreen() {
                     params: { q: searchQuery },
                   } as Href)
                 }
-                className="flex-row items-center gap-1 rounded-full border border-[#27BB97]/25 bg-white px-3.5 py-2"
+                className="flex-row items-center gap-1 rounded-full px-3.5 py-2"
+                style={{
+                  borderWidth: 1,
+                  borderColor: colors.primarySoftStrong,
+                  backgroundColor: colors.surface,
+                }}
               >
-                <MaterialIcons name="map" size={15} color="#27BB97" />
+                <MaterialIcons name="map" size={15} color={colors.primary} />
                 <Text
                   className="text-[12px]"
-                  style={{ fontFamily: ListifyFonts.medium, color: "#27BB97" }}
+                  style={{ fontFamily: ListifyFonts.medium, color: colors.primary }}
                 >
                   Map
                 </Text>
@@ -875,7 +906,7 @@ export function SearchResultsEntityTabsScreen() {
           pagination && displayResults.length > 0 ? (
             <Text
               className="mt-2 text-center text-[12px]"
-              style={[ListifyTypography.label, { marginBottom: 8 }]}
+              style={[ListifyTypography.label, { marginBottom: 8, color: colors.textSecondary }]}
             >
               {displayResults.length} listing{displayResults.length === 1 ? "" : "s"}
             </Text>

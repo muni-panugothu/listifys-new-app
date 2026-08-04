@@ -12,6 +12,7 @@ import { ListingTimeBadge } from "@/components/listing-time-badge";
 import { ListifyTypography } from "@/constants/typography";
 import { formatPrice as libFormatPrice } from "@/lib/currency";
 import { Image } from "@/lib/nativewind-interop";
+import { useTheme } from "@/providers/theme-provider";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -54,6 +55,7 @@ function TrendingListingCardImpl({
   onPress,
   onToggleSave,
 }: TrendingListingCardProps) {
+  const { colors } = useTheme();
   const imageHeight = cardWidth * 1.15;
   const savedProgress = useSharedValue(isSaved ? 1 : 0);
 
@@ -91,9 +93,10 @@ function TrendingListingCardImpl({
   return (
     <Pressable onPress={onPress} style={{ width: cardWidth }}>
       <View
-        className="overflow-hidden rounded-[28px] bg-white"
+        className="overflow-hidden rounded-[28px]"
         style={{
           height: imageHeight,
+          backgroundColor: colors.surface,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 6 },
           shadowOpacity: 0.1,
@@ -141,6 +144,7 @@ function TrendingListingCardImpl({
         className="mt-3 text-[15px]"
         style={{
           ...ListifyTypography.sectionTitle,
+          color: colors.textPrimary,
           ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
         }}
         numberOfLines={1}
@@ -153,6 +157,7 @@ function TrendingListingCardImpl({
             className="flex-1 text-[16px]"
             style={{
               ...ListifyTypography.accent,
+              color: colors.primary,
               lineHeight: 24,
               ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
             }}
@@ -167,7 +172,7 @@ function TrendingListingCardImpl({
               className="shrink-0 pt-0.5 text-[13px]"
               style={{
                 ...ListifyTypography.label,
-                color: "#6B7280",
+                color: colors.textSecondary,
                 lineHeight: 18,
                 ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
               }}

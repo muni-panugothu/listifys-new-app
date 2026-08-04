@@ -1,4 +1,4 @@
-﻿import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "@/lib/safe-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -26,6 +26,7 @@ import {
 } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { useLocale } from "@/providers/locale-provider";
+import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
 import {
   selectIsoCountryCode,
@@ -43,7 +44,6 @@ import { useProtectedNavigation } from "@/lib/use-protected-navigation";
 
 
 const BRAND = ListifyColors.primary;
-const BG = "#F6F7F8";
 const SIDE_PADDING = 16;
 
 const SERVICE_FILTERS = [
@@ -66,6 +66,7 @@ function getSectionTitle(subcategory: string) {
 export function ServicesCategoryHubScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
   const { isoCountryCode: localeCountryCode } = useLocale();
   const user = useAppSelector((s) => s.auth.user);
   const userCoords = useAppSelector(selectLocationCoords);
@@ -279,7 +280,7 @@ export function ServicesCategoryHubScreen() {
   }, []);
 
   return (
-    <View className="flex-1" style={{ backgroundColor: BG }}>
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <VoiceSearchModal
         visible={voiceVisible}
         onResult={handleVoiceResult}
@@ -288,7 +289,7 @@ export function ServicesCategoryHubScreen() {
       {/* ── Top bar: back arrow + search ── */}
       <View
         className="absolute inset-x-0 top-0 z-50 px-4"
-        style={{ paddingTop: insets.top + 8, height: headerHeight, backgroundColor: BG }}
+        style={{ paddingTop: insets.top + 8, height: headerHeight, backgroundColor: colors.background }}
       >
         <View className="h-11 flex-row items-center gap-3">
           <Pressable
@@ -297,35 +298,41 @@ export function ServicesCategoryHubScreen() {
             className="h-10 w-10 items-center justify-center"
             style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
           >
-            <MaterialIcons name="arrow-back-ios" size={20} color="#1A1A1A" />
+            <MaterialIcons name="arrow-back-ios" size={20} color={colors.icon} />
           </Pressable>
           <View
-            className="h-17 flex-1 flex-row items-center rounded-full border border-[#E8E8E8] bg-white px-4"
+            className="h-17 flex-1 flex-row items-center rounded-full border px-4"
             style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.04,
+              shadowOpacity: isDark ? 0.2 : 0.04,
               shadowRadius: 6,
               elevation: 1,
             }}
           >
-            <MaterialIcons name="search" size={22} color="#B8B8B8" />
+            <MaterialIcons name="search" size={22} color={colors.iconMuted} />
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={() => setAppliedSearch(searchQuery.trim())}
               returnKeyType="search"
               placeholder="Search services…"
-              placeholderTextColor="#B0B0B0"
-              className="ml-3 flex-1 text-[15px] text-[#1A1A1A]"
-              style={{ fontFamily: ListifyFonts.regular, paddingVertical: 0 }}
+              placeholderTextColor={colors.inputPlaceholder}
+              className="ml-3 flex-1 text-[15px]"
+              style={{
+                fontFamily: ListifyFonts.regular,
+                paddingVertical: 0,
+                color: colors.textPrimary,
+              }}
             />
             {searchQuery.length > 0 ? (
               <Pressable
                 onPress={() => { setSearchQuery(""); setAppliedSearch(""); }}
                 hitSlop={8}
               >
-                <MaterialIcons name="close" size={20} color="#9CA3AF" />
+                <MaterialIcons name="close" size={20} color={colors.iconMuted} />
               </Pressable>
             ) : (
               <Pressable
@@ -333,7 +340,7 @@ export function ServicesCategoryHubScreen() {
                 hitSlop={8}
                 style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               >
-                <MaterialIcons name="mic" size={20} color="#9CA3AF" />
+                <MaterialIcons name="mic" size={20} color={colors.iconMuted} />
               </Pressable>
             )}
           </View>
@@ -342,8 +349,12 @@ export function ServicesCategoryHubScreen() {
 
       {/* ── Subcategory chips (bold, Vehicles style) ── */}
       <View
-        className="absolute inset-x-0 z-40 bg-[#F6F7F8]"
-        style={{ top: headerHeight, height: categoryTabsHeight }}
+        className="absolute inset-x-0 z-40"
+        style={{
+          top: headerHeight,
+          height: categoryTabsHeight,
+          backgroundColor: colors.background,
+        }}
       >
         <ScrollView
           horizontal
@@ -367,7 +378,7 @@ export function ServicesCategoryHubScreen() {
                   className="text-[22px] tracking-tight"
                   style={{
                     fontFamily: ListifyFonts.bold,
-                    color: isActive ? "#1A1A1A" : "#C8CDD2",
+                    color: isActive ? colors.textPrimary : colors.textTertiary,
                   }}
                 >
                   {chip}
@@ -381,6 +392,8 @@ export function ServicesCategoryHubScreen() {
       {/* ── Listings ── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        removeClippedSubviews
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -415,13 +428,13 @@ export function ServicesCategoryHubScreen() {
                   paddingHorizontal: 14,
                   paddingVertical: 9,
                   borderRadius: 24,
-                  backgroundColor: isActive ? BRAND : "#FFFFFF",
+                  backgroundColor: isActive ? BRAND : colors.surface,
                   borderWidth: 1,
-                  borderColor: isActive ? BRAND : "#E5E7EB",
+                  borderColor: isActive ? BRAND : colors.border,
                   opacity: pressed ? 0.82 : 1,
                   shadowColor: isActive ? BRAND : "#000",
                   shadowOffset: { width: 0, height: isActive ? 4 : 1 },
-                  shadowOpacity: isActive ? 0.28 : 0.07,
+                  shadowOpacity: isActive ? 0.28 : isDark ? 0.2 : 0.07,
                   shadowRadius: isActive ? 10 : 3,
                   elevation: isActive ? 5 : 1,
                 })}
@@ -429,13 +442,13 @@ export function ServicesCategoryHubScreen() {
                 <MaterialIcons
                   name={f.icon}
                   size={14}
-                  color={isActive ? "#FFFFFF" : "#6B7280"}
+                  color={isActive ? colors.textOnPrimary : colors.textSecondary}
                 />
                 <Text
                   style={{
                     fontFamily: ListifyFonts.semiBold,
                     fontSize: 13,
-                    color: isActive ? "#FFFFFF" : "#374151",
+                    color: isActive ? colors.textOnPrimary : colors.textSecondary,
                   }}
                 >
                   {f.label}
@@ -448,17 +461,17 @@ export function ServicesCategoryHubScreen() {
         {(loading || refreshing) && displayListings.length === 0 ? (
           <View className="items-center py-20">
             <ActivityIndicator size="large" color={BRAND} />
-            <Text className="mt-3 text-[14px]" style={ListifyTypography.label}>
+            <Text className="mt-3 text-[14px]" style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}>
               Loading…
             </Text>
           </View>
         ) : loadError ? (
           <View className="items-center px-6 py-20">
-            <MaterialIcons name="wifi-off" size={56} color="#D1D5DB" />
-            <Text className="mt-4 text-[18px]" style={ListifyTypography.sectionTitle}>
+            <MaterialIcons name="wifi-off" size={56} color={colors.iconMuted} />
+            <Text className="mt-4 text-[18px]" style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}>
               Could not load services
             </Text>
-            <Text className="mt-2 text-center text-[13px]" style={ListifyTypography.body}>
+            <Text className="mt-2 text-center text-[13px]" style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}>
               {loadError}
             </Text>
             <Pressable
@@ -471,34 +484,34 @@ export function ServicesCategoryHubScreen() {
           </View>
         ) : displayListings.length === 0 ? (
           <View className="items-center px-6 py-20">
-            <MaterialIcons name="home-repair-service" size={56} color="#D1D5DB" />
-            <Text className="mt-4 text-[18px]" style={ListifyTypography.sectionTitle}>
+            <MaterialIcons name="home-repair-service" size={56} color={colors.iconMuted} />
+            <Text className="mt-4 text-[18px]" style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}>
               {cityName ? `No services found in ${cityName}` : "No services found"}
             </Text>
-            <Text className="mt-2 text-center text-[14px]" style={ListifyTypography.body}>
+            <Text className="mt-2 text-center text-[14px]" style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}>
               Try another filter or search term
             </Text>
           </View>
         ) : (
           <View className="px-4">
             <Text
-              className="mb-1 text-[22px] tracking-tight text-[#1A1A1A]"
-              style={{ fontFamily: ListifyFonts.bold }}
+              className="mb-1 text-[22px] tracking-tight"
+              style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
             >
               {sectionTitle}
             </Text>
             {cityName ? (
               <Text
-                className="mb-4 text-[14px] text-[#6B7280]"
-                style={{ fontFamily: ListifyFonts.regular }}
+                className="mb-4 text-[14px]"
+                style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
               >
                 Near {cityName} · {displayListings.length}{" "}
                 {displayListings.length === 1 ? "professional" : "professionals"}
               </Text>
             ) : (
               <Text
-                className="mb-4 text-[14px] text-[#6B7280]"
-                style={{ fontFamily: ListifyFonts.regular }}
+                className="mb-4 text-[14px]"
+                style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
               >
                 {displayListings.length}{" "}
                 {displayListings.length === 1 ? "professional" : "professionals"} found

@@ -2,6 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { Pressable, Switch, Text, View } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 
 type SettingsMenuRowProps = {
   icon: React.ComponentProps<typeof MaterialIcons>["name"];
@@ -30,6 +31,8 @@ export function SettingsMenuRow({
   disabled,
   showDivider,
 }: SettingsMenuRowProps) {
+  const { colors } = useTheme();
+
   return (
     <>
       <Pressable
@@ -49,15 +52,21 @@ export function SettingsMenuRow({
           </View>
           <View className="min-w-0 flex-1">
             <Text
-              className="text-[16px] text-[#1A1A1A]"
-              style={{ fontFamily: ListifyFonts.medium }}
+              className="text-[16px]"
+              style={{
+                fontFamily: ListifyFonts.medium,
+                color: colors.textPrimary,
+              }}
             >
               {label}
             </Text>
             {subtitle ? (
               <Text
-                className="mt-0.5 text-[12px] text-[#9CA3AF]"
-                style={{ fontFamily: ListifyFonts.regular }}
+                className="mt-0.5 text-[12px]"
+                style={{
+                  fontFamily: ListifyFonts.regular,
+                  color: colors.textTertiary,
+                }}
                 numberOfLines={2}
               >
                 {subtitle}
@@ -70,14 +79,19 @@ export function SettingsMenuRow({
             value={value}
             onValueChange={onToggle}
             disabled={disabled}
-            trackColor={{ false: "#E5E7EB", true: "#27BB97" }}
-            thumbColor="#FFFFFF"
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.textOnPrimary}
           />
         ) : (
-          <MaterialIcons name="chevron-right" size={22} color="#C4C4C4" />
+          <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
         )}
       </Pressable>
-      {showDivider ? <View className="mx-4 h-px bg-[#F0F0F0]" /> : null}
+      {showDivider ? (
+        <View
+          className="mx-4 h-px"
+          style={{ backgroundColor: colors.border }}
+        />
+      ) : null}
     </>
   );
 }

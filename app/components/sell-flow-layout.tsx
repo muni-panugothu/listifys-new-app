@@ -9,12 +9,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { KeyboardFormScroll } from "@/components/keyboard-form-scroll";
-
 import { SellStepIndicator } from "@/components/sell-step-indicator";
-import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
-
-const CTA_BG = "#1A1A1A";
+import { useTheme } from "@/providers/theme-provider";
 
 type SellFlowLayoutProps = {
   step: 1 | 2 | 3;
@@ -44,22 +41,25 @@ export function SellSectionCard({
   children: ReactNode;
   className?: string;
 }) {
+  const { colors } = useTheme();
+
   return (
     <View className={className ?? "mb-5"}>
       {title ? (
         <Text
           className="mb-3 text-[13px] uppercase tracking-wide"
-          style={{ fontFamily: ListifyFonts.semiBold, color: "#9CA3AF" }}
+          style={{ fontFamily: ListifyFonts.semiBold, color: colors.textTertiary }}
         >
           {title}
           {required ? (
-            <Text style={{ color: "#EF4444" }}> *</Text>
+            <Text style={{ color: colors.danger }}> *</Text>
           ) : null}
         </Text>
       ) : null}
       <View
-        className="overflow-hidden rounded-2xl bg-white"
+        className="overflow-hidden rounded-2xl"
         style={{
+          backgroundColor: colors.surface,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.04,
@@ -89,11 +89,12 @@ export function SellFlowLayout({
   keyboardPersistTaps = "handled",
 }: SellFlowLayoutProps) {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const showFooter = Boolean(primaryLabel && onPrimaryPress);
   const footerBottomPad = Math.max(insets.bottom, 8);
 
   return (
-    <View className="flex-1" style={{ backgroundColor: APP_SCREEN_BG }}>
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <View
         className="flex-row items-center justify-between px-5"
         style={{ paddingTop: insets.top + 8, paddingBottom: 12 }}
@@ -105,20 +106,20 @@ export function SellFlowLayout({
             className="mr-2 h-10 w-10 items-center justify-center"
             style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
           >
-            <MaterialIcons name="chevron-left" size={32} color="#1A1A1A" />
+            <MaterialIcons name="chevron-left" size={32} color={colors.icon} />
           </Pressable>
           <View className="flex-1">
             <Text
-              className="text-[22px] text-[#1A1A1A]"
-              style={{ fontFamily: ListifyFonts.bold }}
+              className="text-[22px]"
+              style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
               numberOfLines={1}
             >
               {title}
             </Text>
             {subtitle ? (
               <Text
-                className="text-[13px] text-[#6B7280]"
-                style={{ fontFamily: ListifyFonts.regular }}
+                className="text-[13px]"
+                style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
                 numberOfLines={1}
               >
                 {subtitle}
@@ -145,8 +146,8 @@ export function SellFlowLayout({
         <View
           style={{
             borderTopWidth: 1,
-            borderTopColor: "#E5E7EB",
-            backgroundColor: "#FFFFFF",
+            borderTopColor: colors.border,
+            backgroundColor: colors.surface,
             paddingHorizontal: 20,
             paddingTop: 12,
             paddingBottom: footerBottomPad,
@@ -164,7 +165,7 @@ export function SellFlowLayout({
                   style={{
                     fontFamily: ListifyFonts.regular,
                     fontSize: 11,
-                    color: "#9CA3AF",
+                    color: colors.textTertiary,
                   }}
                 >
                   {footerLabel}
@@ -175,7 +176,7 @@ export function SellFlowLayout({
                   style={{
                     fontFamily: ListifyFonts.semiBold,
                     fontSize: 14,
-                    color: "#1A1A1A",
+                    color: colors.textPrimary,
                   }}
                   numberOfLines={2}
                 >
@@ -195,7 +196,7 @@ export function SellFlowLayout({
               style={{
                 minHeight: 52,
                 borderRadius: 16,
-                backgroundColor: CTA_BG,
+                backgroundColor: colors.textPrimary,
                 alignItems: "center",
                 justifyContent: "center",
                 flexDirection: "row",
@@ -203,19 +204,19 @@ export function SellFlowLayout({
               }}
             >
               {primaryLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color={colors.background} />
               ) : (
                 <>
                   <Text
                     style={{
                       fontFamily: ListifyFonts.semiBold,
                       fontSize: 16,
-                      color: "#FFFFFF",
+                      color: colors.background,
                     }}
                   >
                     {primaryLabel}
                   </Text>
-                  <MaterialIcons name="arrow-forward" size={20} color="#FFFFFF" />
+                  <MaterialIcons name="arrow-forward" size={20} color={colors.background} />
                 </>
               )}
             </View>

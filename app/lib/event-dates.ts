@@ -36,6 +36,9 @@ export function parseFlexibleDate(input: unknown): Date | null {
 
   if (/^\d{1,2}$/.test(str)) return null;
 
+  // Bare year — Date.parse("2026") => Jan 1, which silently fabricates a day.
+  if (/^\d{4}$/.test(str)) return null;
+
   const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) {
     const y = Number(iso[1]);
@@ -170,6 +173,20 @@ export function parseDateRangeFromText(text?: string): { start: Date | null; end
   if (!text?.trim()) return { start: null, end: null };
 
   const str = stripOrdinals(text.trim());
+
+  // ISO dates must be matched before any hyphen split, or "2026-09-12" is read
+  // as the range 2026 → 09-12 and collapses to Jan 1.
+  const ISO_DAY = /^\d{4}-\d{2}-\d{2}(?:[T\s][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+  if (ISO_DAY.test(str)) {
+    const single = parseFlexibleDate(str);
+    return { start: single, end: single };
+  }
+
+  const isoRange = str.match(/^(\d{4}-\d{2}-\d{2})\s*(?:–|—|-|to)\s*(\d{4}-\d{2}-\d{2})$/i);
+  if (isoRange) {
+    const start = parseFlexibleDate(isoRange[1]);
+    return { start, end: parseFlexibleDate(isoRange[2]) ?? start };
+  }
 
   const sharedMonth = str.match(
     /^(\d{1,2})\s*(?:–|—|-|to)\s*(\d{1,2})\s+([a-zA-Z]+)(?:\s+(\d{4}))?$/i,

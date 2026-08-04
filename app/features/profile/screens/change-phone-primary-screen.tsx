@@ -20,7 +20,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { APP_SCREEN_BG } from "@/constants/theme";
 import { ListifyFonts } from "@/constants/typography";
 import { requestPhoneChange, verifyPhoneChange } from "@/features/auth/services/auth-api";
 import { showErrorToast } from "@/lib/toast";
@@ -28,6 +27,7 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchProfile, setAuthUser } from "@/store/slices/auth-slice";
 import { PhoneInputWithCountry } from "@/components/phone-input-with-country";
 import { useLocale } from "@/providers/locale-provider";
+import { useTheme } from "@/providers/theme-provider";
 
 const BRAND = "#27BB97";
 const TEXT_PRIMARY = "#1A1A1A";
@@ -114,6 +114,7 @@ export function ChangePhonePrimaryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
+  const { colors } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
   const { phoneCode: localePhoneCode, isoCountryCode: localeIso } = useLocale();
 
@@ -193,7 +194,7 @@ export function ChangePhonePrimaryScreen() {
   const otpExpired = step === "otp" && expireTimer.secs === 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: APP_SCREEN_BG }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Header */}
       <View
         style={{
@@ -202,7 +203,7 @@ export function ChangePhonePrimaryScreen() {
           paddingTop: insets.top + 8,
           paddingBottom: 12,
           paddingHorizontal: 20,
-          backgroundColor: APP_SCREEN_BG,
+          backgroundColor: colors.background,
         }}
       >
         <Pressable
@@ -217,9 +218,9 @@ export function ChangePhonePrimaryScreen() {
             justifyContent: "center",
           })}
         >
-          <MaterialIcons name="chevron-left" size={32} color={TEXT_PRIMARY} />
+          <MaterialIcons name="chevron-left" size={32} color={colors.icon} />
         </Pressable>
-        <Text style={{ fontSize: 22, fontFamily: ListifyFonts.bold, color: TEXT_PRIMARY }}>
+        <Text style={{ fontSize: 22, fontFamily: ListifyFonts.bold, color: colors.textPrimary }}>
           Change Phone Number
         </Text>
       </View>
@@ -261,7 +262,7 @@ export function ChangePhonePrimaryScreen() {
         {step === "phone" && (
           <View
             style={{
-              backgroundColor: "#fff",
+              backgroundColor: colors.surface,
               borderRadius: 20,
               padding: 24,
               shadowColor: "#000",
@@ -316,7 +317,7 @@ export function ChangePhonePrimaryScreen() {
         {step === "otp" && (
           <View
             style={{
-              backgroundColor: "#fff",
+              backgroundColor: colors.surface,
               borderRadius: 20,
               padding: 24,
               shadowColor: "#000",

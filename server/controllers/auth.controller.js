@@ -2197,6 +2197,29 @@ exports.verifyForgotPasswordOTP = async (req, res) => {
       });
     }
 
+    const redis = require("../config/redis");
+    const otpHash = crypto.createHash("sha256").update(String(otp)).digest("hex");
+    const verifiedKey = `reset_otp_verified:${email}`;
+
+    // Idempotent replay: concurrent client retries often hit after the first
+    // success deleted pending reset / OTP. Return the same token when OTP matches.
+    try {
+      const prior = await redis.get(verifiedKey);
+      if (prior) {
+        const parsed = typeof prior === "string" ? JSON.parse(prior) : prior;
+        if (parsed?.resetToken && parsed?.otpHash === otpHash) {
+          logger.info("OTP verify replay (idempotent)", { email });
+          return res.status(200).json({
+            success: true,
+            message: "OTP verified successfully",
+            resetToken: parsed.resetToken,
+          });
+        }
+      }
+    } catch (_) {
+      // Fall through to normal verify path.
+    }
+
     // Check if OTP is blocked
     const otpBlocked = await RedisService.checkOTPBlocked(email);
     if (otpBlocked.blocked) {
@@ -2218,82 +2241,141 @@ exports.verifyForgotPasswordOTP = async (req, res) => {
       });
     }
 
-    // Verify OTP
-    const otpVerification = await RedisService.verifyOTP(email, otp);
-    
-    if (!otpVerification.valid) {
-      const attemptResult = await RedisService.incrementOTPAttempts(email, {
-        userId: pendingData.userId || null,
-        userName: pendingData.username || pendingData.name || null,
-        phone: pendingData.phone || null,
-        provider: pendingData.provider || "local",
-        context: "forgot_password",
+    // Serialize concurrent verifies for the same email (double-tap / multi-base race).
+    const lockKey = `reset_otp_verify_lock:${email}`;
+    const lockAcquired = await redis.set(lockKey, "1", { ex: 15, nx: true });
+    if (!lockAcquired) {
+      // Another request is verifying — wait briefly for its verified token.
+      for (let i = 0; i < 8; i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        try {
+          const prior = await redis.get(verifiedKey);
+          if (prior) {
+            const parsed = typeof prior === "string" ? JSON.parse(prior) : prior;
+            if (parsed?.resetToken && parsed?.otpHash === otpHash) {
+              return res.status(200).json({
+                success: true,
+                message: "OTP verified successfully",
+                resetToken: parsed.resetToken,
+              });
+            }
+          }
+        } catch (_) {
+          /* continue waiting */
+        }
+      }
+      return res.status(409).json({
+        success: false,
+        message: "Verification already in progress. Please wait a moment.",
       });
+    }
 
-      let errorMessage = otpVerification.reason || "Invalid OTP. Please try again.";
-
-      if (attemptResult.blocked) {
-        return res.status(429).json({
+    try {
+      // Re-check pending under lock (first request may have already cleaned up).
+      const pendingUnderLock = await RedisService.getPendingPasswordReset(email);
+      if (!pendingUnderLock) {
+        const prior = await redis.get(verifiedKey);
+        if (prior) {
+          const parsed = typeof prior === "string" ? JSON.parse(prior) : prior;
+          if (parsed?.resetToken && parsed?.otpHash === otpHash) {
+            return res.status(200).json({
+              success: true,
+              message: "OTP verified successfully",
+              resetToken: parsed.resetToken,
+            });
+          }
+        }
+        return res.status(400).json({
           success: false,
-          message: "Too many failed attempts. Please try again in 60 seconds.",
-          blocked: true,
-          remainingSeconds: 60,
+          message: "Password reset session expired or not found. Please start over.",
+        });
+      }
+
+      // Verify OTP
+      const otpVerification = await RedisService.verifyOTP(email, otp);
+
+      if (!otpVerification.valid) {
+        const attemptResult = await RedisService.incrementOTPAttempts(email, {
+          userId: pendingUnderLock.userId || null,
+          userName: pendingUnderLock.username || pendingUnderLock.name || null,
+          phone: pendingUnderLock.phone || null,
+          provider: pendingUnderLock.provider || "local",
+          context: "forgot_password",
+        });
+
+        let errorMessage = otpVerification.reason || "Invalid OTP. Please try again.";
+
+        if (attemptResult.blocked) {
+          return res.status(429).json({
+            success: false,
+            message: "Too many failed attempts. Please try again in 60 seconds.",
+            blocked: true,
+            remainingSeconds: 60,
+            attempts: attemptResult.attempts,
+          });
+        }
+
+        const attemptsRemaining = 3 - attemptResult.attempts;
+        return res.status(400).json({
+          success: false,
+          message: errorMessage,
+          attemptsRemaining,
           attempts: attemptResult.attempts,
         });
       }
 
-      const attemptsRemaining = 3 - attemptResult.attempts;
-      return res.status(400).json({
-        success: false,
-        message: errorMessage,
-        attemptsRemaining,
-        attempts: attemptResult.attempts,
+      // Clear OTP attempts and block
+      await RedisService.clearOTPAttempts(email);
+      await RedisService.clearOTPBlock(email);
+
+      // Generate a raw cryptographically random reset token (returned to client)
+      // Store ONLY the SHA-256 hash as the Redis key so a Redis dump yields
+      // no usable tokens.
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+      // Create a clean data object with all required fields
+      const resetData = {
+        userId: pendingUnderLock.userId,
+        email: pendingUnderLock.email || email,
+        createdAt: new Date().toISOString()
+      };
+
+      const stringifiedData = JSON.stringify(resetData);
+
+      // Key = SHA-256(rawToken) — safe to store; only the holder of rawToken can look it up
+      await redis.setex(
+        `reset:${hashedToken}`,
+        600, // 10 minutes
+        stringifiedData
+      );
+      await redis.setex(
+        `reset_email:${hashedToken}`,
+        600,
+        email
+      );
+
+      // Allow brief idempotent replays (same OTP) after cleanup.
+      await redis.setex(
+        verifiedKey,
+        120,
+        JSON.stringify({ resetToken: rawToken, otpHash })
+      );
+
+      // Clean up OTP data
+      await RedisService.deleteOTP(email);
+      await RedisService.deletePendingPasswordReset(email);
+
+      logger.info("OTP verified for password reset", { email });
+
+      return res.status(200).json({
+        success: true,
+        message: "OTP verified successfully",
+        resetToken: rawToken,   // raw token sent to client; hash stored in Redis
       });
+    } finally {
+      await redis.del(lockKey).catch(() => {});
     }
-
-    // Clear OTP attempts and block
-    await RedisService.clearOTPAttempts(email);
-    await RedisService.clearOTPBlock(email);
-
-    // Generate a raw cryptographically random reset token (returned to client)
-    // Store ONLY the SHA-256 hash as the Redis key so a Redis dump yields
-    // no usable tokens.
-    const rawToken = crypto.randomBytes(32).toString("hex");
-    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
-    const redis = require("../config/redis");
-    
-    // Create a clean data object with all required fields
-    const resetData = {
-      userId: pendingData.userId,
-      email: pendingData.email || email,
-      createdAt: new Date().toISOString()
-    };
-
-    const stringifiedData = JSON.stringify(resetData);
-    
-    // Key = SHA-256(rawToken) — safe to store; only the holder of rawToken can look it up
-    await redis.setex(
-      `reset:${hashedToken}`,
-      600, // 10 minutes
-      stringifiedData
-    );
-    await redis.setex(
-      `reset_email:${hashedToken}`,
-      600,
-      email
-    );
-
-    // Clean up OTP data
-    await RedisService.deleteOTP(email);
-    await RedisService.deletePendingPasswordReset(email);
-
-    logger.info("OTP verified for password reset", { email });
-
-    return res.status(200).json({
-      success: true,
-      message: "OTP verified successfully",
-      resetToken: rawToken,   // raw token sent to client; hash stored in Redis
-    });
   } catch (error) {
     logger.error("Verify forgot password OTP error:", error);
     return res.status(500).json({ 
