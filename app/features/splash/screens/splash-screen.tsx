@@ -9,7 +9,10 @@ import { useAppDispatch } from "@/store/hooks";
 import { store } from "@/store";
 import { getAccessToken, getRefreshToken, restoreTokens } from "@/features/auth/services/auth-api";
 import { restoreSession } from "@/store/slices/auth-slice";
-import { checkOnboarding } from "@/store/slices/onboarding-slice";
+import {
+  checkFirstInstallIntro,
+  checkOnboarding,
+} from "@/store/slices/onboarding-slice";
 import {
   hasPendingNotificationNavigation,
   takePendingNotificationNavigation,
@@ -29,7 +32,10 @@ export function SplashScreen() {
 
     const bootstrap = async () => {
       try {
-        await dispatch(checkOnboarding());
+        await Promise.all([
+          dispatch(checkOnboarding()),
+          dispatch(checkFirstInstallIntro()),
+        ]);
         const sessionResult = await dispatch(restoreSession());
         await configureGoogleSignIn().catch(() => {});
 
@@ -73,9 +79,14 @@ export function SplashScreen() {
         return;
       }
 
-      // Always show onboarding when not authenticated — covers:
-      // • new users (first launch)
-      // • users who logged out and restarted the app
+      const { hasCompletedFirstInstallIntro } = store.getState().onboarding;
+
+      if (hasCompletedFirstInstallIntro === false) {
+        router.replace("/first-install-onboarding" as Href);
+        return;
+      }
+
+      // Returning / logged-out users — existing auth welcome screen.
       router.replace("/onboarding-slide-3" as Href);
     };
 

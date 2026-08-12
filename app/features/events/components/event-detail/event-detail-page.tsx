@@ -24,6 +24,11 @@ import { ListifyFonts } from "@/constants/typography";
 import { AUTH_API_BASE_URL } from "@/features/auth/services/auth-api";
 import { AuthGateBottomSheet } from "@/features/auth/components/auth-gate-bottom-sheet";
 import { FeaturedEventCard } from "@/features/events/components/featured-event-card";
+import { EventListingMedia } from "@/features/events/components/event-listing-media";
+import {
+  getComedyCategoryLabel,
+  getEventDurationLabel,
+} from "@/features/events/data/comedy-event-meta";
 import {
   fetchSimilarEvents,
   prefetchSimilarEvents,
@@ -41,15 +46,16 @@ import {
   findDummyFeaturedEvent,
   type EventOrganizerStats,
 } from "@/features/events/utils/event-detail-helpers";
-import { ListingVideoPlayer } from "@/components/listing-media-viewer";
-import { buildListingMediaGallery } from "@/lib/listing-media";
 import {
   addToRecentlyViewed,
-  fetchListingById,
+  mergeListingItems,
+  normalizeListingItem,
   toggleSaveListing,
   type ListingItem,
 } from "@/features/listing/services/listing-api";
 import { buildListingChatHref } from "@/lib/listing-chat";
+import { buildListingMediaGallery } from "@/lib/listing-media";
+import { cacheKeys, getCachedStale, seedListingDetail } from "@/lib/cache";
 import { getListingSellerId, isOwnListing } from "@/lib/is-own-listing";
 import { Image } from "@/lib/nativewind-interop";
 import { useSwrListing } from "@/lib/use-swr-listing";
@@ -126,13 +132,23 @@ function EventDetailPageImpl({
   const dummy = findDummyFeaturedEvent(eventId);
   const isDummy = Boolean(dummy);
 
-  const { listing: swrListing, refresh: refreshListing } = useSwrListing(
+  const cachedListing = useMemo((): ListingItem | null => {
+    if (isDummy && dummy) return dummyToListingItem(dummy);
+    const cached = getCachedStale<{ listing?: ListingItem }>(
+      cacheKeys.listingDetail("events", eventId),
+    );
+    return cached?.data.listing
+      ? normalizeListingItem(cached.data.listing)
+      : null;
+  }, [dummy, eventId, isDummy]);
+
+  const { listing: swrListing } = useSwrListing(
     "events",
     isDummy ? null : eventId,
   );
 
   const [listing, setListing] = useState<ListingItem | null>(
-    isDummy ? dummyToListingItem(dummy!) : swrListing ?? null,
+    cachedListing ?? (isDummy ? dummyToListingItem(dummy!) : swrListing ?? null),
   );
   const [similarEvents, setSimilarEvents] = useState<ListingItem[]>([]);
   const [isSaved, setIsSaved] = useState(false);
@@ -147,8 +163,21 @@ function EventDetailPageImpl({
       setListing(dummyToListingItem(dummy!));
       return;
     }
-    if (swrListing) setListing(swrListing);
-  }, [dummy, isDummy, swrListing]);
+    if (cachedListing) {
+      setListing((prev) => mergeListingItems(prev, cachedListing));
+    }
+  }, [cachedListing, dummy, isDummy]);
+
+  useEffect(() => {
+    if (isDummy) return;
+    if (swrListing) {
+      setListing((prev) => mergeListingItems(prev, swrListing));
+    }
+  }, [isDummy, swrListing]);
+
+  useEffect(() => {
+    setActiveMediaIndex(0);
+  }, [eventId]);
 
   useEffect(() => {
     if (!listing || isDummy) return;
@@ -172,20 +201,6 @@ function EventDetailPageImpl({
       .then((res) => setSimilarEvents(res.listings ?? []))
       .catch(() => {});
   }, [eventId, isActive, isDummy, isoCountryCode, userCoords?.lat, userCoords?.lng]);
-
-  useEffect(() => {
-    if (!isActive || isDummy) return;
-    void refreshListing();
-  }, [isActive, isDummy, refreshListing]);
-
-  useEffect(() => {
-    if (!isDummy || !isActive) return;
-    void fetchListingById("events", eventId)
-      .then((res) => {
-        if (res.listing) setListing(res.listing);
-      })
-      .catch(() => {});
-  }, [eventId, isActive, isDummy]);
 
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler({
@@ -266,6 +281,12 @@ function EventDetailPageImpl({
 
   const openSimilarEvent = useCallback(
     (id: string, ids: string[], index: number) => {
+      const match = similarEvents.find((item) => item._id === id);
+      if (match) {
+        seedListingDetail("events", match._id, normalizeListingItem(match), 120_000, {
+          force: true,
+        });
+      }
       router.push({
         pathname: "/event-detail",
         params: {
@@ -276,7 +297,7 @@ function EventDetailPageImpl({
         },
       } as Href);
     },
-    [router],
+    [router, similarEvents],
   );
 
   const handleToggleSave = useCallback(async () => {
@@ -329,8 +350,28 @@ function EventDetailPageImpl({
     () => buildListingMediaGallery(listing ?? undefined),
     [listing],
   );
-  const images = galleryMedia.map((entry) => entry.url);
   const activeMedia = galleryMedia[activeMediaIndex] ?? galleryMedia[0];
+  const heroListing = useMemo((): Pick<ListingItem, "images" | "videos"> | null => {
+    if (!listing || !activeMedia) return listing;
+    if (activeMedia.type === "video") {
+      return {
+        images: listing.images ?? [],
+        videos: [
+          {
+            url: activeMedia.url,
+            thumbnailUrl: activeMedia.thumbnailUrl,
+            duration: activeMedia.duration,
+            mimeType: activeMedia.mimeType,
+            order: 0,
+          },
+        ],
+      };
+    }
+    return {
+      images: [activeMedia.url],
+      videos: [],
+    };
+  }, [activeMedia, listing]);
 
   if (!listing) {
     return (
@@ -351,6 +392,8 @@ function EventDetailPageImpl({
   const tags = buildEventTags(listing);
   const dateLabel = buildEventDateAccent(listing);
   const scheduleLabel = buildEventScheduleLabel(listing);
+  const comedyCategory = getComedyCategoryLabel(listing);
+  const comedyDuration = getEventDurationLabel(listing);
   const venue =
     (listing.venue as string | undefined)?.trim() ||
     listing.location?.trim() ||
@@ -410,31 +453,22 @@ function EventDetailPageImpl({
         <Pressable
           style={{ flex: 1 }}
           onPress={() => {
-            if (images.length <= 1) return;
-            setActiveMediaIndex((prev) => (prev + 1) % images.length);
+            if (galleryMedia.length <= 1) return;
+            setActiveMediaIndex((prev) => (prev + 1) % galleryMedia.length);
           }}
         >
-          {galleryMedia.length > 0 ? (
-            activeMedia?.type === "video" ? (
-              <ListingVideoPlayer
-                uri={activeMedia.url}
-                poster={activeMedia.thumbnailUrl}
-                isActive={isActive}
-                autoPlay={isActive}
-                muted
-                loop
-                showControls={false}
-                style={{ width: "100%", height: "100%" }}
-              />
-            ) : (
-              <Image
-                source={activeMedia?.url ?? images[0]}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                transition={180}
-                style={{ width: "100%", height: "100%" }}
-              />
-            )
+          {galleryMedia.length > 0 && heroListing ? (
+            <EventListingMedia
+              listing={heroListing}
+              recyclingKey={`detail-hero-${listing._id}-${activeMediaIndex}`}
+              isActive={isActive}
+              autoPlay={isActive}
+              loop
+              muted
+              showControls={false}
+              style={{ width: "100%", height: "100%" }}
+              placeholderIconSize={56}
+            />
           ) : (
             <View
               style={{
@@ -789,6 +823,102 @@ function EventDetailPageImpl({
             </View>
             <MaterialIcons name="chevron-right" size={22} color={detailTheme.secondaryText} />
           </Pressable>
+
+          {comedyCategory ? (
+            <>
+              <View style={{ height: 1, backgroundColor: detailTheme.divider }} />
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 12,
+                  paddingVertical: 14,
+                }}
+              >
+                <View
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    backgroundColor: detailTheme.rowIconBg,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <MaterialIcons name="category" size={20} color={detailTheme.titleText} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontFamily: ListifyFonts.semiBold,
+                      fontSize: 14,
+                      color: detailTheme.titleText,
+                    }}
+                  >
+                    Category
+                  </Text>
+                  <Text
+                    style={{
+                      marginTop: 3,
+                      fontFamily: ListifyFonts.regular,
+                      fontSize: 12,
+                      color: detailTheme.secondaryText,
+                    }}
+                  >
+                    {comedyCategory}
+                  </Text>
+                </View>
+              </View>
+            </>
+          ) : null}
+
+          {comedyDuration ? (
+            <>
+              <View style={{ height: 1, backgroundColor: detailTheme.divider }} />
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 12,
+                  paddingVertical: 14,
+                }}
+              >
+                <View
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    backgroundColor: detailTheme.rowIconBg,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <MaterialIcons name="schedule" size={20} color={detailTheme.titleText} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontFamily: ListifyFonts.semiBold,
+                      fontSize: 14,
+                      color: detailTheme.titleText,
+                    }}
+                  >
+                    Duration
+                  </Text>
+                  <Text
+                    style={{
+                      marginTop: 3,
+                      fontFamily: ListifyFonts.regular,
+                      fontSize: 12,
+                      color: detailTheme.secondaryText,
+                    }}
+                  >
+                    {comedyDuration}
+                  </Text>
+                </View>
+              </View>
+            </>
+          ) : null}
 
           {description ? (
             <View style={{ marginTop: 22 }}>

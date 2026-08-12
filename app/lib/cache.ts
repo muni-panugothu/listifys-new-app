@@ -148,6 +148,28 @@ export async function withCache<T>(
 }
 
 /**
+ * Stale-while-revalidate read: return cached data immediately (even if TTL expired),
+ * and kick off a background refresh when stale or missing.
+ */
+export async function withStaleCache<T>(
+  key: string,
+  fetcher: () => Promise<T>,
+  ttlMs = 60_000,
+): Promise<T> {
+  const cached = getCachedStale<T>(key);
+  if (cached && !cached.isStale) {
+    return cached.data;
+  }
+  if (cached?.isStale) {
+    void swrFetch(key, fetcher, ttlMs)
+      .refresh()
+      .catch(() => {});
+    return cached.data;
+  }
+  return withCache(key, fetcher, ttlMs);
+}
+
+/**
  * Stale-while-revalidate fetch. Fires the network in the background and
  * pushes results into the cache (which notifies subscribers). Returns the
  * current cache state synchronously so a screen can render instantly.
@@ -216,18 +238,39 @@ export const cacheKeys = {
 // We accept a structurally-typed listing (must have `_id`) to avoid circular
 // imports with the listing-api types.
 
-export function seedListingDetail<L extends { _id: string; phone?: string | null }>(
+type SeedListingDetailOpts = { force?: boolean };
+
+function listingMediaCount(
+  listing: { images?: unknown[]; videos?: unknown[] } | null | undefined,
+): number {
+  if (!listing) return 0;
+  return (listing.images?.length ?? 0) + (listing.videos?.length ?? 0);
+}
+
+export function seedListingDetail<
+  L extends { _id: string; phone?: string | null; images?: unknown[]; videos?: unknown[] },
+>(
   categorySlug: string,
   id: string,
   listing: L,
   ttlMs = 120_000,
+  opts?: SeedListingDetailOpts,
 ) {
   const key = cacheKeys.listingDetail(categorySlug, id);
   const existing = getCachedStale<{ listing?: L }>(key);
-  if (existing && !existing.isStale) return;
+  const incomingRicher =
+    Boolean(existing?.data.listing) &&
+    listingMediaCount(listing) > listingMediaCount(existing!.data.listing);
+
+  if (existing && !existing.isStale && !opts?.force && !incomingRicher) return;
+
   // Home feed seeds omit phone — treat as stale immediately so detail revalidates.
   const effectiveTtl = listing.phone ? ttlMs : 1;
-  setCache(key, { success: true, listing }, effectiveTtl);
+  const merged =
+    incomingRicher && existing?.data.listing && !opts?.force
+      ? { ...existing.data.listing, ...listing }
+      : listing;
+  setCache(key, { success: true, listing: merged }, effectiveTtl);
 }
 
 export function seedListingsBatch<L extends { _id: string }>(

@@ -22,34 +22,34 @@ type NativeListingVideoPlayerProps = {
   onProgress?: (progress: number, durationSec: number) => void;
 };
 
-export function ListingVideoPlayerNative({
+type InnerPlayerProps = NativeListingVideoPlayerProps & {
+  shouldPlay: boolean;
+};
+
+function ListingVideoPlayerInner({
   uri,
   poster,
   style,
-  autoPlay = false,
-  isActive,
+  shouldPlay,
   muted = true,
   loop = false,
-  paused = false,
   showControls = true,
   showPlayOverlay = false,
   onPress,
   compact = false,
   onEnded,
   onProgress,
-}: NativeListingVideoPlayerProps) {
-  const [isPlaying, setIsPlaying] = useState(autoPlay);
+}: InnerPlayerProps) {
+  const [isPlaying, setIsPlaying] = useState(shouldPlay);
   const [showPoster, setShowPoster] = useState(Boolean(poster));
   const endedRef = useRef(false);
 
-  const shouldPlay = (isActive ?? autoPlay) && !paused;
   const showCenterOverlay =
     (showPlayOverlay || compact) && !(shouldPlay && !showPlayOverlay);
 
   const player = useVideoPlayer(uri, (p) => {
     p.loop = loop;
     p.muted = muted;
-    if (shouldPlay) p.play();
   });
 
   useEffect(() => {
@@ -60,58 +60,78 @@ export function ListingVideoPlayerNative({
     player.muted = muted;
   }, [muted, player]);
 
+  const playSafe = () => {
+    try {
+      player.play();
+      setIsPlaying(true);
+      if (!poster) setShowPoster(false);
+    } catch {
+      /* source may not be ready yet */
+    }
+  };
+
+  const pauseSafe = () => {
+    try {
+      player.pause();
+      setIsPlaying(false);
+    } catch {
+      /* ignore */
+    }
+  };
+
   useEffect(() => {
     endedRef.current = false;
     if (shouldPlay) {
-      try {
-        player.play();
-        setIsPlaying(true);
-        if (!poster) setShowPoster(false);
-      } catch {
-        /* player may not be ready */
-      }
+      playSafe();
     } else {
-      try {
-        player.pause();
-        setIsPlaying(false);
-      } catch {
-        /* ignore */
-      }
+      pauseSafe();
     }
-  }, [shouldPlay, player, poster]);
+  }, [shouldPlay, uri]);
 
   useEffect(() => {
+    if (!shouldPlay) return;
+
+    const statusSub = player.addListener("statusChange", ({ status }) => {
+      if (status === "readyToPlay") playSafe();
+    });
+    const endSub = player.addListener("playToEnd", () => {
+      if (endedRef.current) return;
+      endedRef.current = true;
+      onEnded?.();
+    });
+
+    playSafe();
+
     return () => {
-      try {
-        player.pause();
-      } catch {
-        /* Player may already be released. */
-      }
+      statusSub.remove();
+      endSub.remove();
     };
-  }, [player]);
+  }, [shouldPlay, player, uri, onEnded]);
 
   useEffect(() => {
-    if (!shouldPlay || (!onProgress && !onEnded)) return;
+    if (!shouldPlay || !onProgress) return;
 
     const tick = () => {
       try {
         const current = player.currentTime ?? 0;
         const duration = player.duration ?? 0;
         if (duration > 0) {
-          onProgress?.(Math.min(current / duration, 1), duration);
-          if (!endedRef.current && current >= Math.max(duration - 0.25, 0)) {
-            endedRef.current = true;
-            onEnded?.();
-          }
+          onProgress(Math.min(current / duration, 1), duration);
         }
       } catch {
-        /* ignore polling errors */
+        /* ignore */
       }
     };
 
-    const id = setInterval(tick, 200);
+    const id = setInterval(tick, 400);
     return () => clearInterval(id);
-  }, [shouldPlay, onProgress, onEnded, player]);
+  }, [shouldPlay, onProgress, player]);
+
+  useEffect(() => {
+    return () => {
+      pauseSafe();
+    };
+  }, [player]);
 
   useEffect(() => {
     if (isPlaying && showPoster) {
@@ -125,11 +145,9 @@ export function ListingVideoPlayerNative({
       return;
     }
     if (player.playing) {
-      player.pause();
-      setIsPlaying(false);
+      pauseSafe();
     } else {
-      player.play();
-      setIsPlaying(true);
+      playSafe();
     }
   };
 
@@ -146,6 +164,7 @@ export function ListingVideoPlayerNative({
         <Image
           source={poster}
           contentFit="cover"
+          cachePolicy="memory-disk"
           style={{
             position: "absolute",
             top: 0,
@@ -189,5 +208,58 @@ export function ListingVideoPlayerNative({
         </View>
       ) : null}
     </Pressable>
+  );
+}
+
+/** Plain function export — required for dynamic require() from expo-video-support. */
+export function ListingVideoPlayerNative({
+  uri,
+  poster,
+  style,
+  autoPlay = false,
+  isActive,
+  muted = true,
+  loop = false,
+  paused = false,
+  showControls = true,
+  showPlayOverlay = false,
+  onPress,
+  compact = false,
+  onEnded,
+  onProgress,
+}: NativeListingVideoPlayerProps) {
+  const shouldPlay = (isActive ?? autoPlay) && !paused;
+
+  if (!shouldPlay) {
+    const posterSource = poster ?? uri;
+    return (
+      <View style={[{ overflow: "hidden", backgroundColor: "#111827" }, style]}>
+        {posterSource ? (
+          <Image
+            source={posterSource}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            style={{ width: "100%", height: "100%" }}
+          />
+        ) : null}
+      </View>
+    );
+  }
+
+  return (
+    <ListingVideoPlayerInner
+      uri={uri}
+      poster={poster}
+      style={style}
+      shouldPlay={shouldPlay}
+      muted={muted}
+      loop={loop}
+      showControls={showControls}
+      showPlayOverlay={showPlayOverlay}
+      onPress={onPress}
+      compact={compact}
+      onEnded={onEnded}
+      onProgress={onProgress}
+    />
   );
 }

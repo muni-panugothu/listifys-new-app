@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { type Href, useFocusEffect, useRouter } from "@/lib/safe-router";
-import { useCallback, useMemo, useState } from "react";
+import { type Href, useRouter } from "@/lib/safe-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -27,6 +27,7 @@ import {
   type ListingItem,
 } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useStaleFocusRefetch } from "@/hooks/use-stale-focus-refetch";
 import { formatTimeAgo } from "@/lib/format-time-ago";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 
@@ -180,8 +181,8 @@ export function MyListingsScreen() {
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
 
-  const loadListings = useCallback(async () => {
-    setLoading(true);
+  const loadListings = useCallback(async (opts?: { background?: boolean }) => {
+    if (!opts?.background) setLoading(true);
     try {
       const res = await fetchMyListings();
       setAllListings(res.listings || []);
@@ -192,13 +193,16 @@ export function MyListingsScreen() {
     }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      void loadListings();
-    }, [loadListings]),
+  useEffect(() => {
+    void loadListings();
+  }, [loadListings]);
+
+  const { forceRefetch } = useStaleFocusRefetch(
+    () => loadListings({ background: true }),
+    { staleMs: 30_000, skipInitialFocus: true },
   );
 
-  const { refreshing, onRefresh } = usePullToRefresh(loadListings);
+  const { refreshing, onRefresh } = usePullToRefresh(() => forceRefetch());
 
   const activeListings = useMemo(
     () => allListings.filter(isActiveListing),

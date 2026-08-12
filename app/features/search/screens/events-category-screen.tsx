@@ -32,6 +32,8 @@ import {
 import { useCategoryEventsFeed } from "@/features/events/hooks/use-category-events-feed";
 import { toggleSaveListing, type ListingItem } from "@/features/listing/services/listing-api";
 import { buildEventDetailParams } from "@/features/events/utils/event-detail-helpers";
+import { normalizeListingItem } from "@/features/listing/services/listing-api";
+import { seedListingDetail } from "@/lib/cache";
 import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { MARKETPLACE_LIST_PROPS } from "@/lib/performance/flat-list-config";
 import { useLocalSearchParams } from "@/lib/safe-router";
@@ -116,8 +118,6 @@ export function EventsCategoryScreen() {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [tabsSticky, setTabsSticky] = useState(false);
   const [filtersSticky, setFiltersSticky] = useState(false);
-  const [featuredActiveIndex, setFeaturedActiveIndex] = useState(0);
-  const [visibleListingIds, setVisibleListingIds] = useState<Set<string>>(new Set());
 
   const listRef = useRef<FlatList<ListingItem>>(null);
   const scrollOffsetRef = useRef(0);
@@ -196,6 +196,12 @@ export function EventsCategoryScreen() {
 
   const openEvent = useCallback(
     (eventId: string, pool: ListingItem[]) => {
+      const match = pool.find((item) => item._id === eventId);
+      if (match) {
+        seedListingDetail("events", match._id, normalizeListingItem(match), 120_000, {
+          force: true,
+        });
+      }
       const ids = pool.map((e) => e._id);
       const index = Math.max(0, ids.indexOf(eventId));
       router.push({
@@ -272,7 +278,6 @@ export function EventsCategoryScreen() {
       <EventsGridCard
         event={item}
         cardWidth={CARD_WIDTH}
-        isMediaActive={visibleListingIds.has(item._id)}
         isSaved={
           savedIds.has(item._id) ||
           Boolean(user?.id && item.savedBy?.includes(user.id))
@@ -281,15 +286,8 @@ export function EventsCategoryScreen() {
         onToggleSave={() => toggleSave(item._id)}
       />
     ),
-    [listings, openEvent, savedIds, toggleSave, user?.id, visibleListingIds],
+    [listings, openEvent, savedIds, toggleSave, user?.id],
   );
-
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 70 }).current;
-  const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: Array<{ item: ListingItem }> }) => {
-      setVisibleListingIds(new Set(viewableItems.map((entry) => entry.item._id)));
-    },
-  ).current;
 
   const keyExtractor = useCallback((item: ListingItem) => item._id, []);
 
@@ -332,12 +330,8 @@ export function EventsCategoryScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              onScroll={(e) => {
-                const offsetX = e.nativeEvent.contentOffset.x;
-                const index = Math.round(offsetX / (FEATURED_CARD_W + 12));
-                setFeaturedActiveIndex(Math.max(0, Math.min(index, featured.length - 1)));
-              }}
               scrollEventThrottle={16}
+              nestedScrollEnabled
               contentContainerStyle={{
                 paddingHorizontal: H_PAD,
                 gap: 12,
@@ -350,7 +344,6 @@ export function EventsCategoryScreen() {
                   key={event._id}
                   event={event}
                   cardWidth={FEATURED_CARD_W}
-                  isMediaActive={index === featuredActiveIndex}
                   isSaved={
                     savedIds.has(event._id) ||
                     Boolean(user?.id && event.savedBy?.includes(user.id))
@@ -660,8 +653,6 @@ export function EventsCategoryScreen() {
         style={{ flex: 1, backgroundColor: et.background }}
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        viewabilityConfig={viewabilityConfig}
-        onViewableItemsChanged={onViewableItemsChanged}
         onEndReached={() => loadMore()}
         onEndReachedThreshold={0.4}
         refreshControl={

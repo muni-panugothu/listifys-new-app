@@ -140,6 +140,18 @@ const eventSchema = new mongoose.Schema(
       trim: true,
       maxlength: [120, "Dress code cannot exceed 120 characters"],
     },
+    /** Comedy subtype, e.g. Stand-up — displayed as "Comedy / Stand-up" */
+    eventFormat: {
+      type: String,
+      trim: true,
+      maxlength: [80, "Event format cannot exceed 80 characters"],
+    },
+    /** Human-readable show length, e.g. "2.5 Hours" */
+    eventDuration: {
+      type: String,
+      trim: true,
+      maxlength: [40, "Event duration cannot exceed 40 characters"],
+    },
     seller: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

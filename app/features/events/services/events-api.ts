@@ -1,7 +1,7 @@
 import { requestJson } from "@/features/auth/services/auth-api";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { normalizeListingItem } from "@/features/listing/services/listing-api";
-import { cacheKeys, invalidateCache, withCache } from "@/lib/cache";
+import { cacheKeys, invalidateCache, seedListingsBatch, withCache } from "@/lib/cache";
 
 export type EventCalendarSummary = {
   success: boolean;
@@ -90,11 +90,16 @@ export async function fetchUpcomingEvents(
       const response = await requestJson<UpcomingEventsResponse>(
         `/api/events/upcoming${qs ? `?${qs}` : ""}`,
       );
+      const listings = (response.listings ?? []).map((item) =>
+        normalizeListingItem(item as ListingItem),
+      );
+      seedListingsBatch(
+        listings.map((listing) => ({ category: "events", listing })),
+        120_000,
+      );
       return {
         ...response,
-        listings: (response.listings ?? []).map((item) =>
-          normalizeListingItem(item as ListingItem),
-        ),
+        listings,
       };
     },
     30_000,

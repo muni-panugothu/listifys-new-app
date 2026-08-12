@@ -114,7 +114,8 @@ function ListingVideoPosterFallback({
 export function ListingVideoPlayer(props: ListingVideoPlayerProps) {
   const NativePlayer = useMemo(() => getNativeListingVideoPlayer(), []);
   if (NativePlayer) {
-    return <NativePlayer {...props} />;
+    const Player = NativePlayer;
+    return <Player {...props} />;
   }
   return <ListingVideoPosterFallback {...props} />;
 }

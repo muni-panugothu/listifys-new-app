@@ -19,7 +19,7 @@ import {
 } from "@/lib/listing-media";
 import { authenticatedMultipartPost } from "@/lib/authenticated-multipart";
 import type { CategorySlug } from "@/constants/categories";
-import { cacheKeys, invalidateCache, seedListingsBatch, withCache } from "@/lib/cache";
+import { cacheKeys, invalidateCache, seedListingsBatch, withCache, withStaleCache } from "@/lib/cache";
 import { getListingSellerId } from "@/lib/is-own-listing";
 import Constants from "expo-constants";
 import { requireOptionalNativeModule } from "expo-modules-core";
@@ -256,6 +256,28 @@ function normaliseListingImages(listing: ListingItem): ListingItem {
 /** Normalise listing media URLs (images + videos) for client display. */
 export function normalizeListingItem(listing: ListingItem): ListingItem {
   return normaliseListingImages(listing);
+}
+
+/** Keep richer media from cache when a stale detail fetch omits videos/images. */
+export function mergeListingItems(
+  prev: ListingItem | null | undefined,
+  next: ListingItem,
+): ListingItem {
+  const normalized = normalizeListingItem(next);
+  if (!prev) return normalized;
+
+  const prevCount =
+    (prev.images?.length ?? 0) + (prev.videos?.length ?? 0);
+  const nextCount =
+    (normalized.images?.length ?? 0) + (normalized.videos?.length ?? 0);
+
+  if (nextCount >= prevCount) return normalized;
+
+  return {
+    ...normalized,
+    images: prev.images?.length ? prev.images : normalized.images,
+    videos: prev.videos?.length ? prev.videos : normalized.videos,
+  };
 }
 
 function normaliseFeedResponse(data: FeedResponse): FeedResponse {
@@ -617,9 +639,12 @@ export async function toggleSaveListing(
   categorySlug: CategorySlug,
   id: string,
 ): Promise<{ success: boolean; saved: boolean }> {
-  return apiRequest(`${categoryApiBase(categorySlug)}/${id}/toggle-save`, {
-    method: "POST",
-  });
+  const result = await apiRequest<{ success: boolean; saved: boolean }>(
+    `${categoryApiBase(categorySlug)}/${id}/toggle-save`,
+    { method: "POST" },
+  );
+  invalidateCache(cacheKeys.savedListings());
+  return result;
 }
 
 export async function recordJobApply(jobId: string): Promise<{
@@ -852,17 +877,29 @@ export async function uploadListingVideos(
 // ── My Listings (all categories unified) ───────────────────────────────────────
 
 export async function fetchMyListings(): Promise<ListingsResponse> {
-  const data = await apiRequest<ListingsResponse>("/api/feed/my-listings");
-  data.listings = (data.listings || []).map(normaliseListingImages);
-  return data;
+  return withStaleCache(
+    cacheKeys.myListings(),
+    async () => {
+      const data = await apiRequest<ListingsResponse>("/api/feed/my-listings");
+      data.listings = (data.listings || []).map(normaliseListingImages);
+      return data;
+    },
+    30_000,
+  );
 }
 
 // ── Saved Listings (all categories unified) ────────────────────────────────────
 
 export async function fetchSavedListings(): Promise<ListingsResponse> {
-  const data = await apiRequest<ListingsResponse>("/api/feed/saved");
-  data.listings = (data.listings || []).map(normaliseListingImages);
-  return data;
+  return withStaleCache(
+    cacheKeys.savedListings(),
+    async () => {
+      const data = await apiRequest<ListingsResponse>("/api/feed/saved");
+      data.listings = (data.listings || []).map(normaliseListingImages);
+      return data;
+    },
+    30_000,
+  );
 }
 
 // ── Recently Viewed (local AsyncStorage) ───────────────────────────────────────

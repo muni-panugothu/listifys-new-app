@@ -33,6 +33,7 @@ import {
   PRICE_OPTIONAL_CATEGORIES,
 } from "@/constants/categories";
 import { CURRENCY_OPTIONS, type CurrencyEntry } from "@/constants/currencies";
+import { COMEDY_FORMAT_OPTIONS } from "@/features/events/data/comedy-event-meta";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   setTitle, setDescription, setPrice, setCondition, setListingType, setCurrency,
@@ -52,6 +53,7 @@ import {
   setAvailability, setAge, toggleLanguage, toggleCertification,
   // Events
   setEventDate, setEventTime, setOrganizer, setVenue, setTicketsAvailable, setAgeRestriction, setDressCode,
+  setEventFormat, setEventDuration,
   // Mobiles
   setBatteryHealth,
   // Furniture
@@ -364,6 +366,7 @@ export function PostAdStep2DetailsScreen() {
     employmentType, workMode, salaryMin, salaryMax, salaryType, industry, positions,
     availability, age, languages, certifications,
     eventDate, eventTime, organizer, venue, ticketsAvailable, ageRestriction, dressCode,
+    eventFormat, eventDuration,
     batteryHealth,
     material, dimensions, weight, assemblyRequired, numberOfPieces,
     size, gender, fabricType,
@@ -444,6 +447,7 @@ export function PostAdStep2DetailsScreen() {
 
   const isTakeCare = category === "takecare";
   const isEvent = category === "events";
+  const isComedyEvent = isEvent && subcategory === "Comedy";
   const isMobile = category === "mobiles";
   const isFurniture = category === "furniture";
   const isFashion = category === "fashion";
@@ -578,6 +582,16 @@ export function PostAdStep2DetailsScreen() {
       if (!venue.trim()) {
         showErrorToast("Venue required", "Enter where the event will take place.");
         return;
+      }
+      if (isComedyEvent) {
+        if (!eventFormat.trim()) {
+          showErrorToast("Comedy format required", "Select a comedy format (e.g. Stand-up).");
+          return;
+        }
+        if (!eventDuration.trim()) {
+          showErrorToast("Duration required", "Enter how long the show runs (e.g. 2.5 Hours).");
+          return;
+        }
       }
     }
 
@@ -1263,6 +1277,30 @@ export function PostAdStep2DetailsScreen() {
                 <Label text="Dress Code" />
                 <IconField icon="checkroom" value={dressCode} onChangeText={(v) => dispatch(setDressCode(v))} placeholder="e.g. Formal" />
               </View>
+              {isComedyEvent ? (
+                <>
+                  <View className="mb-6">
+                    <LabelPill text="Category" required />
+                    <PillRow
+                      options={[...COMEDY_FORMAT_OPTIONS]}
+                      value={eventFormat}
+                      onSelect={(v) => dispatch(setEventFormat(v))}
+                    />
+                    <Text className="mt-2 px-1 text-[11px]" style={{ color: colors.textTertiary }}>
+                      Shown as Comedy / {eventFormat || "Stand-up"} on event cards.
+                    </Text>
+                  </View>
+                  <View className="mb-6">
+                    <Label text="Duration" required />
+                    <IconField
+                      icon="schedule"
+                      value={eventDuration}
+                      onChangeText={(v) => dispatch(setEventDuration(v))}
+                      placeholder="e.g. 2.5 Hours"
+                    />
+                  </View>
+                </>
+              ) : null}
             </>
           )}
 

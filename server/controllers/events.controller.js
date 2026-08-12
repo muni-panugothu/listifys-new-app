@@ -148,6 +148,8 @@ exports.createEvent = async (req, res) => {
       ticketsAvailable,
       ageRestriction,
       dressCode,
+      eventFormat,
+      eventDuration,
       lat,
       lng,
     } = req.body;
@@ -205,6 +207,8 @@ exports.createEvent = async (req, res) => {
         : 0,
       ageRestriction,
       dressCode,
+      eventFormat,
+      eventDuration,
       ...(lat && lng && {
         coordinates: { type: "Point", coordinates: [Number(lng), Number(lat)] },
       }),
@@ -531,6 +535,8 @@ exports.updateEvent = async (req, res) => {
       "ticketsAvailable",
       "ageRestriction",
       "dressCode",
+      "eventFormat",
+      "eventDuration",
     ];
 
     allowedUpdates.forEach((field) => {

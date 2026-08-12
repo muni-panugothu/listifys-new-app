@@ -4,15 +4,19 @@ import { Platform, Pressable, Text, View } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
 import { EventListingMedia } from "@/features/events/components/event-listing-media";
+import {
+  getComedyCategoryLabel,
+  getEventDurationLabel,
+} from "@/features/events/data/comedy-event-meta";
 import type { ListingItem } from "@/features/listing/services/listing-api";
-import { formatEventDisplayLabel } from "@/lib/event-dates";import { useEventsTheme } from "@/features/events/theme/events-theme";
+import { formatEventDisplayLabel } from "@/lib/event-dates";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 
 export type EventsGridCardProps = {
   event: ListingItem;
   cardWidth: number;
   isSaved: boolean;
-  isMediaActive?: boolean;
   onPress: () => void;
   onToggleSave: () => void;
 };
@@ -21,7 +25,6 @@ function EventsGridCardImpl({
   event,
   cardWidth,
   isSaved,
-  isMediaActive = false,
   onPress,
   onToggleSave,
 }: EventsGridCardProps) {
@@ -38,6 +41,8 @@ function EventsGridCardImpl({
     startDate: event.startDate as string | undefined,
     endDate: event.endDate as string | undefined,
   });
+  const comedyCategory = getComedyCategoryLabel(event);
+  const eventDuration = getEventDurationLabel(event);
 
   return (
     <Pressable onPress={onPress} style={{ width: cardWidth }}>
@@ -52,9 +57,7 @@ function EventsGridCardImpl({
         <EventListingMedia
           listing={event}
           recyclingKey={`grid-${event._id}`}
-          isActive={isMediaActive}
-          autoPlay={isMediaActive}
-          loop={isMediaActive}
+          loop
           muted
           style={{ width: "100%", height: "100%" }}
           placeholderIconSize={32}
@@ -114,6 +117,36 @@ function EventsGridCardImpl({
         </Text>
       ) : null}
 
+      {comedyCategory ? (
+        <Text
+          numberOfLines={1}
+          style={{
+            marginTop: 2,
+            fontFamily: ListifyFonts.regular,
+            fontSize: 11,
+            color: colors.textSecondary,
+            ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
+          }}
+        >
+          Category: {comedyCategory}
+        </Text>
+      ) : null}
+
+      {eventDuration ? (
+        <Text
+          numberOfLines={1}
+          style={{
+            marginTop: 2,
+            fontFamily: ListifyFonts.regular,
+            fontSize: 11,
+            color: colors.textSecondary,
+            ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
+          }}
+        >
+          Duration: {eventDuration}
+        </Text>
+      ) : null}
+
       {venue ? (
         <Text
           numberOfLines={1}
@@ -132,4 +165,10 @@ function EventsGridCardImpl({
   );
 }
 
-export const EventsGridCard = memo(EventsGridCardImpl);
+export const EventsGridCard = memo(
+  EventsGridCardImpl,
+  (prev, next) =>
+    prev.event._id === next.event._id &&
+    prev.isSaved === next.isSaved &&
+    prev.cardWidth === next.cardWidth,
+);

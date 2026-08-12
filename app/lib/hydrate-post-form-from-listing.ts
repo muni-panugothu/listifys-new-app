@@ -150,6 +150,8 @@ export function mapListingToPostForm(
     ticketsAvailable: str(record.ticketsAvailable),
     ageRestriction: str(record.ageRestriction),
     dressCode: str(record.dressCode),
+    eventFormat: str(record.eventFormat) || "Stand-up",
+    eventDuration: str(record.eventDuration),
     batteryHealth: str(record.batteryHealth),
     material: str(record.material),
     dimensions: str(record.dimensions),

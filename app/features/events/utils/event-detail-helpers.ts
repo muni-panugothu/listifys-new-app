@@ -1,5 +1,9 @@
 import type { FeaturedEventDummy } from "@/features/events/data/events-discovery";
 import { FEATURED_EVENTS_DUMMY } from "@/features/events/data/events-discovery";
+import {
+  getComedyCategoryLabel,
+  getEventDurationLabel,
+} from "@/features/events/data/comedy-event-meta";
 import type { EventsAllFilterId } from "@/features/events/data/events-all-filters";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { eventOccursOnDate, formatEventDisplayLabel } from "@/lib/event-dates";
@@ -16,7 +20,7 @@ export type EventOrganizerStats = {
 
 export type EventThingToKnow = {
   id: string;
-  icon: "language" | "badge" | "confirmation-number" | "child-care" | "checkroom" | "info" | "local-activity";
+  icon: "language" | "badge" | "confirmation-number" | "child-care" | "checkroom" | "info" | "local-activity" | "schedule";
   text: string;
 };
 
@@ -90,6 +94,12 @@ export function listingToFeaturedEvent(listing: ListingItem): FeaturedEventDummy
     price: listing.price ?? 0,
     category: subcategory?.toLowerCase() || "featured",
     ...(listing.price === 0 ? { offerLabel: "FREE Entry" } : {}),
+    ...((listing as { eventFormat?: string }).eventFormat
+      ? { eventFormat: (listing as { eventFormat?: string }).eventFormat }
+      : {}),
+    ...((listing as { eventDuration?: string }).eventDuration
+      ? { eventDuration: (listing as { eventDuration?: string }).eventDuration }
+      : {}),
   };
 }
 
@@ -179,9 +189,11 @@ export function dummyToListingItem(item: FeaturedEventDummy): ListingItem {
     price: item.price,
     currency: "₹",
     category: "Events",
-    subcategory: item.category,
+    subcategory: item.category === "comedy" ? "Comedy" : item.category,
     eventDate: item.eventDate,
     eventTime: item.eventTime,
+    eventFormat: item.eventFormat,
+    eventDuration: item.eventDuration,
     description:
       "Join us for an unforgettable experience. Book your tickets early to secure your spot.",
     features: ["Ticket needed for entry", "Arrive 15 minutes early"],
@@ -194,8 +206,16 @@ export function dummyToListingItem(item: FeaturedEventDummy): ListingItem {
 
 export function buildEventTags(listing: ListingItem): string[] {
   const tags: string[] = [];
-  const sub = listing.subcategory?.trim();
-  if (sub) tags.push(sub);
+  const comedyLabel = getComedyCategoryLabel(listing as ListingItem & { eventFormat?: string });
+  if (comedyLabel) {
+    tags.push(comedyLabel);
+  } else {
+    const sub = listing.subcategory?.trim();
+    if (sub) tags.push(sub);
+  }
+
+  const duration = getEventDurationLabel(listing as ListingItem & { eventDuration?: string });
+  if (duration && tags.length < 4) tags.push(duration);
 
   const features = (listing.features as string[] | undefined) ?? [];
   for (const f of features) {
@@ -255,6 +275,15 @@ export function buildThingsToKnow(listing: ListingItem): EventThingToKnow[] {
   const age = (listing.ageRestriction as string | undefined)?.trim();
   const dress = (listing.dressCode as string | undefined)?.trim();
   const tickets = Number((listing.ticketsAvailable as number | undefined) ?? 0);
+  const duration = getEventDurationLabel(listing as ListingItem & { eventDuration?: string });
+
+  if (duration) {
+    items.push({
+      id: "event-duration",
+      icon: "schedule",
+      text: `Duration: ${duration}`,
+    });
+  }
 
   for (const feature of features) {
     const text = feature.trim();

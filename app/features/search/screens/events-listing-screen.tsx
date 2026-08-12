@@ -4,11 +4,12 @@ import { useFocusEffect, useRouter, type Href } from "@/lib/safe-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
+  FlatList,
   Platform,
   Pressable,
-  ScrollView,
   Text,
   View,
+  type ListRenderItem,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
@@ -51,6 +52,7 @@ import {
 // } from "@/features/home/data/featured-mock-data";
 import { fetchUpcomingEvents } from "@/features/events/services/events-api";
 import type { ListingItem } from "@/features/listing/services/listing-api";
+import { normalizeListingItem } from "@/features/listing/services/listing-api";
 import {
   buildEventsFilterQuery,
   needsClientSideFilter,
@@ -61,6 +63,8 @@ import {
   matchesEventsAllFilter,
 } from "@/features/events/utils/event-detail-helpers";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { seedListingDetail } from "@/lib/cache";
+import { MARKETPLACE_LIST_PROPS } from "@/lib/performance/flat-list-config";
 import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
@@ -76,6 +80,12 @@ const H_PAD = 16;
 // const ARTIST_GAP = 14;
 const GRID_GAP = 12;
 const GRID_CARD_WIDTH = (SCREEN_WIDTH - H_PAD * 2 - GRID_GAP) / 2;
+
+type EventGridRow = {
+  id: string;
+  left: ListingItem;
+  right?: ListingItem;
+};
 
 function filterFeaturedByQuery(events: FeaturedEventDummy[], q: string) {
   if (!q) return events;
@@ -130,9 +140,10 @@ export function EventsListingScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const et = useEventsTheme();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<FlatList<{ id: string; left: ListingItem; right?: ListingItem }>>(null);
   const filtersAnchorY = useRef(0);
   const lastScrollY = useRef(0);
+  const lastFetchAtRef = useRef(0);
   const navCollapse = useSharedValue(0);
 
   const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
@@ -205,6 +216,7 @@ export function EventsListingScreen() {
         );
       }
       setApiListings(listings);
+      lastFetchAtRef.current = Date.now();
     } catch {
       setApiListings([]);
     } finally {
@@ -224,7 +236,10 @@ export function EventsListingScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void loadUpcomingEvents(true);
+      const staleMs = 60_000;
+      if (Date.now() - lastFetchAtRef.current > staleMs) {
+        void loadUpcomingEvents(true);
+      }
     }, [loadUpcomingEvents]),
   );
 
@@ -249,6 +264,14 @@ export function EventsListingScreen() {
     }
     return base;
   }, [allFilterId, apiListings, locationCoords.lat, locationCoords.lng, query]);
+
+  const eventIndexById = useMemo(() => {
+    const map = new Map<string, number>();
+    allEventsFiltered.forEach((event, index) => {
+      map.set(event._id, index);
+    });
+    return map;
+  }, [allEventsFiltered]);
 
   const eventRows = useMemo(() => {
     const rows: Array<{
@@ -277,17 +300,26 @@ export function EventsListingScreen() {
 
   const openFeaturedEvent = useCallback(
     (event: FeaturedEventDummy, index: number, pool: FeaturedEventDummy[]) => {
+      const fromApi = apiListings.find((item) => item._id === event.id);
+      if (fromApi) {
+        seedListingDetail("events", fromApi._id, normalizeListingItem(fromApi), 120_000, {
+          force: true,
+        });
+      }
       const ids = pool.map((item) => item.id);
       router.push({
         pathname: "/event-detail",
         params: buildEventDetailParams(event.id, ids, index),
       } as Href);
     },
-    [router],
+    [apiListings, router],
   );
 
   const openListingEvent = useCallback(
     (listing: ListingItem, index: number, pool: ListingItem[]) => {
+      seedListingDetail("events", listing._id, normalizeListingItem(listing), 120_000, {
+        force: true,
+      });
       const ids = pool.map((item) => item._id);
       router.push({
         pathname: "/event-detail",
@@ -434,8 +466,188 @@ export function EventsListingScreen() {
   );
 
   const handleBackToTop = useCallback(() => {
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    scrollRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, []);
+
+  const listHeader = useMemo(
+    () => (
+      <>
+        <EventsHeroCarousel onExplore={() => {}} />
+
+        <EventsWeekCategoryStrip
+          selectedId={selectedWeekId}
+          onSelect={handleWeekSelect}
+          periodLabel={periodText}
+          menuOpen={periodMenuVisible}
+          onPressTitle={handlePressPeriodTitle}
+        />
+
+        <EventsSectionCarousel
+          title={featuredSection.title}
+          events={featuredCarouselEvents}
+          savedIds={savedIds}
+          onToggleSave={handleToggleSave}
+          onPressEvent={(event, index) =>
+            openFeaturedEvent(event, index, featuredCarouselEvents)
+          }
+          showOffers
+        />
+
+        {musicSection && musicCarouselEvents.length > 0 ? (
+          <EventsSectionCarousel
+            title={musicSection.title}
+            events={musicCarouselEvents}
+            savedIds={savedIds}
+            onToggleSave={handleToggleSave}
+            onPressEvent={(event, index) =>
+              openFeaturedEvent(event, index, musicCarouselEvents)
+            }
+          />
+        ) : null}
+
+        <EventsExploreGrid
+          selectedId={selectedExploreId}
+          onSelect={handleExploreSelect}
+        />
+
+        {comedySection ? (
+          <EventsSectionCarousel
+            title={comedySection.title}
+            events={comedyCarouselEvents}
+            savedIds={savedIds}
+            onToggleSave={handleToggleSave}
+            onPressEvent={(event, index) =>
+              openFeaturedEvent(event, index, comedyCarouselEvents)
+            }
+          />
+        ) : null}
+
+        <Text
+          style={{
+            fontFamily: ListifyFonts.bold,
+            fontSize: 24,
+            color: colors.textPrimary,
+            paddingHorizontal: H_PAD,
+            marginTop: 28,
+            marginBottom: 8,
+            ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
+          }}
+        >
+          All Events
+        </Text>
+
+        <View
+          onLayout={(e) => {
+            filtersAnchorY.current = e.nativeEvent.layout.y;
+          }}
+          style={{ opacity: filtersSticky ? 0 : 1 }}
+          pointerEvents={filtersSticky ? "none" : "auto"}
+        >
+          <EventsFilterBar
+            selectedId={allFilterId}
+            onSelect={setAllFilterId}
+          />
+        </View>
+
+        {filtersSticky ? <View style={{ height: 54 }} /> : null}
+
+        {!eventsLoading && eventRows.length === 0 ? (
+          <Text
+            style={{
+              fontFamily: ListifyFonts.regular,
+              fontSize: 15,
+              color: colors.textSecondary,
+              paddingHorizontal: H_PAD,
+              paddingTop: GRID_GAP,
+              paddingBottom: GRID_GAP,
+            }}
+          >
+            No upcoming events match this filter yet. Try another category or post a new event.
+          </Text>
+        ) : null}
+      </>
+    ),
+    [
+      allFilterId,
+      colors.textPrimary,
+      colors.textSecondary,
+      comedyCarouselEvents,
+      comedySection,
+      eventRows.length,
+      eventsLoading,
+      featuredCarouselEvents,
+      featuredSection.title,
+      filtersSticky,
+      handleExploreSelect,
+      handlePressPeriodTitle,
+      handleToggleSave,
+      handleWeekSelect,
+      musicCarouselEvents,
+      musicSection,
+      openFeaturedEvent,
+      periodMenuVisible,
+      periodText,
+      savedIds,
+      selectedExploreId,
+      selectedWeekId,
+    ],
+  );
+
+  const renderEventRow: ListRenderItem<EventGridRow> = useCallback(
+    ({ item: row }) => (
+      <View
+        style={{
+          flexDirection: "row",
+          paddingHorizontal: H_PAD,
+          paddingTop: GRID_GAP,
+          gap: GRID_GAP,
+        }}
+      >
+        <EventsGridCard
+          event={row.left}
+          cardWidth={GRID_CARD_WIDTH}
+          isSaved={savedIds.has(row.left._id)}
+          onPress={() => {
+            openListingEvent(
+              row.left,
+              eventIndexById.get(row.left._id) ?? 0,
+              allEventsFiltered,
+            );
+          }}
+          onToggleSave={() => handleToggleSave(row.left._id)}
+        />
+        {row.right ? (
+          <EventsGridCard
+            event={row.right}
+            cardWidth={GRID_CARD_WIDTH}
+            isSaved={savedIds.has(row.right._id)}
+            onPress={() => {
+              openListingEvent(
+                row.right!,
+                eventIndexById.get(row.right!._id) ?? 0,
+                allEventsFiltered,
+              );
+            }}
+            onToggleSave={() => handleToggleSave(row.right!._id)}
+          />
+        ) : (
+          <View style={{ width: GRID_CARD_WIDTH }} />
+        )}
+      </View>
+    ),
+    [
+      allEventsFiltered,
+      eventIndexById,
+      handleToggleSave,
+      openListingEvent,
+      savedIds,
+    ],
+  );
+
+  const rowKeyExtractor = useCallback(
+    (row: { id: string }) => row.id,
+    [],
+  );
 
   // const artistKeyExtractor = useCallback(
   //   (item: FeaturedArtistItem) => item.id,
@@ -569,212 +781,24 @@ export function EventsListingScreen() {
         </View>
       ) : null}
 
-      <ScrollView
+      <FlatList
         ref={scrollRef}
+        data={eventRows}
+        keyExtractor={rowKeyExtractor}
+        renderItem={renderEventRow}
+        ListHeaderComponent={listHeader}
         style={{ flex: 1, backgroundColor: et.background }}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         onScroll={handleScroll}
+        nestedScrollEnabled
         contentContainerStyle={{
           paddingTop: 8,
           paddingBottom: Math.max(insets.bottom, 16) + 120,
         }}
-      >
-        <EventsHeroCarousel onExplore={() => {}} />
-
-        <EventsWeekCategoryStrip
-          selectedId={selectedWeekId}
-          onSelect={handleWeekSelect}
-          periodLabel={periodText}
-          menuOpen={periodMenuVisible}
-          onPressTitle={handlePressPeriodTitle}
-        />
-
-        <EventsSectionCarousel
-          title={featuredSection.title}
-          events={featuredCarouselEvents}
-          savedIds={savedIds}
-          onToggleSave={handleToggleSave}
-          onPressEvent={(event, index) =>
-            openFeaturedEvent(event, index, featuredCarouselEvents)
-          }
-          showOffers
-        />
-
-        {musicSection && musicCarouselEvents.length > 0 ? (
-          <EventsSectionCarousel
-            title={musicSection.title}
-            events={musicCarouselEvents}
-            savedIds={savedIds}
-            onToggleSave={handleToggleSave}
-            onPressEvent={(event, index) =>
-              openFeaturedEvent(event, index, musicCarouselEvents)
-            }
-          />
-        ) : null}
-
-        <EventsExploreGrid
-          selectedId={selectedExploreId}
-          onSelect={handleExploreSelect}
-        />
-
-        {/* Artists in your District — temporarily disabled
-        {artists.length > 0 ? (
-          <View style={{ marginTop: 28, marginBottom: 4 }}>
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                paddingHorizontal: H_PAD,
-              }}
-            >
-              <Text
-                style={{
-                  fontFamily: ListifyFonts.bold,
-                  fontSize: 22,
-                  color: colors.textPrimary,
-                  ...(Platform.OS === "android"
-                    ? { includeFontPadding: false }
-                    : {}),
-                }}
-              >
-                Artists in your District
-              </Text>
-              <Pressable hitSlop={8}>
-                <Text
-                  style={{
-                    fontFamily: ListifyFonts.medium,
-                    fontSize: 12,
-                    color: colors.primary,
-                  }}
-                >
-                  See all
-                </Text>
-              </Pressable>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{
-                paddingHorizontal: H_PAD,
-                paddingTop: ARTIST_CARD_WIDTH * 0.24,
-                paddingBottom: 8,
-                gap: ARTIST_GAP,
-              }}
-              decelerationRate="fast"
-              snapToInterval={ARTIST_CARD_WIDTH + ARTIST_GAP}
-              snapToAlignment="start"
-            >
-              {artists.map((item) => (
-                <View key={artistKeyExtractor(item)}>
-                  {renderArtist({ item })}
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
-        */}
-
-        {comedySection ? (
-          <EventsSectionCarousel
-            title={comedySection.title}
-            events={comedyCarouselEvents}
-            savedIds={savedIds}
-            onToggleSave={handleToggleSave}
-            onPressEvent={(event, index) =>
-              openFeaturedEvent(event, index, comedyCarouselEvents)
-            }
-          />
-        ) : null}
-
-        <Text
-          style={{
-            fontFamily: ListifyFonts.bold,
-            fontSize: 24,
-            color: colors.textPrimary,
-            paddingHorizontal: H_PAD,
-            marginTop: 28,
-            marginBottom: 8,
-            ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
-          }}
-        >
-          All Events
-        </Text>
-
-        <View
-          onLayout={(e) => {
-            filtersAnchorY.current = e.nativeEvent.layout.y;
-          }}
-          style={{ opacity: filtersSticky ? 0 : 1 }}
-          pointerEvents={filtersSticky ? "none" : "auto"}
-        >
-          <EventsFilterBar
-            selectedId={allFilterId}
-            onSelect={setAllFilterId}
-          />
-        </View>
-
-        {/* Spacer when sticky clone is showing so content doesn't jump */}
-        {filtersSticky ? <View style={{ height: 54 }} /> : null}
-
-        <View style={{ paddingBottom: 8 }}>
-          {!eventsLoading && eventRows.length === 0 ? (
-            <Text
-              style={{
-                fontFamily: ListifyFonts.regular,
-                fontSize: 15,
-                color: colors.textSecondary,
-                paddingHorizontal: H_PAD,
-                paddingTop: GRID_GAP,
-              }}
-            >
-              No upcoming events match this filter yet. Try another category or post a new event.
-            </Text>
-          ) : null}
-          {eventRows.map((row) => (
-            <View
-              key={row.id}
-              style={{
-                flexDirection: "row",
-                paddingHorizontal: H_PAD,
-                paddingTop: GRID_GAP,
-                gap: GRID_GAP,
-              }}
-            >
-              <EventsGridCard
-                event={row.left}
-                cardWidth={GRID_CARD_WIDTH}
-                isSaved={savedIds.has(row.left._id)}
-                onPress={() => {
-                  const index = allEventsFiltered.findIndex(
-                    (e) => e._id === row.left._id,
-                  );
-                  openListingEvent(row.left, Math.max(0, index), allEventsFiltered);
-                }}
-                onToggleSave={() => handleToggleSave(row.left._id)}
-              />
-              {row.right ? (
-                <EventsGridCard
-                  event={row.right}
-                  cardWidth={GRID_CARD_WIDTH}
-                  isSaved={savedIds.has(row.right._id)}
-                  onPress={() => {
-                    const index = allEventsFiltered.findIndex(
-                      (e) => e._id === row.right!._id,
-                    );
-                    openListingEvent(row.right!, Math.max(0, index), allEventsFiltered);
-                  }}
-                  onToggleSave={() => handleToggleSave(row.right!._id)}
-                />
-              ) : (
-                <View style={{ width: GRID_CARD_WIDTH }} />
-              )}
-            </View>
-          ))}
-        </View>
-      </ScrollView>
+        extraData={`${savedIds.size}-${allFilterId}`}
+        {...MARKETPLACE_LIST_PROPS}
+      />
 
       {showBackToTop ? (
         <Pressable

@@ -113,12 +113,15 @@ export function useSwrListing(
       });
     });
 
-    // Pick up errors from the in-flight fetch (cache updates won't fire on error).
-    result.refresh().catch((err) => {
-      if (lastIdRef.current === id) {
-        setState((s) => ({ ...s, error: err as Error, isLoading: false }));
-      }
-    });
+    // swrFetch already kicks off refresh when cache is missing or stale.
+    // Only attach error handler — avoid duplicate network requests on mount.
+    if (result.isStale || !result.data) {
+      result.refresh().catch((err) => {
+        if (lastIdRef.current === id) {
+          setState((s) => ({ ...s, error: err as Error, isLoading: false }));
+        }
+      });
+    }
 
     return unsub;
   }, [categorySlug, id, enabled, fetcher, ttlMs]);

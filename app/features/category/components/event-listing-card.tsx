@@ -12,7 +12,6 @@ type EventListingCardProps = {
   event: ListingItem;
   priceLabel: string;
   isSaved: boolean;
-  isMediaActive?: boolean;
   onPress: () => void;
   onToggleSave: () => void;
 };
@@ -21,7 +20,6 @@ function EventListingCardImpl({
   event,
   priceLabel,
   isSaved,
-  isMediaActive = false,
   onPress,
   onToggleSave,
 }: EventListingCardProps) {
@@ -62,9 +60,7 @@ function EventListingCardImpl({
         <EventListingMedia
           listing={event}
           recyclingKey={`listing-${event._id}`}
-          isActive={isMediaActive}
-          autoPlay={isMediaActive}
-          loop={isMediaActive}
+          loop
           muted
           style={{ height: "100%", width: "100%" }}
           placeholderIconSize={44}

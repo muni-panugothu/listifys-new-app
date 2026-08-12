@@ -4,6 +4,10 @@ import { Platform, Pressable, Text, View } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
 import { EventListingMedia } from "@/features/events/components/event-listing-media";
+import {
+  getComedyCategoryLabel,
+  getEventDurationLabel,
+} from "@/features/events/data/comedy-event-meta";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { formatEventDisplayLabel } from "@/lib/event-dates";
 import { useEventsTheme } from "@/features/events/theme/events-theme";
@@ -16,8 +20,6 @@ export type FeaturedEventCardProps = {
   offerLabel?: string | null;
   /** carousel ≈ 3:4 poster; feed is shorter for full-width rows */
   variant?: "carousel" | "feed";
-  /** When true, autoplay muted video in the card media area. */
-  isMediaActive?: boolean;
   onPress: () => void;
   onToggleSave: () => void;
 };
@@ -28,7 +30,6 @@ function FeaturedEventCardImpl({
   isSaved,
   offerLabel,
   variant = "carousel",
-  isMediaActive = false,
   onPress,
   onToggleSave,
 }: FeaturedEventCardProps) {
@@ -50,6 +51,8 @@ function FeaturedEventCardImpl({
     startDate,
     endDate,
   });
+  const comedyCategory = getComedyCategoryLabel(event);
+  const eventDuration = getEventDurationLabel(event);
 
   return (
     <Pressable onPress={onPress} style={{ width: cardWidth }}>
@@ -64,9 +67,7 @@ function FeaturedEventCardImpl({
         <EventListingMedia
           listing={event}
           recyclingKey={`featured-${event._id}`}
-          isActive={isMediaActive}
-          autoPlay={isMediaActive}
-          loop={isMediaActive}
+          loop
           muted
           style={{ width: "100%", height: "100%" }}
           placeholderIconSize={40}
@@ -152,6 +153,36 @@ function FeaturedEventCardImpl({
         </Text>
       ) : null}
 
+      {comedyCategory ? (
+        <Text
+          numberOfLines={1}
+          style={{
+            marginTop: 4,
+            fontFamily: ListifyFonts.regular,
+            fontSize: 12,
+            color: colors.textSecondary,
+            ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
+          }}
+        >
+          Category: {comedyCategory}
+        </Text>
+      ) : null}
+
+      {eventDuration ? (
+        <Text
+          numberOfLines={1}
+          style={{
+            marginTop: 2,
+            fontFamily: ListifyFonts.regular,
+            fontSize: 12,
+            color: colors.textSecondary,
+            ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
+          }}
+        >
+          Duration: {eventDuration}
+        </Text>
+      ) : null}
+
       {offerLabel ? (
         <View
           style={{
@@ -179,4 +210,12 @@ function FeaturedEventCardImpl({
   );
 }
 
-export const FeaturedEventCard = memo(FeaturedEventCardImpl);
+export const FeaturedEventCard = memo(
+  FeaturedEventCardImpl,
+  (prev, next) =>
+    prev.event._id === next.event._id &&
+    prev.isSaved === next.isSaved &&
+    prev.cardWidth === next.cardWidth &&
+    prev.offerLabel === next.offerLabel &&
+    prev.variant === next.variant,
+);

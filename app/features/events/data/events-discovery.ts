@@ -284,6 +284,8 @@ export type FeaturedEventDummy = {
   offerLabel?: string;
   price: number;
   category: string;
+  eventFormat?: string;
+  eventDuration?: string;
 };
 
 /** Static events for discovery carousels (UI placeholder). */
@@ -334,6 +336,8 @@ export const FEATURED_EVENTS_DUMMY: FeaturedEventDummy[] = [
     eventTime: "",
     price: 499,
     category: "comedy",
+    eventFormat: "Stand-up",
+    eventDuration: "2.5 Hours",
   },
   {
     id: "feat-4b",
@@ -345,6 +349,8 @@ export const FEATURED_EVENTS_DUMMY: FeaturedEventDummy[] = [
     eventTime: "",
     price: 599,
     category: "comedy",
+    eventFormat: "Stand-up",
+    eventDuration: "2.5 Hours",
   },
   {
     id: "feat-4c",
@@ -356,6 +362,8 @@ export const FEATURED_EVENTS_DUMMY: FeaturedEventDummy[] = [
     eventTime: "",
     price: 449,
     category: "comedy",
+    eventFormat: "Stand-up",
+    eventDuration: "2.5 Hours",
   },
   {
     id: "feat-5",

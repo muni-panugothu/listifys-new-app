@@ -38,6 +38,8 @@ const createEventSchema = Joi.object({
   ticketsAvailable: Joi.number().integer().min(0).default(0),
   ageRestriction: Joi.string().trim().max(80).allow(''),
   dressCode: Joi.string().trim().max(120).allow(''),
+  eventFormat: Joi.string().trim().max(80).allow(''),
+  eventDuration: Joi.string().trim().max(40).allow(''),
 
   lat: Joi.number().min(-90).max(90).optional(),
   lng: Joi.number().min(-180).max(180).optional(),

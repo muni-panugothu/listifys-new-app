@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { type Href, useFocusEffect, useRouter } from "@/lib/safe-router";
-import { useCallback, useState } from "react";
+import { type Href, useRouter } from "@/lib/safe-router";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -23,6 +23,7 @@ import {
   type ListingItem,
 } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useStaleFocusRefetch } from "@/hooks/use-stale-focus-refetch";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
 import { useFloatingNavPress } from "@/hooks/use-floating-nav-press";
 import { useTheme } from "@/providers/theme-provider";
@@ -59,8 +60,8 @@ export function SavedItemsScreen() {
   const [items, setItems] = useState<ListingItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadSaved = useCallback(async () => {
-    setLoading(true);
+  const loadSaved = useCallback(async (opts?: { background?: boolean }) => {
+    if (!opts?.background) setLoading(true);
     try {
       const res = await fetchSavedListings();
       setItems(res.listings || []);
@@ -71,13 +72,16 @@ export function SavedItemsScreen() {
     }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      void loadSaved();
-    }, [loadSaved]),
+  useEffect(() => {
+    void loadSaved();
+  }, [loadSaved]);
+
+  const { forceRefetch } = useStaleFocusRefetch(
+    () => loadSaved({ background: true }),
+    { staleMs: 30_000, skipInitialFocus: true },
   );
 
-  const { refreshing, onRefresh } = usePullToRefresh(loadSaved);
+  const { refreshing, onRefresh } = usePullToRefresh(() => forceRefetch());
 
   const openDetail = useCallback(
     (item: ListingItem) => {

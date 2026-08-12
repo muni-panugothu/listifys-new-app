@@ -77,6 +77,7 @@ const SKIP_LOADER_PATHS = new Set([
   '/reset-otp-verification',
   '/mobile',
   '/mobile-auth',
+  '/first-install-onboarding',
   '/onboarding-slide-1',
   '/onboarding-slide-2',
   '/onboarding-slide-3',
@@ -212,7 +213,7 @@ function AppLayout() {
       .then(() => {
         attachCallListeners();
         // Sync only if permission already granted — never prompt from root layout.
-        void syncFcmTokenWithServer({ force: true, promptPermission: false });
+        void syncFcmTokenWithServer({ force: false, promptPermission: false });
       })
       .catch(() => {});
   }, [sessionHydrated, isAuthenticated]);
@@ -300,6 +301,10 @@ function AppLayout() {
           }}
         >
           <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="first-install-onboarding"
+            options={{ headerShown: false, animation: "fade" }}
+          />
           <Stack.Screen
             name="onboarding-slide-1"
             options={{ headerShown: false }}

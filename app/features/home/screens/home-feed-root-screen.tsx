@@ -63,11 +63,11 @@ import {
   extractCityFromLocationLabel,
 } from "@/lib/location-service";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { HORIZONTAL_CAROUSEL_PROPS } from "@/lib/performance/horizontal-list-config";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { selectIsAppOffline } from "@/store/selectors";
 import { fetchProfile } from "@/store/slices/auth-slice";
 import {
-  hydrateAppLocation,
   refreshDeviceLocation,
   useCurrentDeviceLocation,
   selectLocationCoords,
@@ -327,17 +327,18 @@ export function HomeFeedRootScreen() {
     void loadNearbyMusicEvents();
   }, [isOffline, loadNearbyMusicEvents, sessionHydrated]);
 
+  const lastNearbyFetchAtRef = useRef(0);
+  const NEARBY_EVENTS_STALE_MS = 60_000;
+
   useFocusEffect(
     useCallback(() => {
       if (isOffline) return;
-      void loadNearbyMusicEvents({ force: true });
+      const now = Date.now();
+      if (now - lastNearbyFetchAtRef.current < NEARBY_EVENTS_STALE_MS) return;
+      lastNearbyFetchAtRef.current = now;
+      void loadNearbyMusicEvents();
     }, [isOffline, loadNearbyMusicEvents]),
   );
-
-  useEffect(() => {
-    if (!sessionHydrated) return;
-    void dispatch(hydrateAppLocation());
-  }, [dispatch, sessionHydrated]);
 
   useEffect(() => {
     if (user?.address?.trim()) {
@@ -422,7 +423,7 @@ export function HomeFeedRootScreen() {
     const timer = setTimeout(() => {
       lastFeedFetchAtRef.current = Date.now();
       loadFeed({ allowCacheFallback: false }).catch(() => {});
-      void loadNearbyMusicEvents({ force: true });
+      void loadNearbyMusicEvents();
     }, 400);
     return () => clearTimeout(timer);
   }, [locationHydrated, locationCoords.lat, locationCoords.lng, loadFeed, loadNearbyMusicEvents]);
@@ -641,6 +642,38 @@ export function HomeFeedRootScreen() {
       } as Href);
     },
     [nearbyMusicEvents, router],
+  );
+
+  const exploreColumns = useMemo(
+    () => chunkExploreColumns(HOME_EXPLORE_CATEGORIES, 2),
+    [],
+  );
+
+  const renderExploreColumn = useCallback(
+    ({ item: column, index: colIndex }: { item: typeof HOME_EXPLORE_CATEGORIES; index: number }) => (
+      <View
+        style={{
+          width: EXPLORE_CARD_W,
+          gap: EXPLORE_ROW_GAP,
+        }}
+      >
+        {column.map((cat) => (
+          <HomeExploreCategoryCard
+            key={cat.id}
+            category={cat}
+            width={EXPLORE_CARD_W}
+            height={EXPLORE_CARD_H}
+            onPress={() => router.push(cat.href)}
+          />
+        ))}
+      </View>
+    ),
+    [router],
+  );
+
+  const exploreColumnKeyExtractor = useCallback(
+    (_: typeof HOME_EXPLORE_CATEGORIES, index: number) => `explore-col-${index}`,
+    [],
   );
 
   const featuredArtistKeyExtractor = useCallback(
@@ -913,8 +946,11 @@ export function HomeFeedRootScreen() {
             Explore
           </Text>
 
-          <ScrollView
+          <FlatList
             horizontal
+            data={exploreColumns}
+            keyExtractor={exploreColumnKeyExtractor}
+            renderItem={renderExploreColumn}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{
               paddingRight: EXPLORE_H_PAD,
@@ -922,29 +958,8 @@ export function HomeFeedRootScreen() {
               paddingBottom: 4,
               gap: EXPLORE_GAP,
             }}
-            decelerationRate="fast"
-            nestedScrollEnabled
-          >
-            {chunkExploreColumns(HOME_EXPLORE_CATEGORIES, 2).map((column, colIndex) => (
-              <View
-                key={`explore-col-${colIndex}`}
-                style={{
-                  width: EXPLORE_CARD_W,
-                  gap: EXPLORE_ROW_GAP,
-                }}
-              >
-                {column.map((cat) => (
-                  <HomeExploreCategoryCard
-                    key={cat.id}
-                    category={cat}
-                    width={EXPLORE_CARD_W}
-                    height={EXPLORE_CARD_H}
-                    onPress={() => router.push(cat.href)}
-                  />
-                ))}
-              </View>
-            ))}
-          </ScrollView>
+            {...HORIZONTAL_CAROUSEL_PROPS}
+          />
         </View>
 
         {/* Sell Banner */}
@@ -1138,11 +1153,7 @@ export function HomeFeedRootScreen() {
               decelerationRate="fast"
               snapToInterval={exploreCardWidth + 14}
               snapToAlignment="start"
-              removeClippedSubviews
-              initialNumToRender={3}
-              maxToRenderPerBatch={3}
-              windowSize={5}
-              scrollEventThrottle={16}
+              {...HORIZONTAL_CAROUSEL_PROPS}
             />
           </View>
         ) : null}
@@ -1185,10 +1196,7 @@ export function HomeFeedRootScreen() {
                 paddingBottom: 8,
               }}
               decelerationRate="fast"
-              removeClippedSubviews
-              initialNumToRender={3}
-              maxToRenderPerBatch={3}
-              windowSize={3}
+              {...HORIZONTAL_CAROUSEL_PROPS}
             />
           ) : (
             <View

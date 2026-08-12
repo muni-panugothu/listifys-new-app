@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { type PayloadAction, createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 
 import { LOCATION_STORAGE_KEY } from "@/lib/location-service";
+import { clearUserSessionCaches } from "@/lib/session-cache";
 import { disconnectSocket } from "@/features/messaging/services/socket-service";
 import { signOutGoogleCachedAccount } from "@/lib/google-sign-in";
 import { authTrace } from "@/lib/auth-trace";
@@ -465,6 +466,7 @@ export const logout = createAsyncThunk("auth/logout", async () => {
   } finally {
     await signOutGoogleCachedAccount();
     resetFcmSyncState();
+    await clearUserSessionCaches();
     await AsyncStorage.removeItem(USER_STORAGE_KEY);
     await AsyncStorage.removeItem(FLOW_STATE_KEY);
     await AsyncStorage.removeItem(LOCATION_STORAGE_KEY);

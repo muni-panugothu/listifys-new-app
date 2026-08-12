@@ -139,6 +139,7 @@ export function PostAdStep3MediaScreen() {
     employmentType, workMode, salaryMin, salaryMax, salaryType, industry, positions,
     availability, age, languages, certifications,
     eventDate, eventTime, organizer, venue, ticketsAvailable, ageRestriction, dressCode,
+    eventFormat, eventDuration,
     batteryHealth,
     material, dimensions, weight, assemblyRequired, numberOfPieces,
     size, gender, fabricType,
@@ -667,6 +668,8 @@ export function PostAdStep3MediaScreen() {
         if (ticketsAvailable) listingBody.ticketsAvailable = Number(ticketsAvailable);
         if (ageRestriction) listingBody.ageRestriction = ageRestriction;
         if (dressCode) listingBody.dressCode = dressCode;
+        if (eventFormat) listingBody.eventFormat = eventFormat;
+        if (eventDuration) listingBody.eventDuration = eventDuration;
       }
 
       // Attach mobile-specific fields

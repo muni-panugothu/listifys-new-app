@@ -96,6 +96,8 @@ export type PostFormState = {
   ticketsAvailable: string;
   ageRestriction: string;
   dressCode: string;
+  eventFormat: string;
+  eventDuration: string;
   // ── Mobiles ──
   batteryHealth: string;
   // ── Furniture ──
@@ -251,6 +253,8 @@ const initialState: PostFormState = {
   ticketsAvailable: "",
   ageRestriction: "",
   dressCode: "",
+  eventFormat: "Stand-up",
+  eventDuration: "",
   batteryHealth: "",
   material: "",
   dimensions: "",
@@ -591,6 +595,12 @@ const postFormSlice = createSlice({
     setDressCode(state, action: PayloadAction<string>) {
       state.dressCode = action.payload;
     },
+    setEventFormat(state, action: PayloadAction<string>) {
+      state.eventFormat = action.payload;
+    },
+    setEventDuration(state, action: PayloadAction<string>) {
+      state.eventDuration = action.payload;
+    },
     setBatteryHealth(state, action: PayloadAction<string>) {
       state.batteryHealth = action.payload;
     },
@@ -905,6 +915,8 @@ export const {
   setTicketsAvailable,
   setAgeRestriction,
   setDressCode,
+  setEventFormat,
+  setEventDuration,
   setBatteryHealth,
   setMaterial,
   setDimensions,

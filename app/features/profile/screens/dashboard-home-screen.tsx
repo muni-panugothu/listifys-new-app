@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { type Href, useRouter } from "@/lib/safe-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BackHandler,
   Linking,
@@ -26,6 +26,7 @@ import {
   ProfileAvatarWithProgress,
 } from "@/features/profile/components/profile-avatar-with-progress";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useStaleFocusRefetch } from "@/hooks/use-stale-focus-refetch";
 import { useOnlinePresence } from "@/hooks/use-online-presence";
 import { useProtectedNavigation } from "@/lib/use-protected-navigation";
 import {
@@ -37,6 +38,7 @@ import { useTabNavigation } from "@/lib/use-tab-navigation";
 import { useTheme } from "@/providers/theme-provider";
 import type { ThemeColors } from "@/theme/theme-tokens";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { selectIsAppOffline } from "@/store/selectors";
 import { fetchProfile } from "@/store/slices/auth-slice";
 import { showAuthGate } from "@/store/slices/auth-gate-slice";
 
@@ -141,10 +143,7 @@ export function DashboardHomeScreen() {
   const user = useAppSelector((s) => s.auth.user);
   const profileCompletion = useAppSelector((s) => s.auth.profileCompletion);
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
-  const network = useAppSelector((s) => s.network);
-  const isOffline =
-    !network.isConnected ||
-    (network.actualInternetReachable === false && network.backendReachable === false);
+  const isOffline = useAppSelector(selectIsAppOffline);
   const { isSelfOnline } = useOnlinePresence();
   const [menuCounts, setMenuCounts] = useState({
     savedItems: 0,
@@ -174,11 +173,15 @@ export function DashboardHomeScreen() {
     });
   }, [dispatch, isOffline]);
 
-  useFocusEffect(
-    useCallback(() => {
-      void loadDashboardData();
-    }, [loadDashboardData]),
-  );
+  useEffect(() => {
+    void loadDashboardData();
+  }, [loadDashboardData]);
+
+  useStaleFocusRefetch(() => loadDashboardData(), {
+    staleMs: 30_000,
+    skipInitialFocus: true,
+    enabled: !isOffline,
+  });
 
   const handleRefresh = useCallback(async () => {
     await loadDashboardData();

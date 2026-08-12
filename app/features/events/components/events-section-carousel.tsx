@@ -1,24 +1,25 @@
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useMemo } from "react";
 import {
   Dimensions,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
+  FlatList,
   Platform,
-  ScrollView,
   Text,
   View,
+  type ListRenderItem,
 } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
 import { FeaturedEventCard } from "@/features/events/components/featured-event-card";
 import type { FeaturedEventDummy } from "@/features/events/data/events-discovery";
 import type { ListingItem } from "@/features/listing/services/listing-api";
+import { HORIZONTAL_CAROUSEL_PROPS } from "@/lib/performance/horizontal-list-config";
 import { useTheme } from "@/providers/theme-provider";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const H_PAD = 16;
 const CARD_WIDTH = SCREEN_WIDTH * 0.52;
 const GAP = 12;
+const SNAP_INTERVAL = CARD_WIDTH + GAP;
 
 function toListingItem(item: FeaturedEventDummy): ListingItem {
   return {
@@ -33,6 +34,9 @@ function toListingItem(item: FeaturedEventDummy): ListingItem {
     eventDate: item.eventDate,
     eventTime: item.eventTime,
     venue: item.venue,
+    eventFormat: item.eventFormat,
+    eventDuration: item.eventDuration,
+    subcategory: item.category === "comedy" ? "Comedy" : undefined,
     featured: true,
   } as ListingItem;
 }
@@ -56,15 +60,42 @@ function EventsSectionCarouselImpl({
   showOffers = false,
 }: EventsSectionCarouselProps) {
   const { colors } = useTheme();
-  const [activeIndex, setActiveIndex] = useState(0);
 
-  const handleScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const offsetX = event.nativeEvent.contentOffset.x;
-      const index = Math.round(offsetX / (CARD_WIDTH + GAP));
-      setActiveIndex(Math.max(0, Math.min(index, events.length - 1)));
+  const listingMap = useMemo(() => {
+    const map = new Map<string, ListingItem>();
+    for (const item of events) {
+      map.set(item.id, toListingItem(item));
+    }
+    return map;
+  }, [events]);
+
+  const renderItem: ListRenderItem<FeaturedEventDummy> = useCallback(
+    ({ item, index }) => {
+      const listing = listingMap.get(item.id);
+      if (!listing) return null;
+      return (
+        <FeaturedEventCard
+          event={listing}
+          cardWidth={CARD_WIDTH}
+          isSaved={savedIds.has(item.id)}
+          offerLabel={showOffers ? item.offerLabel : null}
+          onPress={() => onPressEvent?.(item, index)}
+          onToggleSave={() => onToggleSave(item.id)}
+        />
+      );
     },
-    [events.length],
+    [listingMap, onPressEvent, onToggleSave, savedIds, showOffers],
+  );
+
+  const keyExtractor = useCallback((item: FeaturedEventDummy) => item.id, []);
+
+  const getItemLayout = useCallback(
+    (_: ArrayLike<FeaturedEventDummy> | null | undefined, index: number) => ({
+      length: SNAP_INTERVAL,
+      offset: SNAP_INTERVAL * index,
+      index,
+    }),
+    [],
   );
 
   if (events.length === 0) return null;
@@ -84,33 +115,24 @@ function EventsSectionCarouselImpl({
         {title}
       </Text>
 
-      <ScrollView
+      <FlatList
         horizontal
+        data={events}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
         showsHorizontalScrollIndicator={false}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
+        nestedScrollEnabled
         contentContainerStyle={{
           paddingHorizontal: H_PAD,
-          gap: GAP,
           paddingBottom: 4,
         }}
+        ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
         decelerationRate="fast"
-        snapToInterval={CARD_WIDTH + GAP}
+        snapToInterval={SNAP_INTERVAL}
         snapToAlignment="start"
-      >
-        {events.map((item, index) => (
-          <FeaturedEventCard
-            key={item.id}
-            event={toListingItem(item)}
-            cardWidth={CARD_WIDTH}
-            isSaved={savedIds.has(item.id)}
-            isMediaActive={index === activeIndex}
-            offerLabel={showOffers ? item.offerLabel : null}
-            onPress={() => onPressEvent?.(item, index)}
-            onToggleSave={() => onToggleSave(item.id)}
-          />
-        ))}
-      </ScrollView>
+        getItemLayout={getItemLayout}
+        {...HORIZONTAL_CAROUSEL_PROPS}
+      />
     </View>
   );
 }
