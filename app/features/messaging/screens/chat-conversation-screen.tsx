@@ -56,9 +56,16 @@ import {
 import { validateOfferAmount, parseListedPrice } from "@/lib/offer-validation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
+import { useKeyboardStickyOffset } from "@/hooks/use-keyboard-sticky-offset";
+import {
+  KeyboardGestureArea,
+  KeyboardStickyView,
+  isKeyboardControllerLinked,
+} from "@/lib/safe-keyboard-controller";
 
 import { ListifyFonts } from "@/constants/typography";
 import { useTheme } from "@/providers/theme-provider";
+import { CHAT_LIST_PROPS } from "@/lib/performance/flat-list-config";
 import { resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
 import { normalizeListingChatParams } from "@/lib/listing-chat";
 import { getListingDetailHref } from "@/lib/notification-navigation";
@@ -93,6 +100,8 @@ import {
   type StatusCatchupUpdate,
 } from "@/features/messaging/services/socket-service";
 import { Image } from "@/lib/nativewind-interop";
+import { OnlinePresenceDot } from "@/components/online-presence-dot";
+import { useOnlinePresence } from "@/hooks/use-online-presence";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   incomingMessage, threadClosed, offerUpdated,
@@ -102,12 +111,7 @@ import {
 } from "@/store/slices/messaging-slice";
 import { outgoingCallStarted } from "@/store/slices/call-slice";
 
-const BRAND         = "#27BB97";
-const INCOMING_BG   = "#E8E8E8";
-const OFFER_BG      = "#EFF6FF";
-const SYSTEM_BG     = "#F3F4F6";
-const TEXT_MUTED    = "#9CA3AF";
-const TEXT_DARK     = "#1A1A1A";
+const BRAND = "#27BB97";
 
 function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
@@ -203,23 +207,22 @@ function profileImageFromParticipant(
 //   sent      → single grey check
 //   delivered → double grey check
 //   read      → double brand-colour check
-function MessageStatusTick({ status }: { status: ChatMessage["status"] }) {
+function MessageStatusTick({ status, mutedColor }: { status: ChatMessage["status"]; mutedColor: string }) {
   if (status === "sending") {
     return (
-      <MaterialIcons name="access-time" size={12} color={TEXT_MUTED} />
+      <MaterialIcons name="access-time" size={12} color={mutedColor} />
     );
   }
   if (status === "sent") {
     return (
-      <MaterialIcons name="check" size={14} color={TEXT_MUTED} />
+      <MaterialIcons name="check" size={14} color={mutedColor} />
     );
   }
-  // delivered or read — both show double-check, only colour differs.
   return (
     <MaterialIcons
       name="done-all"
       size={14}
-      color={status === "read" ? BRAND : TEXT_MUTED}
+      color={status === "read" ? BRAND : mutedColor}
     />
   );
 }
@@ -233,6 +236,7 @@ export function ChatConversationScreen() {
   const { colors } = useTheme();
   const user    = useAppSelector((s) => s.auth.user);
   const dispatch = useAppDispatch();
+  const { isUserOnline } = useOnlinePresence();
 
   // ── Core state ─────────────────────────────────────────────────────────────
   const [conversation, setConversation]  = useState<Conversation | null>(null);
@@ -270,7 +274,14 @@ export function ChatConversationScreen() {
   const listContentHeightRef = useRef(0);
 
   const keyboardInset = useKeyboardInset();
-  const composerSafePad = keyboardInset > 0 ? 6 : Math.max(insets.bottom, 10);
+  const stickyOffset = useKeyboardStickyOffset();
+  const keyboardLinked = isKeyboardControllerLinked();
+  const composerSafePad = keyboardLinked
+    ? Math.max(insets.bottom, 10)
+    : keyboardInset > 0
+      ? 6
+      : Math.max(insets.bottom, 10);
+  const isThreadClosed = Boolean(activeThread && activeThread.status !== "active");
   const canSend    = messageText.trim().length > 0 && !!activeThread && activeThread.status === "active";
   const isSeller   = activeThread ? String((activeThread.seller as any)?.id ?? activeThread.seller) === user?.id : false;
 
@@ -362,6 +373,10 @@ export function ChatConversationScreen() {
           convId           = res.conversation._id;
           bootstrapThread  = res.thread;
           setConversation(res.conversation);
+          if (bootstrapThread) {
+            setActiveThreadSt(bootstrapThread);
+            dispatch(setActiveThread(bootstrapThread._id));
+          }
         }
 
         if (!convId) {
@@ -395,6 +410,8 @@ export function ChatConversationScreen() {
         }
 
         if (initialThread) {
+          setActiveThreadSt(initialThread);
+          dispatch(setActiveThread(initialThread._id));
           // openThread loads messages — once it resolves we drop the spinner.
           await openThread(initialThread, convId, false);
         }
@@ -589,8 +606,12 @@ export function ChatConversationScreen() {
       dispatch(messageDeletedForEveryone({ threadId: targetThread, messageId: d.messageId }));
     };
 
+    const onChatOffer = (d: { threadId: string; message: ChatMessage; offerStatus: string; accepted: boolean }) => {
+      onOfferUpdate({ ...d, accepted: false });
+    };
+
     socket.on("chat:message",         onMsg);
-    socket.on("chat:offer",           (d) => { onOfferUpdate({ ...d, accepted: false }); });
+    socket.on("chat:offer",           onChatOffer);
     socket.on("chat:offer_update",    onOfferUpdate);
     socket.on("chat:message_deleted", onMessageDeleted);
     socket.on("thread:closed",        onThreadClosed);
@@ -604,7 +625,7 @@ export function ChatConversationScreen() {
 
     return () => {
       socket.off("chat:message",         onMsg);
-      socket.off("chat:offer",           onOfferUpdate as any);
+      socket.off("chat:offer",           onChatOffer);
       socket.off("chat:offer_update",    onOfferUpdate);
       socket.off("chat:message_deleted", onMessageDeleted);
       socket.off("thread:closed",        onThreadClosed);
@@ -923,7 +944,7 @@ export function ChatConversationScreen() {
   // mounted (so the active gesture isn't lost when the recording bar appears).
   const voice = useVoiceRecording({
     onSend: handleVoiceNote,
-    disabled: activeThread?.status !== "active",
+    disabled: isThreadClosed,
   });
 
   // Hold-to-show actions on a chat bubble.
@@ -1121,20 +1142,29 @@ export function ChatConversationScreen() {
     const showDate =
       index === 0 ||
       formatDateHeader(messages[index - 1]?.createdAt ?? "") !== formatDateHeader(msg.createdAt);
+    const datePillStyle = {
+      fontFamily: ListifyFonts.regular,
+      fontSize: 11,
+      color: colors.textSecondary,
+      backgroundColor: colors.surfaceMuted,
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+      borderRadius: 10,
+    } as const;
 
     if (msg.messageType === "system") {
       return (
         <>
           {showDate && (
             <View style={{ alignItems: "center", marginVertical: 8 }}>
-              <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 11, color: TEXT_MUTED, backgroundColor: "#E5E7EB", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 }}>
+              <Text style={datePillStyle}>
                 {formatDateHeader(msg.createdAt)}
               </Text>
             </View>
           )}
           <View style={{ alignItems: "center", marginVertical: 6 }}>
-            <View style={{ backgroundColor: SYSTEM_BG, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 6 }}>
-              <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 12, color: "#6B7280", textAlign: "center" }}>
+            <View style={{ backgroundColor: colors.surfaceMuted, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 6 }}>
+              <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 12, color: colors.textSecondary, textAlign: "center" }}>
                 {msg.content}
               </Text>
             </View>
@@ -1148,7 +1178,7 @@ export function ChatConversationScreen() {
         <>
           {showDate && (
             <View style={{ alignItems: "center", marginVertical: 8 }}>
-              <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 11, color: TEXT_MUTED, backgroundColor: "#E5E7EB", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 }}>
+              <Text style={datePillStyle}>
                 {formatDateHeader(msg.createdAt)}
               </Text>
             </View>
@@ -1167,7 +1197,7 @@ export function ChatConversationScreen() {
                 onDecline={() => handleDeclineOffer(activeThread._id)}
               />
             </Pressable>
-            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 10, color: TEXT_MUTED, marginTop: 2 }}>
+            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 10, color: colors.textTertiary, marginTop: 2 }}>
               {formatTime(msg.createdAt)}
             </Text>
           </View>
@@ -1182,7 +1212,7 @@ export function ChatConversationScreen() {
       <>
         {showDate && (
           <View style={{ alignItems: "center", marginVertical: 8 }}>
-            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 11, color: TEXT_MUTED, backgroundColor: "#E5E7EB", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 }}>
+            <Text style={datePillStyle}>
               {formatDateHeader(msg.createdAt)}
             </Text>
           </View>
@@ -1198,7 +1228,7 @@ export function ChatConversationScreen() {
             onLongPress={() => handleLongPressMessage(msg)}
             delayLongPress={250}
             style={{
-              backgroundColor: fromMe ? BRAND : INCOMING_BG,
+              backgroundColor: fromMe ? BRAND : colors.bubbleThem,
               borderRadius: 16,
               borderBottomRightRadius: fromMe ? 4 : 16,
               borderBottomLeftRadius:  fromMe ? 16 : 4,
@@ -1235,9 +1265,9 @@ export function ChatConversationScreen() {
             )}
 
             {(!!msg.content || msg.deletedForEveryone) && (
-              <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: fromMe ? "#fff" : TEXT_DARK, lineHeight: 20, paddingHorizontal: 2 }}>
+              <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: fromMe ? colors.bubbleTextMe : colors.bubbleTextThem, lineHeight: 20, paddingHorizontal: 2 }}>
                 {msg.deletedForEveryone ? (
-                  <Text style={{ fontStyle: "italic", color: fromMe ? "rgba(255,255,255,0.7)" : TEXT_MUTED }}>
+                  <Text style={{ fontStyle: "italic", color: fromMe ? "rgba(255,255,255,0.7)" : colors.textTertiary }}>
                     🚫 This message was deleted
                   </Text>
                 ) : msg.content}
@@ -1245,17 +1275,17 @@ export function ChatConversationScreen() {
             )}
           </Pressable>
           <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2, gap: 4 }}>
-            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 10, color: TEXT_MUTED }}>
+            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 10, color: colors.textTertiary }}>
               {formatTime(msg.createdAt)}
             </Text>
-            {fromMe && <MessageStatusTick status={msg.status} />}
+            {fromMe && <MessageStatusTick status={msg.status} mutedColor={colors.textTertiary} />}
           </View>
         </View>
       </>
     );
-  }, [messages, user, activeThread, isSeller, handleAcceptOffer, handleDeclineOffer, handleLongPressMessage, handleReplyJump, handleOpenMedia, highlightedId]);
+  }, [messages, user, activeThread, isSeller, handleAcceptOffer, handleDeclineOffer, handleLongPressMessage, handleReplyJump, handleOpenMedia, highlightedId, colors]);
 
-  const isClosed = activeThread?.status !== "active";
+  const messageKeyExtractor = useCallback((m: ChatMessage) => m._id, []);
 
   // ── Contact name ───────────────────────────────────────────────────────────
   const contactName = useMemo(() => {
@@ -1295,6 +1325,8 @@ export function ChatConversationScreen() {
     () => resolveAbsoluteMediaUrl(contactProfileImage),
     [contactProfileImage],
   );
+
+  const contactIsOnline = isUserOnline(contactUserId);
 
   const navigateToSellerProfile = useCallback(() => {
     if (!contactUserId) {
@@ -1359,7 +1391,7 @@ export function ChatConversationScreen() {
           alignItems: "center",
           gap: 10,
           borderBottomWidth: 1,
-          borderBottomColor: "#E5E7EB",
+          borderBottomColor: colors.border,
         }}
       >
         <Pressable onPress={() => router.back()} hitSlop={12}>
@@ -1370,24 +1402,34 @@ export function ChatConversationScreen() {
           hitSlop={8}
           style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}
         >
-          <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: BRAND + "22", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-            {contactAvatarUri ? (
-              <Image
-                source={contactAvatarUri}
-                contentFit="cover"
-                style={{ width: 38, height: 38 }}
-              />
-            ) : (
-              <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 16, color: BRAND }}>
-                {contactName.charAt(0).toUpperCase()}
-              </Text>
-            )}
+          <View style={{ position: "relative" }}>
+            <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: BRAND + "22", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+              {contactAvatarUri ? (
+                <Image
+                  source={contactAvatarUri}
+                  contentFit="cover"
+                  style={{ width: 38, height: 38 }}
+                />
+              ) : (
+                <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 16, color: BRAND }}>
+                  {contactName.charAt(0).toUpperCase()}
+                </Text>
+              )}
+            </View>
+            <OnlinePresenceDot
+              visible={contactIsOnline}
+              size={11}
+              borderColor={colors.background}
+              borderWidth={2}
+            />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 15, color: colors.textPrimary }} numberOfLines={1}>{contactName}</Text>
-            {isTyping && typingUser && (
+            {isTyping && typingUser ? (
               <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 11, color: BRAND }}>typing…</Text>
-            )}
+            ) : contactIsOnline ? (
+              <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 11, color: "#22C55E" }}>Active now</Text>
+            ) : null}
           </View>
         </Pressable>
         <Pressable
@@ -1408,7 +1450,7 @@ export function ChatConversationScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={{ maxHeight: 44, backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: "#E5E7EB" }}
+          style={{ maxHeight: 44, backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border }}
           contentContainerStyle={{ paddingHorizontal: 12, alignItems: "center", gap: 8 }}
         >
           {threads.map((t) => {
@@ -1423,9 +1465,9 @@ export function ChatConversationScreen() {
                   paddingHorizontal: 12,
                   paddingVertical:   6,
                   borderRadius:      20,
-                  backgroundColor:   isActive ? BRAND : "#F3F4F6",
+                  backgroundColor:   isActive ? BRAND : colors.surfaceMuted,
                   borderWidth:       1,
-                  borderColor:       isActive ? BRAND : "#E5E7EB",
+                  borderColor:       isActive ? BRAND : colors.border,
                   flexDirection:     "row",
                   alignItems:        "center",
                   gap:               4,
@@ -1436,7 +1478,7 @@ export function ChatConversationScreen() {
                   style={{
                     fontFamily: ListifyFonts.semiBold,
                     fontSize:   12,
-                    color:      isActive ? "#fff" : isSold ? "#9CA3AF" : TEXT_DARK,
+                    color:      isActive ? colors.textOnPrimary : isSold ? colors.textTertiary : colors.textPrimary,
                   }}
                   numberOfLines={1}
                 >
@@ -1457,14 +1499,16 @@ export function ChatConversationScreen() {
         />
       )}
 
-      {/* ── Messages + composer (keyboard inset lifts whole column) ─────────── */}
-      <View style={{ flex: 1, marginBottom: keyboardInset }}>
+      {/* ── Messages + composer ─────────────────────────────────────────────── */}
+      <KeyboardGestureArea style={{ flex: 1 }}>
+      <View style={{ flex: 1, marginBottom: keyboardLinked ? 0 : keyboardInset }}>
         <FlatList
           ref={flatRef}
           style={{ flex: 1 }}
           data={messages}
-          keyExtractor={(m) => m._id}
+          keyExtractor={messageKeyExtractor}
           renderItem={renderMessage}
+          {...CHAT_LIST_PROPS}
           maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: 48 }}
           contentContainerStyle={{ paddingVertical: 12, paddingBottom: 8 }}
           onContentSizeChange={handleListContentSizeChange}
@@ -1485,7 +1529,7 @@ export function ChatConversationScreen() {
           }}
           ListEmptyComponent={
             <View style={{ alignItems: "center", paddingTop: 40 }}>
-              <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: TEXT_MUTED }}>
+              <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: colors.textTertiary }}>
                 {activeThread ? "Send the first message!" : "Select a product thread above"}
               </Text>
             </View>
@@ -1493,17 +1537,17 @@ export function ChatConversationScreen() {
           ListFooterComponent={
             isTyping ? (
               <View style={{ alignItems: "flex-start", marginHorizontal: 12, marginBottom: 6 }}>
-                <View style={{ backgroundColor: INCOMING_BG, borderRadius: 16, borderBottomLeftRadius: 4, paddingHorizontal: 14, paddingVertical: 8 }}>
-                  <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: TEXT_MUTED, letterSpacing: 4 }}>•••</Text>
+                <View style={{ backgroundColor: colors.bubbleThem, borderRadius: 16, borderBottomLeftRadius: 4, paddingHorizontal: 14, paddingVertical: 8 }}>
+                  <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: colors.textTertiary, letterSpacing: 4 }}>•••</Text>
                 </View>
               </View>
             ) : null
           }
         />
 
-        {isClosed && (
-          <View style={{ backgroundColor: "#FEF2F2", paddingVertical: 10, paddingHorizontal: 16, alignItems: "center" }}>
-            <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 13, color: "#EF4444" }}>
+        {isThreadClosed && (
+          <View style={{ backgroundColor: colors.danger + "18", paddingVertical: 10, paddingHorizontal: 16, alignItems: "center" }}>
+            <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 13, color: colors.danger }}>
               🔒 Conversation Closed
               {activeThread?.closedReason === "sold"
                 ? " — Product Sold"
@@ -1511,18 +1555,26 @@ export function ChatConversationScreen() {
                   ? " — Listing Removed"
                   : ""}
             </Text>
-            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>
+            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
               Message history is preserved
             </Text>
           </View>
         )}
 
-        {!isClosed && (
+        {!isThreadClosed && (
+          <KeyboardStickyView
+            offset={stickyOffset}
+            style={
+              keyboardLinked
+                ? undefined
+                : { paddingBottom: keyboardInset > 0 ? keyboardInset : 0 }
+            }
+          >
           <View
             style={{
               backgroundColor: colors.background,
               borderTopWidth: replyTo ? 0 : 1,
-              borderTopColor: "#E5E7EB",
+              borderTopColor: colors.border,
             }}
           >
             {replyTo && (
@@ -1570,7 +1622,7 @@ export function ChatConversationScreen() {
                   flexDirection: "row",
                   alignItems: "flex-end",
                   minHeight: 40,
-                  backgroundColor: "#F3F4F6",
+                  backgroundColor: colors.inputBackground,
                   borderRadius: 24,
                   paddingHorizontal: 6,
                   paddingVertical: 2,
@@ -1585,7 +1637,7 @@ export function ChatConversationScreen() {
                     hitSlop={8}
                     style={{ width: 34, height: 34, alignItems: "center", justifyContent: "center" }}
                   >
-                    <MaterialIcons name="emoji-emotions" size={22} color={emojiSheet ? BRAND : TEXT_MUTED} />
+                    <MaterialIcons name="emoji-emotions" size={22} color={emojiSheet ? BRAND : colors.iconMuted} />
                   </Pressable>
 
                   <TextInput
@@ -1599,10 +1651,10 @@ export function ChatConversationScreen() {
                       paddingVertical: 10,
                       fontFamily: ListifyFonts.regular,
                       fontSize: 14,
-                      color: TEXT_DARK,
+                      color: colors.textPrimary,
                     }}
                     placeholder="Message"
-                    placeholderTextColor={TEXT_MUTED}
+                    placeholderTextColor={colors.inputPlaceholder}
                     value={messageText}
                     onChangeText={handleTextChange}
                     onFocus={() => {
@@ -1623,7 +1675,7 @@ export function ChatConversationScreen() {
                     hitSlop={8}
                     style={{ width: 34, height: 34, alignItems: "center", justifyContent: "center" }}
                   >
-                    <MaterialIcons name="attach-file" size={22} color={TEXT_MUTED} />
+                    <MaterialIcons name="attach-file" size={22} color={colors.iconMuted} />
                   </Pressable>
 
                   {!messageText.trim() && (
@@ -1633,7 +1685,7 @@ export function ChatConversationScreen() {
                       hitSlop={8}
                       style={{ width: 34, height: 34, alignItems: "center", justifyContent: "center" }}
                     >
-                      <MaterialIcons name="photo-camera" size={22} color={TEXT_MUTED} />
+                      <MaterialIcons name="photo-camera" size={22} color={colors.iconMuted} />
                     </Pressable>
                   )}
               </View>
@@ -1644,13 +1696,13 @@ export function ChatConversationScreen() {
                   disabled={!canSend || sending}
                   style={{
                     width: 44, height: 44, borderRadius: 22,
-                    backgroundColor: (canSend || sending) ? BRAND : "#E5E7EB",
+                    backgroundColor: (canSend || sending) ? BRAND : colors.border,
                     alignItems: "center", justifyContent: "center",
                   }}
                 >
                   {sending
                     ? <ActivityIndicator size="small" color="#fff" />
-                    : <MaterialIcons name="send" size={20} color={(canSend || sending) ? "#fff" : "#9CA3AF"} />
+                    : <MaterialIcons name="send" size={20} color={(canSend || sending) ? colors.textOnPrimary : colors.iconMuted} />
                   }
                 </Pressable>
               ) : (
@@ -1660,8 +1712,10 @@ export function ChatConversationScreen() {
               )}
             </View>
           </View>
+          </KeyboardStickyView>
         )}
       </View>
+      </KeyboardGestureArea>
 
       {/* ── Attachment / emoji / actions sheets ─────────────────────────────── */}
       <AttachmentPickerSheet
@@ -1680,12 +1734,12 @@ export function ChatConversationScreen() {
       {/* ── Offer modal ──────────────────────────────────────────────────────── */}
       <Modal visible={offerModal} transparent animationType="slide" onRequestClose={() => setOfferModal(false)}>
         <View style={{ flex: 1 }}>
-          <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }} onPress={() => setOfferModal(false)} />
+          <Pressable style={{ flex: 1, backgroundColor: colors.scrim }} onPress={() => setOfferModal(false)} />
           <View style={{ paddingBottom: Math.max(insets.bottom, 16) + keyboardInset }}>
-            <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 }}>
-              <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 18, color: TEXT_DARK, marginBottom: 4 }}>Make an Offer</Text>
+            <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 }}>
+              <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 18, color: colors.textPrimary, marginBottom: 4 }}>Make an Offer</Text>
               {activeThread?.product?.title && (
-                <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: TEXT_MUTED, marginBottom: 16 }}>
+                <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: colors.textSecondary, marginBottom: 16 }}>
                   for {activeThread.product.title}
                   {activeThread.product.price != null
                     ? ` (Listed: ${activeThread.product.currency}${activeThread.product.price.toLocaleString("en-IN")})`
@@ -1695,17 +1749,18 @@ export function ChatConversationScreen() {
               <TextInput
                 style={{
                   borderWidth:       1,
-                  borderColor:       offerError ? "#DC2626" : "#D1D5DB",
+                  borderColor:       offerError ? colors.danger : colors.borderStrong,
                   borderRadius:      12,
                   paddingHorizontal: 16,
                   paddingVertical:   12,
                   fontFamily:        ListifyFonts.semiBold,
                   fontSize:          18,
-                  color:             TEXT_DARK,
+                  color:             colors.textPrimary,
                   marginBottom:      8,
+                  backgroundColor:   colors.inputBackground,
                 }}
                 placeholder={`₹ Your offer amount`}
-                placeholderTextColor={TEXT_MUTED}
+                placeholderTextColor={colors.inputPlaceholder}
                 keyboardType="numeric"
                 value={offerInput}
                 onChangeText={(val) => {
@@ -1715,7 +1770,7 @@ export function ChatConversationScreen() {
                 autoFocus
               />
               {offerError ? (
-                <Text style={{ fontFamily: ListifyFonts.medium, fontSize: 13, color: "#DC2626", marginBottom: 12 }}>
+                <Text style={{ fontFamily: ListifyFonts.medium, fontSize: 13, color: colors.danger, marginBottom: 12 }}>
                   {offerError}
                 </Text>
               ) : null}

@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const s3Service = require("../services/s3.service.js");
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require("../utils/slugify");
 
 const sportsSchema = new mongoose.Schema(
@@ -196,6 +197,7 @@ sportsSchema.index({
 });
 sportsSchema.index({ coordinates: "2dsphere" }, { sparse: true });
 
+attachListingVideosField(sportsSchema);
 attachSlugPlugin(sportsSchema);
 
 module.exports = mongoose.model("Sports", sportsSchema);

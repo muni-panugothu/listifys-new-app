@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const s3Service = require("../services/s3.service.js");
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require("../utils/slugify");
 
 const electronicsSchema = new mongoose.Schema(
@@ -258,6 +259,7 @@ electronicsSchema.index({ brand: 1, subcategory: 1 });
 electronicsSchema.index({ title: "text", description: "text", brand: "text", model: "text" });
 electronicsSchema.index({ "coordinates": "2dsphere" });
 
+attachListingVideosField(electronicsSchema);
 attachSlugPlugin(electronicsSchema);
 
 module.exports = mongoose.model("Electronics", electronicsSchema);

@@ -14,7 +14,7 @@ import {
   type EventsAllFilterChip,
   type EventsAllFilterId,
 } from "@/features/events/data/events-all-filters";
-import { useTheme } from "@/providers/theme-provider";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 
 type EventsFilterBarProps = {
   selectedId: EventsAllFilterId;
@@ -22,7 +22,16 @@ type EventsFilterBarProps = {
 };
 
 function EventsFilterBarImpl({ selectedId, onSelect }: EventsFilterBarProps) {
-  const { colors, isDark } = useTheme();
+  const {
+    background,
+    divider,
+    chipBg,
+    chipBorder,
+    chipText,
+    chipActiveBg,
+    chipActiveBorder,
+    chipIconMuted,
+  } = useEventsTheme();
 
   const keyExtractor = useCallback(
     (item: EventsAllFilterChip) => item.id,
@@ -41,18 +50,8 @@ function EventsFilterBarImpl({ selectedId, onSelect }: EventsFilterBarProps) {
             paddingHorizontal: 14,
             borderRadius: 10,
             borderWidth: 1,
-            borderColor: active
-              ? colors.textPrimary
-              : isDark
-                ? colors.borderStrong
-                : "#D1D5DB",
-            backgroundColor: active
-              ? isDark
-                ? colors.surfaceElevated
-                : "#FFFFFF"
-              : isDark
-                ? colors.surface
-                : "#FFFFFF",
+            borderColor: active ? chipActiveBorder : chipBorder,
+            backgroundColor: active ? chipActiveBg : chipBg,
             flexDirection: "row",
             alignItems: "center",
             gap: 6,
@@ -63,14 +62,14 @@ function EventsFilterBarImpl({ selectedId, onSelect }: EventsFilterBarProps) {
             <MaterialIcons
               name={item.icon}
               size={16}
-              color={colors.textPrimary}
+              color={chipText}
             />
           ) : null}
           <Text
             style={{
               fontFamily: active ? ListifyFonts.semiBold : ListifyFonts.medium,
               fontSize: 13,
-              color: colors.textPrimary,
+              color: chipText,
               ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
             }}
           >
@@ -80,23 +79,32 @@ function EventsFilterBarImpl({ selectedId, onSelect }: EventsFilterBarProps) {
             <MaterialIcons
               name="keyboard-arrow-down"
               size={18}
-              color={colors.icon}
+              color={chipIconMuted}
             />
           ) : null}
         </Pressable>
       );
     },
-    [colors, isDark, onSelect, selectedId],
+    [
+      chipActiveBg,
+      chipActiveBorder,
+      chipBg,
+      chipBorder,
+      chipIconMuted,
+      chipText,
+      onSelect,
+      selectedId,
+    ],
   );
 
   return (
     <View
       style={{
-        backgroundColor: colors.background,
+        backgroundColor: background,
         paddingTop: 8,
         paddingBottom: 10,
         borderBottomWidth: StyleHairline,
-        borderBottomColor: isDark ? colors.border : "#ECEEF1",
+        borderBottomColor: divider,
       }}
     >
       <FlatList

@@ -69,6 +69,7 @@ exports.createProperty = async (req, res) => {
       countryCode,
       features,
       images,
+      videos,
       bedrooms,
       bathrooms,
       furnishing,
@@ -117,6 +118,7 @@ exports.createProperty = async (req, res) => {
       countryCode,
       features,
       images,
+      videos: videos || [],
       bedrooms: bedrooms ? Number(bedrooms) : undefined,
       bathrooms: bathrooms ? Number(bathrooms) : undefined,
       furnishing,
@@ -288,10 +290,10 @@ exports.getPropertyById = async (req, res) => {
 
     const listing = isObjectId
       ? await Property.findById(param)
-          .populate("seller", "name username profileImage joinedDate location isVerified")
+          .populate("seller", "name username profileImage joinedDate location isVerified phone")
           .lean()
       : await Property.findOne({ slug: param, status: "active" })
-          .populate("seller", "name username profileImage joinedDate location isVerified")
+          .populate("seller", "name username profileImage joinedDate location isVerified phone")
           .lean();
 
     if (!listing) {

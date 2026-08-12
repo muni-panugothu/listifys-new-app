@@ -16,6 +16,7 @@ import {
   shouldShowListingDistance,
 } from "@/lib/listing-distance";
 import { Image } from "@/lib/nativewind-interop";
+import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
 import {
   selectCanShowDistanceOnCards,
@@ -32,6 +33,7 @@ export function ListingLocationSection({
   listing,
   category,
 }: ListingLocationSectionProps) {
+  const { colors } = useTheme();
   const userCoords = useAppSelector(selectLocationCoords);
   const isoCountryCode = useAppSelector(selectIsoCountryCode);
   const canShowDistance = useAppSelector(selectCanShowDistanceOnCards);
@@ -112,8 +114,12 @@ export function ListingLocationSection({
   return (
     <View className="mt-5 px-4">
       <Text
-        className="mb-3 text-[16px] text-[#1A1A1A]"
-        style={{ fontFamily: ListifyFonts.bold }}
+        style={{
+          marginBottom: 12,
+          fontSize: 16,
+          fontFamily: ListifyFonts.bold,
+          color: colors.textPrimary,
+        }}
       >
         Location
       </Text>
@@ -122,11 +128,13 @@ export function ListingLocationSection({
         <View className="mb-3 gap-y-1.5">
           <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
             {distanceLabel ? (
-              <View className="flex-row items-center gap-1 rounded-full bg-[rgba(39,187,151,0.12)] px-3 py-1.5">
-                <MaterialIcons name="near-me" size={16} color="#27BB97" />
+              <View
+                className="flex-row items-center gap-1 rounded-full px-3 py-1.5"
+                style={{ backgroundColor: colors.primarySoft }}
+              >
+                <MaterialIcons name="near-me" size={16} color={colors.primary} />
                 <Text
-                  className="text-[14px] text-[#27BB97]"
-                  style={{ fontFamily: ListifyFonts.semiBold }}
+                  style={{ fontSize: 14, fontFamily: ListifyFonts.semiBold, color: colors.primaryDeep }}
                 >
                   {distanceLabel} away
                 </Text>
@@ -134,10 +142,10 @@ export function ListingLocationSection({
             ) : null}
             {locationText ? (
               <View className="flex-row items-center gap-1 flex-1 min-w-0">
-                <MaterialIcons name="location-on" size={16} color="#6B7280" />
+                <MaterialIcons name="location-on" size={16} color={colors.iconMuted} />
                 <Text
-                  className="flex-1 text-[14px] text-[#6B7280]"
-                  style={{ fontFamily: ListifyFonts.regular }}
+                  className="flex-1"
+                  style={{ fontSize: 14, fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
                   numberOfLines={2}
                 >
                   {locationText}
@@ -147,10 +155,9 @@ export function ListingLocationSection({
           </View>
           {distanceLabel ? (
             <View className="flex-row items-center gap-1">
-              <MaterialIcons name="info-outline" size={11} color="#9CA3AF" />
+              <MaterialIcons name="info-outline" size={11} color={colors.textTertiary} />
               <Text
-                className="text-[11px] text-[#9CA3AF]"
-                style={{ fontFamily: ListifyFonts.regular }}
+                style={{ fontSize: 11, fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
               >
                 {"Straight-line distance \u00b7 may differ from road distance"}
               </Text>
@@ -162,9 +169,10 @@ export function ListingLocationSection({
       <Pressable
         onPress={openGoogleMaps}
         disabled={!googleMapsUrl}
-        className="overflow-hidden rounded-2xl bg-white"
+        className="overflow-hidden rounded-2xl"
         style={({ pressed }) => ({
           opacity: pressed ? 0.92 : 1,
+          backgroundColor: colors.surface,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.06,
@@ -172,9 +180,12 @@ export function ListingLocationSection({
           elevation: 3,
         })}
       >
-        <View className="relative h-44 w-full items-center justify-center bg-[#EEF2F6]">
+        <View
+          className="relative h-44 w-full items-center justify-center"
+          style={{ backgroundColor: colors.surfaceMuted }}
+        >
           {geocoding ? (
-            <ActivityIndicator size="large" color="#27BB97" />
+            <ActivityIndicator size="large" color={colors.primary} />
           ) : mapCoords && !mapError ? (
             <Image
               source={buildMapPreviewUrl(mapCoords.lat, mapCoords.lng) ?? ""}
@@ -185,10 +196,15 @@ export function ListingLocationSection({
             />
           ) : (
             <View className="items-center px-6">
-              <MaterialIcons name="map" size={40} color="#9CA3AF" />
+              <MaterialIcons name="map" size={40} color={colors.iconMuted} />
               <Text
-                className="mt-2 text-center text-[13px] text-[#6B7280]"
-                style={{ fontFamily: ListifyFonts.regular }}
+                style={{
+                  marginTop: 8,
+                  textAlign: "center",
+                  fontSize: 13,
+                  fontFamily: ListifyFonts.regular,
+                  color: colors.textSecondary,
+                }}
               >
                 {locationText ?? "Map unavailable"}
               </Text>
@@ -198,12 +214,11 @@ export function ListingLocationSection({
           {googleMapsUrl ? (
             <View
               className="absolute bottom-3 right-3 flex-row items-center gap-1.5 rounded-full px-3 py-2"
-              style={{ backgroundColor: "rgba(255,255,255,0.95)" }}
+              style={{ backgroundColor: colors.surfaceElevated }}
             >
-              <MaterialIcons name="map" size={16} color="#4285F4" />
+              <MaterialIcons name="map" size={16} color={colors.accentBlue} />
               <Text
-                className="text-[12px] text-[#1A1A1A]"
-                style={{ fontFamily: ListifyFonts.semiBold }}
+                style={{ fontSize: 12, fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
               >
                 Open in Google Maps
               </Text>

@@ -1,10 +1,12 @@
 const Job = require("../models/job.model.js");
+const User = require("../models/user.model.js");
 const mongoose = require("mongoose");
 const { logger } = require("../utils/logger");
 const { parsePagination, paginatedFind } = require("../utils/pagination");
 const redis = require("../config/redis");
 const ListingCache = require("../services/listingcache.service.js");
 const S3Service = require("../services/s3.service.js");
+const EmployerCompanyService = require("../services/employercompany.service.js");
 const viewCounter = require("../services/viewcount.service.js");
 const { esHydratedSearch } = require("../utils/esSearch");
 
@@ -62,6 +64,7 @@ const LIST_PROJECTION = { currency: 1, slug: 1,
   contactPhone: 1,
   status: 1,
   savedBy: 1,
+  appliedBy: 1,
   createdAt: 1,
   coordinates: 1,
   countryCode: 1,
@@ -83,6 +86,48 @@ const normaliseImages = (listing) => {
   return listing;
 };
 
+async function attachJobApplicantPreviews(listings) {
+  if (!Array.isArray(listings) || listings.length === 0) return listings;
+
+  const idSet = new Set();
+  for (const listing of listings) {
+    const previewIds = [
+      ...(listing.appliedBy || []).slice(-4),
+      ...(listing.savedBy || []).slice(-4),
+    ].map(String);
+    previewIds.forEach((id) => idSet.add(id));
+  }
+
+  let userMap = new Map();
+  if (idSet.size > 0) {
+    const users = await User.find({ _id: { $in: [...idSet] } })
+      .select("profileImage name")
+      .lean();
+    userMap = new Map(users.map((u) => [String(u._id), u]));
+  }
+
+  for (const listing of listings) {
+    const appliedIds = (listing.appliedBy || []).map(String);
+    const savedIds = (listing.savedBy || []).map(String);
+    const uniqueIds = [...new Set([...appliedIds, ...savedIds])].slice(-4);
+
+    listing.applicantAvatars = uniqueIds
+      .map((id) => {
+        const user = userMap.get(id);
+        if (!user) return null;
+        return {
+          profileImage: user.profileImage ? S3Service.toProxyUrl(user.profileImage) : null,
+          name: user.name,
+        };
+      })
+      .filter(Boolean);
+    listing.applicantCount = appliedIds.length;
+    listing.interactionCount = uniqueIds.length;
+  }
+
+  return listings;
+};
+
 exports.createJob = async (req, res) => {
   try {
     const {
@@ -100,6 +145,7 @@ exports.createJob = async (req, res) => {
       contactPhone,
       features,
       images,
+      videos,
       companyName,
       companyWebsite,
       companyEmail,
@@ -163,6 +209,20 @@ exports.createJob = async (req, res) => {
     const salaryMax = Number(salary?.max || salaryMin);
     const listingPrice = Number(price || salaryMin || 0);
 
+    const existingProfile = await EmployerCompanyService.getProfileByUserId(req.user._id);
+    const resolvedCompany = EmployerCompanyService.mergeCompanyFields(
+      {
+        companyName,
+        companyWebsite,
+        companyEmail,
+        companyLogo,
+        aboutCompany,
+        industry,
+        location,
+      },
+      existingProfile,
+    );
+
     const listing = await Job.create({
       title,
       description,
@@ -178,11 +238,12 @@ exports.createJob = async (req, res) => {
       contactPhone,
       features: features || [],
       images: images || [],
-      companyName,
-      companyWebsite,
-      companyEmail,
+      videos: videos || [],
+      companyName: resolvedCompany.companyName,
+      companyWebsite: resolvedCompany.companyWebsite,
+      companyEmail: resolvedCompany.companyEmail,
       applyLink,
-      companyLogo,
+      companyLogo: resolvedCompany.companyLogo,
       jobType,
       experience,
       education,
@@ -198,7 +259,7 @@ exports.createJob = async (req, res) => {
       },
       salaryType: salaryType || salary?.type || "monthly",
       benefits: benefits || [],
-      industry,
+      industry: resolvedCompany.industry || industry,
       department,
       noticePeriod,
       responsibilities,
@@ -215,7 +276,7 @@ exports.createJob = async (req, res) => {
       contactPerson,
       contactEmail,
       positions: Number(positions || 1),
-      aboutCompany,
+      aboutCompany: resolvedCompany.aboutCompany || aboutCompany,
       ...(lat && lng && {
         coordinates: { type: "Point", coordinates: [Number(lng), Number(lat)] },
       }),
@@ -225,6 +286,16 @@ exports.createJob = async (req, res) => {
         ? `${req.user.firstName} ${req.user.lastName || ""}`.trim()
         : req.user.email.split("@")[0],
     });
+
+    const shouldSyncCompany =
+      Boolean(companyLogo?.trim()) ||
+      Boolean(companyName?.trim()) ||
+      Boolean(companyWebsite?.trim());
+
+    await EmployerCompanyService.upsertProfile(req.user._id, resolvedCompany);
+    if (shouldSyncCompany) {
+      await EmployerCompanyService.syncActiveJobs(req.user._id, resolvedCompany);
+    }
 
     const populated = await Job.findById(listing._id).populate(
       "seller",
@@ -293,6 +364,7 @@ exports.getAllJobs = async (req, res) => {
     const cached = await ListingCache.getCachedListingList("jobs", queryKey);
     if (cached) {
       if (cached.listings) cached.listings.forEach(normaliseImages);
+      await attachJobApplicantPreviews(cached.listings);
       res.setHeader("X-Cache", "HIT");
       res.setHeader("X-Cache-Source", "listing-cache");
       res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
@@ -314,6 +386,7 @@ exports.getAllJobs = async (req, res) => {
 
       if (esResult) {
         esResult.docs.forEach(normaliseImages);
+        await attachJobApplicantPreviews(esResult.docs);
         res.setHeader('X-Cache', 'MISS');
         res.setHeader('X-Search-Source', 'elasticsearch');
         res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=300');
@@ -338,6 +411,12 @@ exports.getAllJobs = async (req, res) => {
       ];
     }
     if (category) filter.subcategory = { $in: category.split(",").map((c) => c.trim()) };
+    if (req.query.workMode) {
+      filter.workMode = { $regex: String(req.query.workMode).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
+    }
+    if (req.query.jobType) {
+      filter.jobType = { $regex: String(req.query.jobType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
+    }
     if (condition) filter.condition = { $in: condition.split(",").map((c) => c.trim()) };
 
     if (minPrice || maxPrice) {
@@ -366,7 +445,7 @@ exports.getAllJobs = async (req, res) => {
         .sort(sortOption)
         .skip(skip)
         .limit(safeLimit + 1)
-        .populate("seller", "name profileImage")
+        .populate("seller", "name profileImage isVerified")
         .lean();
 
       const hasNextPage = listings.length > safeLimit;
@@ -382,7 +461,7 @@ exports.getAllJobs = async (req, res) => {
         Job.find(filter, LIST_PROJECTION)
           .sort(sortOption)
           .limit(safeLimit)
-          .populate("seller", "name profileImage")
+          .populate("seller", "name profileImage isVerified")
           .lean(),
         Job.countDocuments(filter),
       ]);
@@ -396,6 +475,7 @@ exports.getAllJobs = async (req, res) => {
     }
 
     listings.forEach(normaliseImages);
+    await attachJobApplicantPreviews(listings);
 
     res.setHeader("X-Cache", "MISS");
     res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=300");
@@ -429,8 +509,8 @@ exports.getJobById = async (req, res) => {
     }
 
     const listing = isObjectId
-      ? await Job.findById(param).populate("seller", "name profileImage createdAt")
-      : await Job.findOne({ slug: param, status: "active" }).populate("seller", "name profileImage createdAt");
+      ? await Job.findById(param).populate("seller", "name profileImage createdAt isVerified location")
+      : await Job.findOne({ slug: param, status: "active" }).populate("seller", "name profileImage createdAt isVerified location");
 
     if (!listing) {
       return res.status(404).json({ success: false, message: "Job listing not found" });
@@ -441,6 +521,11 @@ exports.getJobById = async (req, res) => {
 
     const listingObj = listing.toObject ? listing.toObject() : listing;
     normaliseImages(listingObj);
+
+    const employerProfile = listingObj.seller
+      ? await EmployerCompanyService.getProfileByUserId(listingObj.seller._id || listingObj.seller)
+      : null;
+    EmployerCompanyService.attachCompanyMeta(listingObj, employerProfile);
 
     res.setHeader("X-Cache", "MISS");
     res.status(200).json({ success: true, listing: listingObj });
@@ -533,6 +618,14 @@ exports.updateJob = async (req, res) => {
     }
 
     await listing.save();
+
+    const companyFields = EmployerCompanyService.pickCompanyFields(req.body);
+    if (Object.keys(companyFields).length > 0) {
+      await EmployerCompanyService.upsertProfile(req.user._id, companyFields);
+      if (companyFields.companyLogo || companyFields.companyName || companyFields.companyWebsite) {
+        await EmployerCompanyService.syncActiveJobs(req.user._id, companyFields);
+      }
+    }
 
     const updated = await Job.findById(listing._id).populate(
       "seller",
@@ -723,6 +816,37 @@ exports.getSavedJobs = async (req, res) => {
   }
 };
 
+exports.recordJobApply = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: "Invalid listing ID format" });
+    }
+
+    const userId = req.user._id;
+    const listing = await Job.findById(req.params.id).select("appliedBy applyLink seller title").lean();
+    if (!listing) {
+      return res.status(404).json({ success: false, message: "Job listing not found" });
+    }
+
+    await Job.updateOne({ _id: req.params.id }, { $addToSet: { appliedBy: userId } });
+
+    const updated = await Job.findById(req.params.id).select("appliedBy applyLink").lean();
+    const applicantCount = updated?.appliedBy?.length ?? 0;
+
+    res.status(200).json({
+      success: true,
+      applied: true,
+      applicantCount,
+      applyLink: updated?.applyLink ?? listing.applyLink ?? null,
+    });
+
+    ListingCache.invalidateListingCache("jobs", req.params.id).catch(() => {});
+  } catch (error) {
+    logger.error("Record job apply error:", error);
+    res.status(500).json({ success: false, message: "Failed to record application" });
+  }
+};
+
 exports.toggleSave = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -766,5 +890,76 @@ exports.toggleSave = async (req, res) => {
   } catch (error) {
     logger.error("Toggle save jobs error:", error);
     res.status(500).json({ success: false, message: "Failed to toggle save" });
+  }
+};
+
+exports.getMyCompanyProfile = async (req, res) => {
+  try {
+    const profile = await EmployerCompanyService.getProfileByUserId(req.user._id);
+    if (!profile) {
+      return res.status(200).json({ success: true, profile: null });
+    }
+
+    if (profile.companyLogo) {
+      profile.companyLogo = S3Service.toProxyUrl(profile.companyLogo);
+    }
+
+    res.status(200).json({ success: true, profile });
+  } catch (error) {
+    logger.error("Get employer company profile error:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch company profile" });
+  }
+};
+
+exports.upsertMyCompanyProfile = async (req, res) => {
+  try {
+    const fields = EmployerCompanyService.pickCompanyFields(req.body);
+    if (Object.keys(fields).length === 0) {
+      return res.status(400).json({ success: false, message: "No company fields provided" });
+    }
+
+    const profile = await EmployerCompanyService.upsertProfile(req.user._id, fields);
+    await EmployerCompanyService.syncActiveJobs(req.user._id, fields);
+
+    const profileObj = profile || null;
+    if (profileObj?.companyLogo) {
+      profileObj.companyLogo = S3Service.toProxyUrl(profileObj.companyLogo);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Company profile updated",
+      profile: profileObj,
+    });
+  } catch (error) {
+    logger.error("Upsert employer company profile error:", error);
+    res.status(500).json({ success: false, message: "Failed to update company profile" });
+  }
+};
+
+exports.uploadCompanyLogo = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No logo image provided" });
+    }
+
+    const result = await S3Service.uploadListingImage(
+      req.file.buffer,
+      req.user._id.toString(),
+      req.file.mimetype,
+      "jobs",
+    );
+
+    const companyLogo = result.imageUrl;
+    await EmployerCompanyService.upsertProfile(req.user._id, { companyLogo });
+    await EmployerCompanyService.syncActiveJobs(req.user._id, { companyLogo });
+
+    res.status(200).json({
+      success: true,
+      companyLogo: S3Service.toProxyUrl(companyLogo),
+    });
+  } catch (error) {
+    logger.error("Upload company logo error:", error);
+    res.status(500).json({ success: false, message: "Failed to upload company logo" });
   }
 };

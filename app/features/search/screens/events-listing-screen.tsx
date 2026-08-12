@@ -1,6 +1,7 @@
+import { StatusBar } from "expo-status-bar";
 import { MaterialIcons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "@/lib/safe-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useRouter, type Href } from "@/lib/safe-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
   Platform,
@@ -23,7 +24,8 @@ import {
   type EventsFloatingNavTab,
 } from "@/features/events/components/events-floating-nav";
 import { EventsHubSwitcherModal } from "@/features/events/components/events-hub-switcher-modal";
-import type { EventsHubTab } from "@/features/events/data/events-hub-discovery";
+import type { MarketplaceHubTab } from "@/features/home/data/home-hub-tabs";
+import { navigateFromHubTab } from "@/lib/navigate-from-hub-tab";
 import { EventsGridCard } from "@/features/events/components/events-grid-card";
 import { EventsHeroCarousel } from "@/features/events/components/events-hero-carousel";
 import { EventsSectionCarousel } from "@/features/events/components/events-section-carousel";
@@ -37,6 +39,7 @@ import {
 import type { EventsAllFilterId } from "@/features/events/data/events-all-filters";
 import {
   EVENTS_CATEGORY_SECTIONS,
+  EVENTS_WEEK_CATEGORIES,
   FEATURED_EVENTS_DUMMY,
   type EventsExploreCategory,
   type EventsWeekCategory,
@@ -47,7 +50,11 @@ import {
   FEATURED_ARTISTS,
   type FeaturedArtistItem,
 } from "@/features/home/data/featured-mock-data";
+import { fetchUpcomingEvents } from "@/features/events/services/events-api";
+import { buildEventDetailParams, dummyToListingItem } from "@/features/events/utils/event-detail-helpers";
+import { getListingCoverMediaUrl } from "@/lib/listing-media";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -116,6 +123,7 @@ export function EventsListingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const et = useEventsTheme();
   const scrollRef = useRef<ScrollView>(null);
   const filtersAnchorY = useRef(0);
   const lastScrollY = useRef(0);
@@ -163,6 +171,35 @@ export function EventsListingScreen() {
     );
   }, [query]);
 
+  const [featuredEvents, setFeaturedEvents] =
+    useState<FeaturedEventDummy[]>(FEATURED_EVENTS_DUMMY);
+
+  useEffect(() => {
+    void fetchUpcomingEvents({ limit: 12, sort: "newest" })
+      .then((res) => {
+        if (!res.listings?.length) return;
+        setFeaturedEvents(
+          res.listings.map((listing) => ({
+            id: listing._id,
+            title: listing.title,
+            image: getListingCoverMediaUrl(listing) || listing.images?.[0] || "",
+            videos: listing.videos,
+            venue:
+              ((listing as { venue?: string }).venue as string | undefined)?.trim() ||
+              listing.location?.trim() ||
+              "",
+            eventDate: (listing.eventDate as string | undefined) ?? "",
+            eventTime: (listing.eventTime as string | undefined) ?? "",
+            price: listing.price ?? 0,
+            category:
+              (listing.subcategory as string | undefined)?.toLowerCase() ||
+              "featured",
+          })),
+        );
+      })
+      .catch(() => {});
+  }, []);
+
   const featuredSection = EVENTS_CATEGORY_SECTIONS[0];
   const comedySection = EVENTS_CATEGORY_SECTIONS[1];
 
@@ -197,6 +234,28 @@ export function EventsListingScreen() {
     });
   }, []);
 
+  const openFeaturedEvent = useCallback(
+    (event: FeaturedEventDummy, index: number, pool: FeaturedEventDummy[]) => {
+      const ids = pool.map((item) => item.id);
+      router.push({
+        pathname: "/event-detail",
+        params: buildEventDetailParams(event.id, ids, index),
+      } as Href);
+    },
+    [router],
+  );
+
+  const featuredCarouselEvents = useMemo(
+    () => eventsForSection(featuredSection.categoryId, featuredEvents, query),
+    [featuredEvents, featuredSection.categoryId, query],
+  );
+
+  const comedyCarouselEvents = useMemo(() => {
+    const comedySection = EVENTS_CATEGORY_SECTIONS[1];
+    if (!comedySection) return [];
+    return eventsForSection(comedySection.categoryId, featuredEvents, query);
+  }, [featuredEvents, query]);
+
   const handleToggleArtistSave = useCallback((id: string) => {
     setSavedArtistIds((prev) => {
       const next = new Set(prev);
@@ -206,9 +265,22 @@ export function EventsListingScreen() {
     });
   }, []);
 
-  const handleWeekSelect = useCallback((cat: EventsWeekCategory) => {
-    setSelectedWeekId((prev) => (prev === cat.id ? null : cat.id));
-  }, []);
+  const handleWeekSelect = useCallback(
+    (cat: EventsWeekCategory) => {
+      setSelectedWeekId(cat.id);
+      const categoryIndex = EVENTS_WEEK_CATEGORIES.findIndex((c) => c.id === cat.id);
+      router.push({
+        pathname: "/events-category-story",
+        params: {
+          categoryId: cat.id,
+          categoryLabel: cat.label,
+          categoryIndex: String(categoryIndex >= 0 ? categoryIndex : 0),
+          startIndex: "0",
+        },
+      } as Href);
+    },
+    [router],
+  );
 
   const handleExploreSelect = useCallback(
     (cat: EventsExploreCategory) => {
@@ -294,17 +366,15 @@ export function EventsListingScreen() {
   );
 
   const handleHubSelect = useCallback(
-    (tab: EventsHubTab) => {
+    (tab: MarketplaceHubTab) => {
       setHubVisible(false);
-      if (tab.id === "home") {
-        handleTabPress("home");
-        return;
-      }
       if (tab.id === "events") {
         setActiveNavTab("events");
+        return;
       }
+      navigateFromHubTab(tab, router, handleTabPress);
     },
-    [handleTabPress],
+    [handleTabPress, router],
   );
 
   const handleBackToTop = useCallback(() => {
@@ -335,7 +405,8 @@ export function EventsListingScreen() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View style={{ flex: 1, backgroundColor: et.background }}>
+      <StatusBar style={et.colors.statusBarStyle} backgroundColor={et.headerBg} />
       <EventsHubSwitcherModal
         visible={hubVisible}
         activeTab="events"
@@ -366,7 +437,7 @@ export function EventsListingScreen() {
           paddingTop: insets.top + 8,
           paddingBottom: 8,
           paddingHorizontal: H_PAD,
-          backgroundColor: colors.background,
+          backgroundColor: et.headerBg,
         }}
       >
         <View
@@ -432,7 +503,7 @@ export function EventsListingScreen() {
             left: 0,
             right: 0,
             zIndex: 48,
-            backgroundColor: colors.background,
+            backgroundColor: et.background,
           }}
         >
           <EventsFilterBar
@@ -444,7 +515,7 @@ export function EventsListingScreen() {
 
       <ScrollView
         ref={scrollRef}
-        style={{ flex: 1 }}
+        style={{ flex: 1, backgroundColor: et.background }}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         onScroll={handleScroll}
@@ -465,13 +536,12 @@ export function EventsListingScreen() {
 
         <EventsSectionCarousel
           title={featuredSection.title}
-          events={eventsForSection(
-            featuredSection.categoryId,
-            FEATURED_EVENTS_DUMMY,
-            query,
-          )}
+          events={featuredCarouselEvents}
           savedIds={savedIds}
           onToggleSave={handleToggleSave}
+          onPressEvent={(event, index) =>
+            openFeaturedEvent(event, index, featuredCarouselEvents)
+          }
           showOffers
         />
 
@@ -540,13 +610,12 @@ export function EventsListingScreen() {
         {comedySection ? (
           <EventsSectionCarousel
             title={comedySection.title}
-            events={eventsForSection(
-              comedySection.categoryId,
-              FEATURED_EVENTS_DUMMY,
-              query,
-            )}
+            events={comedyCarouselEvents}
             savedIds={savedIds}
             onToggleSave={handleToggleSave}
+            onPressEvent={(event, index) =>
+              openFeaturedEvent(event, index, comedyCarouselEvents)
+            }
           />
         ) : null}
 
@@ -592,18 +661,24 @@ export function EventsListingScreen() {
               }}
             >
               <EventsGridCard
-                event={row.left}
+                event={dummyToListingItem(row.left)}
                 cardWidth={GRID_CARD_WIDTH}
                 isSaved={savedIds.has(row.left.id)}
-                onPress={() => {}}
+                onPress={() => {
+                  const index = allEventsFiltered.findIndex((e) => e.id === row.left.id);
+                  openFeaturedEvent(row.left, Math.max(0, index), allEventsFiltered);
+                }}
                 onToggleSave={() => handleToggleSave(row.left.id)}
               />
               {row.right ? (
                 <EventsGridCard
-                  event={row.right}
+                  event={dummyToListingItem(row.right)}
                   cardWidth={GRID_CARD_WIDTH}
                   isSaved={savedIds.has(row.right.id)}
-                  onPress={() => {}}
+                  onPress={() => {
+                    const index = allEventsFiltered.findIndex((e) => e.id === row.right!.id);
+                    openFeaturedEvent(row.right!, Math.max(0, index), allEventsFiltered);
+                  }}
                   onToggleSave={() => handleToggleSave(row.right!.id)}
                 />
               ) : (

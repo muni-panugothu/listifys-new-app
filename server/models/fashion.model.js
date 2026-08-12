@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const s3Service = require("../services/s3.service.js");
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require("../utils/slugify");
 
 const fashionSchema = new mongoose.Schema(
@@ -156,6 +157,7 @@ fashionSchema.index({ savedBy: 1 });
 fashionSchema.index({ title: "text", description: "text", brand: "text", fabricType: "text", color: "text" });
 fashionSchema.index({ coordinates: "2dsphere" }, { sparse: true });
 
+attachListingVideosField(fashionSchema);
 attachSlugPlugin(fashionSchema);
 
 module.exports = mongoose.model("Fashion", fashionSchema);

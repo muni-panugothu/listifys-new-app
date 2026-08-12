@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require('../utils/slugify');
 
 const serviceListingSchema = new mongoose.Schema({
@@ -208,6 +209,7 @@ serviceListingSchema.statics.findNearby = function(coords, maxDistance = 5000) {
   });
 };
 
+attachListingVideosField(serviceListingSchema);
 attachSlugPlugin(serviceListingSchema);
 
 module.exports = mongoose.model('ServiceListing', serviceListingSchema);

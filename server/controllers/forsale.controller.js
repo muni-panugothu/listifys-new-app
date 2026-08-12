@@ -254,6 +254,7 @@ exports.createForSale = async (req, res) => {
       countryCode,
       features: features || [],
       images: images || [],
+      videos: videos || [],
       // Mobiles
       brand,
       model,

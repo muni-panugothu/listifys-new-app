@@ -14,16 +14,25 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ProfileAvatarImage } from "@/components/profile-avatar-image";
 import { ProfileHeaderArt } from "@/components/profile-header-art";
-import { DUMMY_PROFILE_NAME } from "@/constants/dummy-profile";
 import { ListifyFonts } from "@/constants/typography";
 import { getUnreadCount as getNotificationUnreadCount } from "@/features/auth/services/auth-api";
 import { fetchSavedListings } from "@/features/listing/services/listing-api";
 import { getUnreadCount as getChatUnreadCount } from "@/features/messaging/services/chat-api";
 import { AppearanceBottomSheet } from "@/features/profile/components/appearance-bottom-sheet";
+import { ProfileCompletionSection } from "@/features/profile/components/profile-completion-section";
+import {
+  computeProgressRingSize,
+  ProfileAvatarWithProgress,
+} from "@/features/profile/components/profile-avatar-with-progress";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useOnlinePresence } from "@/hooks/use-online-presence";
 import { useProtectedNavigation } from "@/lib/use-protected-navigation";
+import {
+  getProfileDisplayName,
+  getProfileDisplaySubtitle,
+} from "@/lib/profile-display-name";
+import { resolveProfileCompletion } from "@/lib/profile-completion-client";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
 import { useTheme } from "@/providers/theme-provider";
 import type { ThemeColors } from "@/theme/theme-tokens";
@@ -33,7 +42,8 @@ import { showAuthGate } from "@/store/slices/auth-gate-slice";
 
 const HEADER_ART_HEIGHT = 248;
 const AVATAR_SIZE = 108;
-const AVATAR_OVERLAP = AVATAR_SIZE / 2;
+const AVATAR_RING_SIZE = computeProgressRingSize(AVATAR_SIZE);
+const AVATAR_OVERLAP = AVATAR_RING_SIZE / 2;
 
 type MenuRowProps = {
   icon: React.ComponentProps<typeof MaterialIcons>["name"];
@@ -129,9 +139,13 @@ export function DashboardHomeScreen() {
   const dispatch = useAppDispatch();
   const { mode: themeMode, colors } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
+  const profileCompletion = useAppSelector((s) => s.auth.profileCompletion);
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const network = useAppSelector((s) => s.network);
-  const isOffline = !network.isConnected || network.isInternetReachable === false;
+  const isOffline =
+    !network.isConnected ||
+    (network.actualInternetReachable === false && network.backendReachable === false);
+  const { isSelfOnline } = useOnlinePresence();
   const [menuCounts, setMenuCounts] = useState({
     savedItems: 0,
     unreadMessages: 0,
@@ -185,8 +199,21 @@ export function DashboardHomeScreen() {
     }, [handleBottomTabPress]),
   );
 
-  const displayName = user?.name?.trim() || DUMMY_PROFILE_NAME;
-  const displayEmail = user?.email?.trim() || "";
+  const displayName = getProfileDisplayName(user, isAuthenticated);
+  const displaySubtitle = getProfileDisplaySubtitle(user);
+
+  const activeCompletion = useMemo(
+    () => resolveProfileCompletion(user, profileCompletion),
+    [user, profileCompletion],
+  );
+
+  const showCompletionSection =
+    isAuthenticated && activeCompletion != null && !activeCompletion.isComplete;
+
+  const profileRingProgress = useMemo(() => {
+    if (!activeCompletion || activeCompletion.totalCount <= 0) return 0;
+    return (activeCompletion.completedCount / activeCompletion.totalCount) * 100;
+  }, [activeCompletion]);
 
   const navigate = useCallback(
     (href: Href) => {
@@ -290,7 +317,7 @@ export function DashboardHomeScreen() {
           <ProfileHeaderArt height={HEADER_ART_HEIGHT} />
         </View>
 
-        {/* Avatar left (half on banner) — PRO / name / stats stacked below, left aligned */}
+        {/* Avatar left (half on banner) — always visible */}
         <View
           className="z-10 px-5 pb-2"
           style={{
@@ -300,63 +327,66 @@ export function DashboardHomeScreen() {
         >
           <View
             className="self-start"
-            style={{ marginTop: -AVATAR_OVERLAP, marginBottom: 12 }}
-          >
-            <View
-              className="overflow-hidden rounded-full border-[4px]"
-              style={{
-                width: AVATAR_SIZE,
-                height: AVATAR_SIZE,
-                borderColor: colors.surface,
-                backgroundColor: colors.surface,
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.14,
-                shadowRadius: 10,
-                elevation: 8,
-              }}
-            >
-              <ProfileAvatarImage
-                user={user}
-                fallbackName={displayName}
-                className="h-full w-full"
-                iconSize={44}
-              />
-            </View>
-          </View>
-
-          <Text
-            className="text-[26px] leading-8"
             style={{
-              fontFamily: ListifyFonts.bold,
-              color: colors.textPrimary,
+              marginTop: -AVATAR_OVERLAP,
+              marginBottom: showCompletionSection ? 16 : 12,
             }}
           >
-            {displayName}
-          </Text>
-          {displayEmail ? (
-            <Text
-              className="mt-1 text-[15px]"
-              style={{
-                fontFamily: ListifyFonts.regular,
-                color: colors.textTertiary,
-              }}
-              numberOfLines={1}
-            >
-              {displayEmail}
-            </Text>
-          ) : null}
+            <ProfileAvatarWithProgress
+              user={user}
+              fallbackName={displayName}
+              avatarSize={AVATAR_SIZE}
+              progress={profileRingProgress}
+              isComplete={activeCompletion?.isComplete ?? false}
+              showProgress={Boolean(showCompletionSection && activeCompletion)}
+              showOnlineDot
+              isOnline={isSelfOnline}
+              onPress={() => navigate("/profile-details-edit" as Href)}
+            />
+          </View>
+
+          {showCompletionSection && activeCompletion ? (
+            <ProfileCompletionSection
+              user={user}
+              completion={activeCompletion}
+              hideAvatar
+            />
+          ) : (
+            <>
+              <Text
+                className="text-[26px] leading-8"
+                style={{
+                  fontFamily: ListifyFonts.bold,
+                  color: colors.textPrimary,
+                }}
+              >
+                {displayName}
+              </Text>
+              {displaySubtitle ? (
+                <Text
+                  className="mt-1 text-[15px]"
+                  style={{
+                    fontFamily: ListifyFonts.regular,
+                    color: colors.textTertiary,
+                  }}
+                  numberOfLines={1}
+                >
+                  {displaySubtitle}
+                </Text>
+              ) : null}
+            </>
+          )}
 
           {/* Offline indicator */}
           {isOffline ? (
             <View
               className="mt-2 flex-row items-center gap-1.5 self-start rounded-full px-3 py-1"
-              style={{ backgroundColor: "#10231D" }}
+              style={{ backgroundColor: colors.primarySoftStrong }}
             >
-              <MaterialIcons name="cloud-off" size={12} color="#6EE7C7" />
+              <MaterialIcons name="cloud-off" size={12} color={colors.primary} />
               <Text
                 className="text-[11px] font-medium"
-                style={{ color: "#6EE7C7" }}
+                style={{ color: colors.primaryDeep }}
               >
                 Offline — showing cached data
               </Text>
@@ -541,21 +571,27 @@ export function DashboardHomeScreen() {
           ) : (
             <Pressable
               onPress={() => router.push("/logout-modal" as Href)}
-              className="mt-6 items-center rounded-xl py-4"
-              style={({ pressed }) => ({
-                opacity: pressed ? 0.9 : 1,
-                backgroundColor: colors.danger,
-              })}
+              className="mt-4 flex-row items-center justify-between py-3.5"
+              style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
             >
-              <Text
-                className="text-[16px]"
-                style={{
-                  fontFamily: ListifyFonts.semiBold,
-                  color: colors.textOnPrimary,
-                }}
-              >
-                Sign out
-              </Text>
+              <View className="flex-row items-center gap-4">
+                <View
+                  className="h-11 w-11 items-center justify-center rounded-2xl"
+                  style={{ backgroundColor: "rgba(239,68,68,0.15)" }}
+                >
+                  <MaterialIcons name="logout" size={22} color={colors.danger} />
+                </View>
+                <Text
+                  className="text-[16px]"
+                  style={{
+                    fontFamily: ListifyFonts.medium,
+                    color: colors.danger,
+                  }}
+                >
+                  Sign out
+                </Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
             </Pressable>
           )}
         </View>

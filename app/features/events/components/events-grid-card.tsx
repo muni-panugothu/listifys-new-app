@@ -3,15 +3,16 @@ import { memo } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
-import type { FeaturedEventDummy } from "@/features/events/data/events-discovery";
-import { formatEventDisplayLabel } from "@/lib/event-dates";
-import { Image } from "@/lib/nativewind-interop";
+import { EventListingMedia } from "@/features/events/components/event-listing-media";
+import type { ListingItem } from "@/features/listing/services/listing-api";
+import { formatEventDisplayLabel } from "@/lib/event-dates";import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 
 export type EventsGridCardProps = {
-  event: FeaturedEventDummy;
+  event: ListingItem;
   cardWidth: number;
   isSaved: boolean;
+  isMediaActive?: boolean;
   onPress: () => void;
   onToggleSave: () => void;
 };
@@ -20,14 +21,22 @@ function EventsGridCardImpl({
   event,
   cardWidth,
   isSaved,
+  isMediaActive = false,
   onPress,
   onToggleSave,
 }: EventsGridCardProps) {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
+  const { bookmarkBg, bookmarkIcon } = useEventsTheme();
   const imageHeight = cardWidth * 1.35;
+  const venue =
+    ((event as { venue?: string }).venue as string | undefined)?.trim() ||
+    event.location?.trim() ||
+    "";
   const dateLabel = formatEventDisplayLabel({
-    eventDate: event.eventDate,
-    eventTime: event.eventTime,
+    eventDate: (event.eventDate as string | undefined) ?? "",
+    eventTime: (event.eventTime as string | undefined) ?? "",
+    startDate: event.startDate as string | undefined,
+    endDate: event.endDate as string | undefined,
   });
 
   return (
@@ -40,15 +49,16 @@ function EventsGridCardImpl({
           backgroundColor: colors.surfaceMuted,
         }}
       >
-        <Image
-          source={event.image}
-          contentFit="cover"
-          transition={140}
-          cachePolicy="memory-disk"
-          recyclingKey={event.image}
+        <EventListingMedia
+          listing={event}
+          recyclingKey={`grid-${event._id}`}
+          isActive={isMediaActive}
+          autoPlay={isMediaActive}
+          loop={isMediaActive}
+          muted
           style={{ width: "100%", height: "100%" }}
+          placeholderIconSize={32}
         />
-
         <Pressable
           onPress={(e) => {
             e.stopPropagation();
@@ -64,15 +74,13 @@ function EventsGridCardImpl({
             borderRadius: 8,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: isDark
-              ? "rgba(0,0,0,0.5)"
-              : "rgba(255,255,255,0.92)",
+            backgroundColor: bookmarkBg,
           }}
         >
           <MaterialIcons
             name={isSaved ? "bookmark" : "bookmark-border"}
             size={17}
-            color={isDark ? "#FFFFFF" : "#111827"}
+            color={bookmarkIcon}
           />
         </Pressable>
       </View>
@@ -106,7 +114,7 @@ function EventsGridCardImpl({
         </Text>
       ) : null}
 
-      {event.venue ? (
+      {venue ? (
         <Text
           numberOfLines={1}
           style={{
@@ -117,7 +125,7 @@ function EventsGridCardImpl({
             ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
           }}
         >
-          {event.venue}
+          {venue}
         </Text>
       ) : null}
     </Pressable>

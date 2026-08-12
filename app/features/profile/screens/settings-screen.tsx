@@ -29,12 +29,14 @@ import {
   getFCMToken,
 } from "@/lib/notifications/token-manager";
 import { useProtectedNavigation } from "@/lib/use-protected-navigation";
+import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
 
 const APP_VERSION = Constants.expoConfig?.version ?? "1.0.0";
 
 export function SettingsScreen() {
   const router = useRouter();
+  const { colors, resolvedMode } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const { navigateProtected } = useProtectedNavigation();
@@ -147,6 +149,9 @@ export function SettingsScreen() {
     navigateProtected(route as Href, action);
   };
 
+  const mutedIconBg = resolvedMode === "dark" ? colors.surfaceMuted : "#F3F4F6";
+  const mutedIconColor = colors.textSecondary;
+
   return (
     <ProfileSubScreenLayout title="Settings">
       <ProfileSectionCard title="Account">
@@ -218,16 +223,16 @@ export function SettingsScreen() {
       <ProfileSectionCard title="Support">
         <SettingsMenuRow
           icon="help-outline"
-          iconBg="#F3F4F6"
-          iconColor="#6B7280"
+          iconBg={mutedIconBg}
+          iconColor={mutedIconColor}
           label="Help & support"
           type="navigate"
           onPress={() => Linking.openURL("mailto:support@listifys.com")}
         />
         <SettingsMenuRow
           icon="bug-report"
-          iconBg="#F3F4F6"
-          iconColor="#6B7280"
+          iconBg={mutedIconBg}
+          iconColor={mutedIconColor}
           label="Report a problem"
           type="navigate"
           onPress={() =>
@@ -240,16 +245,16 @@ export function SettingsScreen() {
       <ProfileSectionCard title="Legal">
         <SettingsMenuRow
           icon="info"
-          iconBg="#F3F4F6"
-          iconColor="#6B7280"
+          iconBg={mutedIconBg}
+          iconColor={mutedIconColor}
           label="About Listifys"
           type="navigate"
           onPress={() => push("/about-listify")}
         />
         <SettingsMenuRow
           icon="policy"
-          iconBg="#F3F4F6"
-          iconColor="#6B7280"
+          iconBg={mutedIconBg}
+          iconColor={mutedIconColor}
           label="Privacy policy"
           type="navigate"
           onPress={() => push("/privacy-policy")}
@@ -257,8 +262,8 @@ export function SettingsScreen() {
         />
         <SettingsMenuRow
           icon="description"
-          iconBg="#F3F4F6"
-          iconColor="#6B7280"
+          iconBg={mutedIconBg}
+          iconColor={mutedIconColor}
           label="Terms of service"
           type="navigate"
           onPress={() => push("/terms-of-service")}
@@ -268,19 +273,26 @@ export function SettingsScreen() {
       <ProfileSectionCard>
         <View className="flex-row items-center justify-between px-4 py-3.5">
           <View className="flex-row items-center gap-3">
-            <View className="h-11 w-11 items-center justify-center rounded-2xl bg-[#F3F4F6]">
-              <Text style={{ fontFamily: ListifyFonts.bold, color: "#9CA3AF" }}>v</Text>
+            <View
+              className="h-11 w-11 items-center justify-center rounded-2xl"
+              style={{ backgroundColor: colors.surfaceMuted }}
+            >
+              <Text style={{ fontFamily: ListifyFonts.bold, color: colors.textTertiary }}>v</Text>
             </View>
             <Text
-              className="text-[16px] text-[#1A1A1A]"
-              style={{ fontFamily: ListifyFonts.medium }}
+              className="text-[16px]"
+              style={{ fontFamily: ListifyFonts.medium, color: colors.textPrimary }}
             >
               App version
             </Text>
           </View>
           <Text
-            className="rounded-lg bg-[#F6F7F8] px-2.5 py-1 text-[12px] text-[#6B7280]"
-            style={{ fontFamily: ListifyFonts.semiBold }}
+            className="rounded-lg px-2.5 py-1 text-[12px]"
+            style={{
+              fontFamily: ListifyFonts.semiBold,
+              color: colors.textSecondary,
+              backgroundColor: colors.surfaceMuted,
+            }}
           >
             {APP_VERSION}
           </Text>
@@ -295,12 +307,25 @@ export function SettingsScreen() {
           }
           navigateProtected("/(tabs)/dashboard-home" as Href, "profile");
         }}
-        className="mt-2 h-14 items-center justify-center rounded-2xl border border-red-100 bg-white"
-        style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
+        className="mt-2 h-14 items-center justify-center rounded-2xl border"
+        style={({ pressed }) => ({
+          opacity: pressed ? 0.9 : 1,
+          borderColor:
+            resolvedMode === "dark"
+              ? "rgba(239,68,68,0.35)"
+              : "rgba(239,68,68,0.28)",
+          backgroundColor:
+            resolvedMode === "dark"
+              ? "rgba(239,68,68,0.16)"
+              : "rgba(239,68,68,0.12)",
+        })}
       >
         <Text
-          className="text-[16px] text-red-600"
-          style={{ fontFamily: ListifyFonts.semiBold }}
+          className="text-[16px]"
+          style={{
+            fontFamily: ListifyFonts.semiBold,
+            color: colors.danger,
+          }}
         >
           {isAuthenticated ? "Sign out" : "Sign in"}
         </Text>

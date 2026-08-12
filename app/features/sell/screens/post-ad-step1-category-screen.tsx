@@ -7,6 +7,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { SellFlowLayout, SellSectionCard } from "@/components/sell-flow-layout";
 import { CATEGORY_MAP, type CategorySlug } from "@/constants/categories";
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   setCategory,
@@ -14,8 +15,6 @@ import {
 } from "@/store/slices/post-form-slice";
 
 const defaultCategorySlug: CategorySlug = "electronics";
-const TEXT_PRIMARY = "#1A1A1A";
-const TEXT_MUTED = "#6B7280";
 
 const getCategoryParam = (value?: string | string[]) =>
   typeof value === "string" ? value : value?.[0];
@@ -30,6 +29,7 @@ export function PostAdStep1CategoryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ category?: string | string[] }>();
   const dispatch = useAppDispatch();
+  const { colors } = useTheme();
 
   const categorySlug = getValidCategorySlug(params.category);
   const categoryConfig = CATEGORY_MAP[categorySlug];
@@ -115,7 +115,7 @@ export function PostAdStep1CategoryScreen() {
             style={{
               fontFamily: ListifyFonts.medium,
               fontSize: 13,
-              color: TEXT_MUTED,
+              color: colors.textSecondary,
             }}
           >
             Change
@@ -136,17 +136,17 @@ export function PostAdStep1CategoryScreen() {
             alignItems: "center",
             borderRadius: 16,
             borderWidth: 1,
-            borderColor: "#E5E7EB",
-            backgroundColor: "#FFFFFF",
+            borderColor: colors.border,
+            backgroundColor: colors.inputBackground,
             paddingHorizontal: 16,
           }}
         >
-          <MaterialIcons name="search" size={20} color="#9CA3AF" />
+          <MaterialIcons name="search" size={20} color={colors.iconMuted} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder={`Search ${categoryConfig?.name ?? "subcategories"}...`}
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.inputPlaceholder}
             autoCorrect={false}
             autoCapitalize="none"
             returnKeyType="search"
@@ -156,13 +156,13 @@ export function PostAdStep1CategoryScreen() {
               marginLeft: 8,
               fontFamily: ListifyFonts.regular,
               fontSize: 14,
-              color: TEXT_PRIMARY,
+              color: colors.textPrimary,
               paddingVertical: 0,
             }}
           />
           {searchQuery.length > 0 ? (
             <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
-              <MaterialIcons name="close" size={18} color="#9CA3AF" />
+              <MaterialIcons name="close" size={18} color={colors.iconMuted} />
             </Pressable>
           ) : null}
         </View>
@@ -171,13 +171,13 @@ export function PostAdStep1CategoryScreen() {
       <SellSectionCard>
         {filteredSubcategories.length === 0 ? (
           <View style={{ alignItems: "center", paddingVertical: 32 }}>
-            <MaterialIcons name="search-off" size={36} color="#D1D5DB" />
+            <MaterialIcons name="search-off" size={36} color={colors.borderStrong} />
             <Text
               style={{
                 marginTop: 8,
                 fontFamily: ListifyFonts.regular,
                 fontSize: 14,
-                color: TEXT_MUTED,
+                color: colors.textSecondary,
               }}
             >
               No subcategories match &quot;{searchQuery}&quot;
@@ -195,10 +195,10 @@ export function PostAdStep1CategoryScreen() {
                 alignItems: "center",
                 paddingHorizontal: 16,
                 paddingVertical: 15,
-                backgroundColor: pressed ? "#F9FAFB" : "#FFFFFF",
+                backgroundColor: pressed ? colors.surfaceMuted : "transparent",
                 borderBottomWidth:
                   index < filteredSubcategories.length - 1 ? 1 : 0,
-                borderBottomColor: "#F3F4F6",
+                borderBottomColor: colors.border,
               })}
             >
               <Text
@@ -208,7 +208,7 @@ export function PostAdStep1CategoryScreen() {
                     ? ListifyFonts.semiBold
                     : ListifyFonts.regular,
                   fontSize: 15,
-                  color: isSelected ? TEXT_PRIMARY : "#4B5563",
+                  color: isSelected ? colors.textPrimary : colors.textSecondary,
                 }}
               >
                 {sub}
@@ -219,8 +219,8 @@ export function PostAdStep1CategoryScreen() {
                   height: 22,
                   borderRadius: 11,
                   borderWidth: 2,
-                  borderColor: isSelected ? TEXT_PRIMARY : "#D1D5DB",
-                  backgroundColor: isSelected ? TEXT_PRIMARY : "transparent",
+                  borderColor: isSelected ? colors.textPrimary : colors.borderStrong,
+                  backgroundColor: isSelected ? colors.textPrimary : "transparent",
                   alignItems: "center",
                   justifyContent: "center",
                 }}
@@ -231,7 +231,7 @@ export function PostAdStep1CategoryScreen() {
                       width: 8,
                       height: 8,
                       borderRadius: 4,
-                      backgroundColor: "#FFFFFF",
+                      backgroundColor: colors.background,
                     }}
                   />
                 ) : null}

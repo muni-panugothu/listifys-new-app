@@ -18,6 +18,7 @@ import { type DeviceSession, getDevices, logoutAllDevices, revokeDevice } from "
 import { ListifyFonts } from "@/constants/typography";
 import { showErrorToast } from "@/lib/toast";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useTheme } from "@/providers/theme-provider";
 
 function getDeviceIcon(device: DeviceSession): React.ComponentProps<typeof MaterialIcons>["name"] {
   const t = (device.deviceType || device.deviceName || "").toLowerCase();
@@ -29,6 +30,8 @@ function getDeviceIcon(device: DeviceSession): React.ComponentProps<typeof Mater
 export function DevicesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors, resolvedMode } = useTheme();
+  const isDark = resolvedMode === "dark";
   const topBarHeight = useMemo(() => insets.top + 64, [insets.top]);
 
   const [devices, setDevices] = useState<DeviceSession[]>([]);
@@ -94,7 +97,7 @@ export function DevicesScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F6F7F8" }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* ── Top Bar ── */}
       <View
         style={{
@@ -106,15 +109,15 @@ export function DevicesScreen() {
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          backgroundColor: "rgba(255,255,255,0.97)",
+          backgroundColor: colors.surface,
           borderBottomWidth: 1,
-          borderBottomColor: "#F1F5F9",
+          borderBottomColor: colors.border,
           paddingHorizontal: 16,
           paddingTop: insets.top,
           height: topBarHeight,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.06,
+          shadowOpacity: isDark ? 0.2 : 0.06,
           shadowRadius: 4,
           elevation: 3,
         }}
@@ -125,14 +128,14 @@ export function DevicesScreen() {
             width: 36,
             height: 36,
             borderRadius: 18,
-            backgroundColor: pressed ? "#F1F5F9" : "transparent",
+            backgroundColor: pressed ? colors.surfaceMuted : "transparent",
             alignItems: "center",
             justifyContent: "center",
           })}
         >
           <MaterialIcons name="arrow-back" size={22} color="#27BB97" />
         </Pressable>
-        <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 17, color: "#161D1A" }}>Devices</Text>
+        <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 17, color: colors.textPrimary }}>Devices</Text>
         {loading && !refreshing ? (
           <ActivityIndicator size="small" color="#27BB97" />
         ) : (
@@ -142,12 +145,12 @@ export function DevicesScreen() {
               width: 36,
               height: 36,
               borderRadius: 18,
-              backgroundColor: pressed ? "#F1F5F9" : "transparent",
+              backgroundColor: pressed ? colors.surfaceMuted : "transparent",
               alignItems: "center",
               justifyContent: "center",
             })}
           >
-            <MaterialIcons name="refresh" size={22} color="#64748B" />
+            <MaterialIcons name="refresh" size={22} color={colors.iconMuted} />
           </Pressable>
         )}
       </View>
@@ -219,19 +222,19 @@ export function DevicesScreen() {
             gap: 12,
             borderRadius: 14,
             borderWidth: 1,
-            borderColor: "rgba(39,187,151,0.2)",
-            backgroundColor: "rgba(39,187,151,0.07)",
+            borderColor: isDark ? "rgba(39,187,151,0.35)" : "rgba(39,187,151,0.2)",
+            backgroundColor: isDark ? "rgba(39,187,151,0.12)" : "rgba(39,187,151,0.07)",
             padding: 14,
           }}
         >
           <MaterialIcons name="info-outline" size={20} color="#27BB97" style={{ marginTop: 1 }} />
-          <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: "#004535", lineHeight: 19, flex: 1 }}>
+          <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: colors.textSecondary, lineHeight: 19, flex: 1 }}>
             If you see a device you don't recognize, remove it and change your password immediately.
           </Text>
         </View>
 
         {/* ── Sessions Label ── */}
-        <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 13, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 12 }}>
+        <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 13, color: colors.textTertiary, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 12 }}>
           Active Sessions
         </Text>
 
@@ -239,13 +242,13 @@ export function DevicesScreen() {
         {loading && devices.length === 0 ? (
           <View style={{ alignItems: "center", paddingVertical: 40 }}>
             <ActivityIndicator size="large" color="#27BB97" />
-            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: "#94A3B8", marginTop: 12 }}>Loading sessions…</Text>
+            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: colors.textTertiary, marginTop: 12 }}>Loading sessions…</Text>
           </View>
         ) : error ? (
-          <View style={{ alignItems: "center", paddingVertical: 32, paddingHorizontal: 24, backgroundColor: "#FFFFFF", borderRadius: 16 }}>
-            <MaterialIcons name="wifi-off" size={40} color="#CBD5E1" />
-            <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 16, color: "#161D1A", marginTop: 12 }}>Could not load sessions</Text>
-            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: "#94A3B8", marginTop: 4, textAlign: "center" }}>{error}</Text>
+          <View style={{ alignItems: "center", paddingVertical: 32, paddingHorizontal: 24, backgroundColor: colors.card, borderRadius: 16 }}>
+            <MaterialIcons name="wifi-off" size={40} color={colors.iconMuted} />
+            <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 16, color: colors.textPrimary, marginTop: 12 }}>Could not load sessions</Text>
+            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: colors.textTertiary, marginTop: 4, textAlign: "center" }}>{error}</Text>
             <Pressable
               onPress={() => void loadDevices()}
               style={({ pressed }) => ({ marginTop: 16, paddingHorizontal: 24, paddingVertical: 10, backgroundColor: pressed ? "#1EA880" : "#27BB97", borderRadius: 20 })}
@@ -254,12 +257,12 @@ export function DevicesScreen() {
             </Pressable>
           </View>
         ) : devices.length === 0 ? (
-          <View style={{ alignItems: "center", paddingVertical: 48, backgroundColor: "#FFFFFF", borderRadius: 16 }}>
-            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: "#F0FDFA", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+          <View style={{ alignItems: "center", paddingVertical: 48, backgroundColor: colors.card, borderRadius: 16 }}>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: isDark ? "rgba(39,187,151,0.18)" : "#F0FDFA", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
               <MaterialIcons name="devices" size={32} color="#27BB97" />
             </View>
-            <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 16, color: "#161D1A" }}>No active sessions</Text>
-            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: "#94A3B8", marginTop: 6, textAlign: "center", paddingHorizontal: 32 }}>You appear to only be logged in here.</Text>
+            <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 16, color: colors.textPrimary }}>No active sessions</Text>
+            <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: colors.textTertiary, marginTop: 6, textAlign: "center", paddingHorizontal: 32 }}>You appear to only be logged in here.</Text>
           </View>
         ) : (
           <View style={{ gap: 10 }}>
@@ -270,14 +273,14 @@ export function DevicesScreen() {
                   flexDirection: "row",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  backgroundColor: "#FFFFFF",
+                  backgroundColor: colors.card,
                   borderRadius: 16,
                   padding: 14,
                   borderWidth: device.current ? 1.5 : 1,
-                  borderColor: device.current ? "rgba(39,187,151,0.35)" : "#F1F5F9",
+                  borderColor: device.current ? "rgba(39,187,151,0.35)" : colors.border,
                   shadowColor: "#000",
                   shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.05,
+                  shadowOpacity: isDark ? 0.15 : 0.05,
                   shadowRadius: 3,
                   elevation: device.current ? 3 : 1,
                 }}
@@ -288,7 +291,9 @@ export function DevicesScreen() {
                       width: 48,
                       height: 48,
                       borderRadius: 14,
-                      backgroundColor: device.current ? "#F0FDFA" : "#F8FAFC",
+                      backgroundColor: device.current
+                        ? (isDark ? "rgba(39,187,151,0.18)" : "#F0FDFA")
+                        : colors.surfaceMuted,
                       alignItems: "center",
                       justifyContent: "center",
                     }}
@@ -296,23 +301,23 @@ export function DevicesScreen() {
                     <MaterialIcons
                       name={getDeviceIcon(device)}
                       size={24}
-                      color={device.current ? "#27BB97" : "#64748B"}
+                      color={device.current ? "#27BB97" : colors.iconMuted}
                     />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 15, color: "#161D1A" }}>
+                      <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 15, color: colors.textPrimary }}>
                         {device.deviceName || "Unknown Device"}
                       </Text>
                       {device.current ? (
-                        <View style={{ backgroundColor: "#F0FDFA", borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 }}>
+                        <View style={{ backgroundColor: isDark ? "rgba(39,187,151,0.18)" : "#F0FDFA", borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 }}>
                           <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 10, color: "#27BB97", textTransform: "uppercase", letterSpacing: 0.6 }}>
                             This device
                           </Text>
                         </View>
                       ) : null}
                     </View>
-                    <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 12, color: "#94A3B8", marginTop: 3 }}>
+                    <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 12, color: colors.textTertiary, marginTop: 3 }}>
                       {[
                         device.location || device.ipAddress,
                         device.lastActiveText ?? (device.lastActive ? new Date(device.lastActive).toLocaleDateString() : null),

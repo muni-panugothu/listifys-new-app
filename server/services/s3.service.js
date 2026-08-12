@@ -564,6 +564,54 @@ class S3Service {
     }
   }
 
+  async uploadListingVideo(fileBuffer, userId, mimeType, category = 'listings', originalName = 'video.mp4') {
+    try {
+      ensureS3();
+
+      const safeName = String(originalName || 'video.mp4').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const extFromName = safeName.includes('.') ? safeName.split('.').pop() : '';
+      const extFromMime = String(mimeType || '').split('/')[1] || 'mp4';
+      const ext = (extFromName || extFromMime || 'mp4').toLowerCase();
+      const normalizedCategory = this.sanitizePathPart(category, 'listings');
+      const prefix = `${normalizedCategory}/${userId}/`;
+      const base = safeName.replace(/\.[^.]+$/, '') || 'video';
+      const key = this.createUniqueKey(prefix, base, ext);
+
+      const command = new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        Body: fileBuffer,
+        ContentType: mimeType || 'video/mp4',
+        CacheControl: 'public, max-age=31536000, immutable',
+        Metadata: {
+          userId: String(userId),
+          category: normalizedCategory,
+          uploadedAt: new Date().toISOString(),
+          type: 'listing_video',
+        },
+      });
+
+      await s3Client.send(command);
+
+      const videoUrl = this.getImageUrl(key);
+      logger.info('Listing video uploaded to S3', {
+        userId,
+        key,
+        size: fileBuffer.length,
+      });
+
+      return {
+        success: true,
+        videoUrl,
+        key,
+        fileName: key,
+      };
+    } catch (error) {
+      logger.error('Failed to upload listing video to S3:', error);
+      throw new Error(`Listing video upload failed: ${error.message}`);
+    }
+  }
+
   async uploadChatAttachment(fileBuffer, userId, mimeType, originalName = 'file') {
     try {
       ensureS3();

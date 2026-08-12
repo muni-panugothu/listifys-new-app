@@ -11,10 +11,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { FloatingBottomNav } from "@/components/floating-bottom-nav";
+import { JobListingCard } from "@/features/category/components/job-listing-card";
 import { ListingItemsGridCard } from "@/components/listing-items-grid-card";
 import { ProfileSubScreenLayout } from "@/components/profile-sub-screen-layout";
 import { FLOATING_BOTTOM_NAV_OFFSET } from "@/constants/bottom-nav-tabs";
 import { ListifyFonts } from "@/constants/typography";
+import type { JobListingExtras } from "@/features/jobs/utils/jobs-formatters";
 import {
   fetchSavedListings,
   toggleSaveListing,
@@ -22,7 +24,7 @@ import {
 } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
-import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useFloatingNavPress } from "@/hooks/use-floating-nav-press";
 import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
 import {
@@ -42,10 +44,14 @@ const SPECIAL_DETAIL_ROUTES: Record<string, string> = {
   services: "/service-detail",
 };
 
+function getItemCategory(item: ListingItem): string {
+  return (item as ListingItem & { _source?: string })._source ?? item.category ?? "electronics";
+}
+
 export function SavedItemsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const handleBottomTabPress = useTabNavigation();
+  const handleBottomTabPress = useFloatingNavPress();
   const { colors } = useTheme();
   const locationCoords = useAppSelector(selectLocationCoords);
   const isoCountryCode = useAppSelector(selectIsoCountryCode);
@@ -75,7 +81,7 @@ export function SavedItemsScreen() {
 
   const openDetail = useCallback(
     (item: ListingItem) => {
-      const cat = (item as ListingItem & { _source?: string })._source ?? item.category;
+      const cat = getItemCategory(item);
       const specialRoute = SPECIAL_DETAIL_ROUTES[cat];
       if (specialRoute) {
         router.push(`${specialRoute}?id=${item._id}&category=${cat}` as Href);
@@ -88,14 +94,16 @@ export function SavedItemsScreen() {
 
   const handleUnsave = useCallback(async (item: ListingItem) => {
     try {
-      const category =
-        (item as ListingItem & { _source?: string })._source ?? item.category ?? "electronics";
+      const category = getItemCategory(item);
       await toggleSaveListing(category, item._id);
       setItems((prev) => prev.filter((i) => i._id !== item._id));
     } catch {
       // silently fail
     }
   }, []);
+
+  const jobItems = items.filter((item) => getItemCategory(item) === "jobs");
+  const otherItems = items.filter((item) => getItemCategory(item) !== "jobs");
 
   return (
     <View className="flex-1">
@@ -153,54 +161,67 @@ export function SavedItemsScreen() {
         ) : null}
 
         {items.length > 0 ? (
-          <View
-            className="flex-row flex-wrap"
-            style={{ columnGap: GRID_GUTTER, rowGap: GRID_GUTTER }}
-          >
-            {items.map((item) => {
-              const category =
-                (item as ListingItem & { _source?: string })._source ??
-                item.category;
-              const distanceLabel = canShowDistanceOnCards
-                ? getListingDistanceLabel(
-                    {
-                      _id: item._id,
-                      category,
-                      countryCode: item.countryCode,
-                      currency: item.currency,
-                      coordinates: item.coordinates,
-                      distance: (item as { distance?: number }).distance,
-                    },
-                    { lat: locationCoords.lat!, lng: locationCoords.lng! },
-                    isoCountryCode,
-                  )
-                : undefined;
+          <View style={{ gap: 16 }}>
+            {jobItems.map((item) => (
+              <JobListingCard
+                key={item._id}
+                job={item as JobListingExtras}
+                isoCountryCode={isoCountryCode}
+                isSaved
+                onPress={() => openDetail(item)}
+                onToggleSave={() => void handleUnsave(item)}
+              />
+            ))}
 
-              return (
-                <ListingItemsGridCard
-                  key={item._id}
-                  width={CARD_WIDTH}
-                  title={item.title}
-                  subtitle={
-                    item.condition ||
-                    (typeof item.location === "string"
-                      ? item.location
-                      : item.location?.address ??
-                        item.location?.city ??
-                        undefined)
-                  }
-                  price={item.price}
-                  currency={item.currency}
-                  isoCountryCode={item.countryCode ?? isoCountryCode}
-                  image={item.images?.[0]}
-                  createdAt={item.createdAt}
-                  distanceLabel={distanceLabel}
-                  isSaved
-                  onPress={() => openDetail(item)}
-                  onToggleSave={() => void handleUnsave(item)}
-                />
-              );
-            })}
+            {otherItems.length > 0 ? (
+              <View
+                className="flex-row flex-wrap"
+                style={{ columnGap: GRID_GUTTER, rowGap: GRID_GUTTER }}
+              >
+                {otherItems.map((item) => {
+                  const category = getItemCategory(item);
+                  const distanceLabel = canShowDistanceOnCards
+                    ? getListingDistanceLabel(
+                        {
+                          _id: item._id,
+                          category,
+                          countryCode: item.countryCode,
+                          currency: item.currency,
+                          coordinates: item.coordinates,
+                          distance: (item as { distance?: number }).distance,
+                        },
+                        { lat: locationCoords.lat!, lng: locationCoords.lng! },
+                        isoCountryCode,
+                      )
+                    : undefined;
+
+                  return (
+                    <ListingItemsGridCard
+                      key={item._id}
+                      width={CARD_WIDTH}
+                      title={item.title}
+                      subtitle={
+                        item.condition ||
+                        (typeof item.location === "string"
+                          ? item.location
+                          : item.location?.address ??
+                            item.location?.city ??
+                            undefined)
+                      }
+                      price={item.price}
+                      currency={item.currency}
+                      isoCountryCode={item.countryCode ?? isoCountryCode}
+                      image={item.images?.[0]}
+                      createdAt={item.createdAt}
+                      distanceLabel={distanceLabel}
+                      isSaved
+                      onPress={() => openDetail(item)}
+                      onToggleSave={() => void handleUnsave(item)}
+                    />
+                  );
+                })}
+              </View>
+            ) : null}
           </View>
         ) : null}
       </ProfileSubScreenLayout>

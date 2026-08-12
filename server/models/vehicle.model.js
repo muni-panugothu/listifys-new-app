@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const s3Service = require("../services/s3.service.js");
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require("../utils/slugify");
 
 const vehicleSchema = new mongoose.Schema(
@@ -289,6 +290,7 @@ vehicleSchema.index({ brand: 1, subcategory: 1 });
 vehicleSchema.index({ title: "text", description: "text", brand: "text", model: "text" });
 vehicleSchema.index({ "coordinates": "2dsphere" });
 
+attachListingVideosField(vehicleSchema);
 attachSlugPlugin(vehicleSchema);
 
 module.exports = mongoose.model("Vehicle", vehicleSchema);

@@ -38,6 +38,9 @@ router.post(
   uploadImages
 );
 
+
+const { registerListingVideoUpload } = require("../utils/register-listing-video-upload.js");
+registerListingVideoUpload(router, "electronics");
 // ── Routes with :id parameter ──
 router.get("/:id", searchLimiter, cacheResponseTracked("electronics", 300, "detail"), getElectronicsById);
 router.put("/:id", protect, postingLimiter, validateListingInput, invalidateAfter("electronics"), updateElectronics);

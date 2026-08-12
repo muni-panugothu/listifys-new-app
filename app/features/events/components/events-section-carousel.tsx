@@ -1,5 +1,13 @@
-import { memo } from "react";
-import { Dimensions, Platform, ScrollView, Text, View } from "react-native";
+import { memo, useCallback, useState } from "react";
+import {
+  Dimensions,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Platform,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
 import { FeaturedEventCard } from "@/features/events/components/featured-event-card";
@@ -16,10 +24,12 @@ function toListingItem(item: FeaturedEventDummy): ListingItem {
   return {
     _id: item.id,
     title: item.title,
-    images: [item.image],
+    images: item.image ? [item.image] : [],
+    videos: item.videos,
     location: item.venue,
     price: item.price,
     currency: "INR",
+    category: "events",
     eventDate: item.eventDate,
     eventTime: item.eventTime,
     venue: item.venue,
@@ -32,7 +42,7 @@ export type EventsSectionCarouselProps = {
   events: FeaturedEventDummy[];
   savedIds: Set<string>;
   onToggleSave: (id: string) => void;
-  onPressEvent?: (item: FeaturedEventDummy) => void;
+  onPressEvent?: (item: FeaturedEventDummy, index: number) => void;
   /** When false, hide offer badges (matches comedy/reference cards). */
   showOffers?: boolean;
 };
@@ -46,6 +56,16 @@ function EventsSectionCarouselImpl({
   showOffers = false,
 }: EventsSectionCarouselProps) {
   const { colors } = useTheme();
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetX = event.nativeEvent.contentOffset.x;
+      const index = Math.round(offsetX / (CARD_WIDTH + GAP));
+      setActiveIndex(Math.max(0, Math.min(index, events.length - 1)));
+    },
+    [events.length],
+  );
 
   if (events.length === 0) return null;
 
@@ -67,6 +87,8 @@ function EventsSectionCarouselImpl({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={{
           paddingHorizontal: H_PAD,
           gap: GAP,
@@ -76,14 +98,15 @@ function EventsSectionCarouselImpl({
         snapToInterval={CARD_WIDTH + GAP}
         snapToAlignment="start"
       >
-        {events.map((item) => (
+        {events.map((item, index) => (
           <FeaturedEventCard
             key={item.id}
             event={toListingItem(item)}
             cardWidth={CARD_WIDTH}
             isSaved={savedIds.has(item.id)}
+            isMediaActive={index === activeIndex}
             offerLabel={showOffers ? item.offerLabel : null}
-            onPress={() => onPressEvent?.(item)}
+            onPress={() => onPressEvent?.(item, index)}
             onToggleSave={() => onToggleSave(item.id)}
           />
         ))}

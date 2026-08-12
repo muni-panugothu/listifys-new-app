@@ -1,3 +1,4 @@
+import { StatusBar } from "expo-status-bar";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "@/lib/safe-router";
 import { useCallback, useMemo, useState } from "react";
@@ -20,7 +21,8 @@ import {
 import { EventsHubSwitcherModal } from "@/features/events/components/events-hub-switcher-modal";
 import { EventsSearchExploreGrid } from "@/features/events/components/events-search-explore-grid";
 import { FEATURED_EVENTS_DUMMY } from "@/features/events/data/events-discovery";
-import type { EventsHubTab } from "@/features/events/data/events-hub-discovery";
+import type { MarketplaceHubTab } from "@/features/home/data/home-hub-tabs";
+import { navigateFromHubTab } from "@/lib/navigate-from-hub-tab";
 import {
   EVENTS_SEARCH_ARTISTS,
   type EventsSearchArtist,
@@ -29,6 +31,7 @@ import {
 import { Image } from "@/lib/nativewind-interop";
 import type { Href } from "@/lib/safe-router";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
 import { selectLocationLabel } from "@/store/slices/location-slice";
@@ -40,6 +43,7 @@ export function EventsSearchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const et = useEventsTheme();
   const locationLabel = useAppSelector(selectLocationLabel);
   const navCollapse = useSharedValue(0);
   const lastY = useSharedValue(0);
@@ -93,16 +97,14 @@ export function EventsSearchScreen() {
   );
 
   const handleHubSelect = useCallback(
-    (tab: EventsHubTab) => {
+    (tab: MarketplaceHubTab) => {
       setHubVisible(false);
-      if (tab.id === "home") {
-        handleTabPress("home");
-        return;
-      }
       if (tab.id === "events") {
         if (router.canGoBack()) router.back();
         else router.replace("/events-listing");
+        return;
       }
+      navigateFromHubTab(tab, router, handleTabPress);
     },
     [handleTabPress, router],
   );
@@ -132,7 +134,8 @@ export function EventsSearchScreen() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View style={{ flex: 1, backgroundColor: et.background }}>
+      <StatusBar style={et.colors.statusBarStyle} backgroundColor={et.headerBg} />
       <EventsHubSwitcherModal
         visible={hubVisible}
         activeTab="events"
@@ -148,7 +151,7 @@ export function EventsSearchScreen() {
           paddingTop: insets.top + 8,
           paddingHorizontal: H_PAD,
           paddingBottom: 10,
-          backgroundColor: colors.background,
+          backgroundColor: et.headerBg,
         }}
       >
         <View
@@ -189,7 +192,7 @@ export function EventsSearchScreen() {
             height: 48,
             borderRadius: 24,
             borderWidth: 1,
-            borderColor: isDark ? colors.borderStrong : "#D8DCE3",
+            borderColor: isDark ? et.chipBorder : colors.border,
             backgroundColor: colors.surface,
             flexDirection: "row",
             alignItems: "center",
@@ -222,7 +225,7 @@ export function EventsSearchScreen() {
       </View>
 
       <ScrollView
-        style={{ flex: 1 }}
+        style={{ flex: 1, backgroundColor: et.background }}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         onScroll={(e) => handleScroll(e.nativeEvent.contentOffset.y)}
@@ -268,8 +271,8 @@ export function EventsSearchScreen() {
                     paddingRight: 12,
                     borderRadius: 12,
                     borderWidth: 1,
-                    borderColor: isDark ? colors.borderStrong : "#E2E5EB",
-                    backgroundColor: colors.surface,
+                    borderColor: et.chipBorder,
+                    backgroundColor: et.chipBg,
                     maxWidth: 220,
                     opacity: pressed ? 0.85 : 1,
                   })}

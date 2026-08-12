@@ -33,9 +33,6 @@ import { LOCATION_STORAGE_KEY, saveStoredLocation } from "@/lib/location-service
 import { useLocale, CALLING_CODE } from "@/providers/locale-provider";
 import { selectLocationCoords } from "@/store/slices/location-slice";
 
-const BRAND = "#27BB97";
-const TEXT_PRIMARY = "#1A1A1A";
-const TEXT_MUTED = "#6B7280";
 const USER_STORAGE_KEY = "@listify/auth_user";
 
 const GENDER_OPTIONS = [
@@ -46,10 +43,11 @@ const GENDER_OPTIONS = [
 ] as const;
 
 function FieldLabel({ children }: { children: string }) {
+  const { colors } = useTheme();
   return (
     <Text
       className="mb-2 text-[13px]"
-      style={{ fontFamily: ListifyFonts.medium, color: TEXT_MUTED }}
+      style={{ fontFamily: ListifyFonts.medium, color: colors.textSecondary }}
     >
       {children}
     </Text>
@@ -57,17 +55,19 @@ function FieldLabel({ children }: { children: string }) {
 }
 
 function FormCard({ children }: { children: React.ReactNode }) {
-  const { colors } = useTheme();
+  const { colors, resolvedMode } = useTheme();
   return (
     <View
       className="rounded-2xl p-4"
       style={{
         backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.04,
+        shadowOffset: { width: 0, height: resolvedMode === "dark" ? 2 : 1 },
+        shadowOpacity: resolvedMode === "dark" ? 0.22 : 0.04,
         shadowRadius: 8,
-        elevation: 2,
+        elevation: resolvedMode === "dark" ? 3 : 2,
       }}
     >
       {children}
@@ -79,7 +79,7 @@ export function ProfileDetailsEditScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
-  const { colors } = useTheme();
+  const { colors, resolvedMode } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const sessionHydrated = useAppSelector((s) => s.auth.sessionHydrated);
@@ -304,6 +304,10 @@ export function ProfileDetailsEditScreen() {
     }
   };
 
+  const fieldBackground = colors.inputBackground;
+  const fieldTextColor = colors.textPrimary;
+  const fieldBorderColor = colors.borderStrong;
+
   return (
     <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <View
@@ -331,7 +335,7 @@ export function ProfileDetailsEditScreen() {
           className="h-10 w-10 items-center justify-center rounded-full"
           style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1, backgroundColor: colors.surface })}
         >
-          <MaterialIcons name="settings" size={22} color={TEXT_MUTED} />
+          <MaterialIcons name="settings" size={22} color={colors.iconMuted} />
         </Pressable>
       </View>
 
@@ -348,11 +352,12 @@ export function ProfileDetailsEditScreen() {
           <View className="items-center py-2">
             <View className="relative">
               <View
-                className="h-28 w-28 overflow-hidden rounded-full border-[3px] border-white"
+                className="h-28 w-28 overflow-hidden rounded-full border-[3px]"
                 style={{
+                  borderColor: colors.surface,
                   shadowColor: "#000",
                   shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.1,
+                  shadowOpacity: resolvedMode === "dark" ? 0.3 : 0.1,
                   shadowRadius: 8,
                   elevation: 4,
                 }}
@@ -368,18 +373,18 @@ export function ProfileDetailsEditScreen() {
               <Pressable
                 onPress={handlePickImage}
                 className="absolute bottom-0 right-0 h-9 w-9 items-center justify-center rounded-full"
-                style={{ backgroundColor: BRAND }}
+                style={{ backgroundColor: colors.primary }}
               >
                 {uploading ? (
-                  <ActivityIndicator size="small" color="#FFF" />
+                  <ActivityIndicator size="small" color={colors.textOnPrimary} />
                 ) : (
-                  <MaterialIcons name="photo-camera" size={18} color="#FFFFFF" />
+                  <MaterialIcons name="photo-camera" size={18} color={colors.textOnPrimary} />
                 )}
               </Pressable>
             </View>
             <Text
               className="mt-3 text-[13px]"
-              style={{ fontFamily: ListifyFonts.regular, color: TEXT_MUTED }}
+              style={{ fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
             >
               Tap camera to change photo
             </Text>
@@ -393,9 +398,15 @@ export function ProfileDetailsEditScreen() {
               value={fullName}
               onChangeText={setFullName}
               placeholder="Your name"
-              placeholderTextColor="#9CA3AF"
-              className="h-12 rounded-xl bg-[#F6F7F8] px-4 text-[15px]"
-              style={{ fontFamily: ListifyFonts.regular, color: TEXT_PRIMARY }}
+              placeholderTextColor={colors.inputPlaceholder}
+              className="h-12 rounded-xl px-4 text-[15px]"
+              style={{
+                fontFamily: ListifyFonts.regular,
+                color: fieldTextColor,
+                backgroundColor: fieldBackground,
+                borderWidth: 1,
+                borderColor: fieldBorderColor,
+              }}
             />
           </FormCard>
 
@@ -407,9 +418,11 @@ export function ProfileDetailsEditScreen() {
                 flexDirection: "row",
                 alignItems: "center",
                 height: 48,
-                backgroundColor: "#F6F7F8",
+                backgroundColor: fieldBackground,
                 borderRadius: 12,
                 paddingHorizontal: 14,
+                borderWidth: 1,
+                borderColor: fieldBorderColor,
               }}
             >
               <Text
@@ -417,7 +430,7 @@ export function ProfileDetailsEditScreen() {
                   flex: 1,
                   fontSize: 15,
                   fontFamily: ListifyFonts.regular,
-                  color: TEXT_PRIMARY,
+                  color: fieldTextColor,
                 }}
                 numberOfLines={1}
               >
@@ -432,7 +445,7 @@ export function ProfileDetailsEditScreen() {
                   paddingLeft: 8,
                 })}
               >
-                <Text style={{ fontSize: 13.5, fontFamily: ListifyFonts.semiBold, color: BRAND }}>
+                <Text style={{ fontSize: 13.5, fontFamily: ListifyFonts.semiBold, color: colors.primary }}>
                   Change
                 </Text>
               </Pressable>
@@ -445,9 +458,11 @@ export function ProfileDetailsEditScreen() {
                   flexDirection: "row",
                   alignItems: "center",
                   height: 48,
-                  backgroundColor: "#F6F7F8",
+                  backgroundColor: fieldBackground,
                   borderRadius: 12,
                   paddingHorizontal: 14,
+                  borderWidth: 1,
+                  borderColor: fieldBorderColor,
                 }}
               >
                 <Text
@@ -455,7 +470,7 @@ export function ProfileDetailsEditScreen() {
                     flex: 1,
                     fontSize: 15,
                     fontFamily: ListifyFonts.regular,
-                    color: TEXT_PRIMARY,
+                    color: fieldTextColor,
                   }}
                   numberOfLines={1}
                 >
@@ -470,7 +485,7 @@ export function ProfileDetailsEditScreen() {
                     paddingLeft: 8,
                   })}
                 >
-                  <Text style={{ fontSize: 13.5, fontFamily: ListifyFonts.semiBold, color: BRAND }}>
+                  <Text style={{ fontSize: 13.5, fontFamily: ListifyFonts.semiBold, color: colors.primary }}>
                     Change
                   </Text>
                 </Pressable>
@@ -489,16 +504,16 @@ export function ProfileDetailsEditScreen() {
                     onPress={() => setGender(option.value)}
                     className="rounded-full px-4 py-2"
                     style={{
-                      backgroundColor: selected ? "rgba(39,187,151,0.14)" : "#F6F7F8",
+                      backgroundColor: selected ? colors.primarySoftStrong : fieldBackground,
                       borderWidth: 1,
-                      borderColor: selected ? BRAND : "transparent",
+                      borderColor: selected ? colors.primary : colors.border,
                     }}
                   >
                     <Text
                       className="text-[13px]"
                       style={{
                         fontFamily: selected ? ListifyFonts.semiBold : ListifyFonts.medium,
-                        color: selected ? BRAND : TEXT_MUTED,
+                        color: selected ? colors.primary : colors.textSecondary,
                       }}
                     >
                       {option.label}
@@ -513,9 +528,15 @@ export function ProfileDetailsEditScreen() {
                 value={dateOfBirth}
                 onChangeText={setDateOfBirth}
                 placeholder="YYYY-MM-DD"
-                placeholderTextColor="#9CA3AF"
-                className="h-12 rounded-xl bg-[#F6F7F8] px-4 text-[15px]"
-                style={{ fontFamily: ListifyFonts.regular, color: TEXT_PRIMARY }}
+                placeholderTextColor={colors.inputPlaceholder}
+                className="h-12 rounded-xl px-4 text-[15px]"
+                style={{
+                  fontFamily: ListifyFonts.regular,
+                  color: fieldTextColor,
+                  backgroundColor: fieldBackground,
+                  borderWidth: 1,
+                  borderColor: fieldBorderColor,
+                }}
               />
             </View>
           </FormCard>
@@ -529,6 +550,8 @@ export function ProfileDetailsEditScreen() {
               placeholder="City, area"
               userLat={locationCoords?.lat}
               userLng={locationCoords?.lng}
+              inputBackgroundColor={fieldBackground}
+              inputTextColor={fieldTextColor}
             />
             <View className="mt-4">
               <FieldLabel>Bio</FieldLabel>
@@ -539,13 +562,19 @@ export function ProfileDetailsEditScreen() {
                 numberOfLines={4}
                 textAlignVertical="top"
                 placeholder="Tell buyers a bit about you"
-                placeholderTextColor="#9CA3AF"
-                className="min-h-[96px] rounded-xl bg-[#F6F7F8] px-4 py-3 text-[15px] leading-[22px]"
-                style={{ fontFamily: ListifyFonts.regular, color: TEXT_PRIMARY }}
+                placeholderTextColor={colors.inputPlaceholder}
+                className="min-h-[96px] rounded-xl px-4 py-3 text-[15px] leading-[22px]"
+                style={{
+                  fontFamily: ListifyFonts.regular,
+                  color: fieldTextColor,
+                  backgroundColor: fieldBackground,
+                  borderWidth: 1,
+                  borderColor: fieldBorderColor,
+                }}
               />
               <Text
                 className="mt-2 text-right text-[12px]"
-                style={{ fontFamily: ListifyFonts.regular, color: TEXT_MUTED }}
+                style={{ fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
               >
                 {bio.length}/150
               </Text>
@@ -557,14 +586,14 @@ export function ProfileDetailsEditScreen() {
       <View
         style={{
           borderTopWidth: 1,
-          borderTopColor: "#E5E7EB",
+          borderTopColor: colors.border,
           backgroundColor: colors.surface,
           paddingHorizontal: 20,
           paddingTop: 12,
           paddingBottom: Math.max(insets.bottom, 12),
           shadowColor: "#000",
           shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.06,
+          shadowOpacity: resolvedMode === "dark" ? 0.2 : 0.06,
           shadowRadius: 8,
           elevation: 16,
         }}
@@ -580,19 +609,19 @@ export function ProfileDetailsEditScreen() {
             style={{
               minHeight: 52,
               borderRadius: 16,
-              backgroundColor: "#1A1A1A",
+              backgroundColor: colors.primary,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
             {status === "loading" ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <Text
                 style={{
                   fontFamily: ListifyFonts.semiBold,
                   fontSize: 16,
-                  color: "#FFFFFF",
+                  color: colors.textOnPrimary,
                 }}
               >
                 Save changes

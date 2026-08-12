@@ -52,7 +52,7 @@ const INDEX_DEFINITIONS = [
   {
     collection: 'users',
     indexes: [
-      { fields: { email: 1 }, options: { name: 'idx_email', unique: true, background: true } },
+      // email index is managed by ensureUserEmailIndex (sparse — phone-only users have no email)
       { fields: { status: 1, createdAt: -1 }, options: { name: 'idx_status_created', background: true } },
       { fields: { role: 1, status: 1 }, options: { name: 'idx_role_status', background: true } },
     ],
@@ -86,6 +86,42 @@ const INDEX_DEFINITIONS = [
 ];
 
 /**
+ * Phone-only users omit email entirely. Legacy non-sparse unique indexes on
+ * email treat multiple null/absent values as duplicates (E11000 on register).
+ */
+async function ensureUserEmailIndex(db) {
+  const coll = db.collection('users');
+  try {
+    const collections = await db.listCollections({ name: 'users' }).toArray();
+    if (collections.length === 0) return;
+
+    const indexes = await coll.indexes();
+    for (const idx of indexes) {
+      if (idx.key?.email !== 1) continue;
+      if (idx.name === 'idx_email_sparse' && idx.sparse) continue;
+      logger.info('[Indexes] Dropping legacy email index', { name: idx.name, sparse: !!idx.sparse });
+      try {
+        await coll.dropIndex(idx.name);
+      } catch (dropErr) {
+        logger.warn('[Indexes] Could not drop email index', { name: idx.name, error: dropErr.message });
+      }
+    }
+
+    await coll.createIndex(
+      { email: 1 },
+      { name: 'idx_email_sparse', unique: true, sparse: true, background: true },
+    );
+
+    const unsetResult = await coll.updateMany({ email: null }, { $unset: { email: '' } });
+    if (unsetResult.modifiedCount > 0) {
+      logger.info('[Indexes] Removed null email from users', { count: unsetResult.modifiedCount });
+    }
+  } catch (err) {
+    logger.warn('[Indexes] User email index migration failed (non-fatal)', { error: err.message });
+  }
+}
+
+/**
  * Ensure all compound indexes exist. Idempotent — safe to run on every startup.
  * Runs in background so it doesn't block server startup.
  */
@@ -99,6 +135,8 @@ async function ensureIndexes() {
   let created = 0;
   let skipped = 0;
   let errors = 0;
+
+  await ensureUserEmailIndex(db);
 
   for (const { collection, indexes } of INDEX_DEFINITIONS) {
     for (const { fields, options } of indexes) {

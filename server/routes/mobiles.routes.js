@@ -53,6 +53,9 @@ router.post(
   uploadImages,
 );
 
+
+const { registerListingVideoUpload } = require("../utils/register-listing-video-upload.js");
+registerListingVideoUpload(router, "mobiles");
 router.get("/:id", searchLimiter, validateMobileParams, cacheResponseTracked("mobiles", 300, "detail"), getMobileById);
 router.put(
   "/:id",

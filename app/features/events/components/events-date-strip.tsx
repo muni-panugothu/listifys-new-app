@@ -76,7 +76,7 @@ export function EventsDateStrip({
                 className="text-[22px]"
                 style={{
                   fontFamily: ListifyFonts.bold,
-                  color: isActive ? "#FFFFFF" : colors.textPrimary,
+                  color: isActive ? colors.textOnPrimary : colors.textPrimary,
                 }}
               >
                 {formatStripDay(item.date)}

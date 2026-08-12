@@ -1,263 +1,319 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { memo } from "react";
-import { Pressable, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { memo, useMemo } from "react";
+import { Platform, Pressable, Text, View } from "react-native";
 
-import { ListingTimeBadge } from "@/components/listing-time-badge";
 import { ListifyFonts } from "@/constants/typography";
-import type { ListingItem } from "@/features/listing/services/listing-api";
+import { CompanyLogo } from "@/features/jobs/components/company-logo";
+import {
+  JOBS_APPLY_TEAL,
+  JOBS_CARD_BG,
+  JOBS_UI_ICONS,
+} from "@/features/jobs/data/jobs-discovery";
+import {
+  formatJobSalary,
+  getCompanyDisplayName,
+  getCompanyInitial,
+  getCompanyLocation,
+  getExtraTagCount,
+  getJobApplicantCount,
+  getPrimaryWorkBadge,
+  type JobListingExtras,
+} from "@/features/jobs/utils/jobs-formatters";
 import { Image } from "@/lib/nativewind-interop";
 import { useTheme } from "@/providers/theme-provider";
 
 type JobListingCardProps = {
-  job: ListingItem;
-  salaryText: string;
+  job: JobListingExtras;
+  isoCountryCode?: string | null;
   isSaved: boolean;
   onPress: () => void;
   onToggleSave: () => void;
 };
 
+const AVATAR_FALLBACK = ["#CBD5E1", "#94A3B8", "#64748B", "#475569"];
+
+function companyInitial(name: string) {
+  return getCompanyInitial(name);
+}
+
+function ApplicantAvatarStack({
+  job,
+  borderColor,
+}: {
+  job: JobListingExtras;
+  borderColor: string;
+}) {
+  const avatars = job.applicantAvatars ?? [];
+  if (avatars.length === 0) return null;
+
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center" }}>
+      {avatars.slice(0, 4).map((applicant, i) => (
+        <View
+          key={`${job._id}-avatar-${i}`}
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 15,
+            marginLeft: i === 0 ? 0 : -10,
+            borderWidth: 2,
+            borderColor,
+            overflow: "hidden",
+            backgroundColor: applicant.profileImage
+              ? "#E2E8F0"
+              : AVATAR_FALLBACK[i % AVATAR_FALLBACK.length],
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {applicant.profileImage ? (
+            <Image
+              source={applicant.profileImage}
+              contentFit="cover"
+              transition={200}
+              cachePolicy="memory-disk"
+              style={{ width: 30, height: 30 }}
+            />
+          ) : applicant.name ? (
+            <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 11, color: "#FFFFFF" }}>
+              {companyInitial(applicant.name)}
+            </Text>
+          ) : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function JobListingCardImpl({
   job,
-  salaryText,
+  isoCountryCode,
   isSaved,
   onPress,
   onToggleSave,
 }: JobListingCardProps) {
   const { colors, isDark } = useTheme();
-  const companyName = (job as { companyName?: string }).companyName ?? job.sellerName ?? "";
-  const companyLogo = (job as { companyLogo?: string }).companyLogo ?? null;
-  const jobType = (job as { jobType?: string }).jobType ?? "";
-  const workMode = (job as { workMode?: string }).workMode ?? "";
-  const isNew = job.createdAt
-    ? Date.now() - new Date(job.createdAt).getTime() < 3 * 24 * 60 * 60 * 1000
-    : false;
+  const companyName = getCompanyDisplayName(job);
+  const location = getCompanyLocation(job);
+  const salaryText = formatJobSalary(job, isoCountryCode);
+  const salaryPeriod =
+    job.salaryType?.toLowerCase().includes("year") ||
+    job.salary?.type?.toLowerCase().includes("year")
+      ? " / Year"
+      : " / Month";
+  const primaryBadge = getPrimaryWorkBadge(job);
+  const extraCount = getExtraTagCount(job);
+  const applicantCount = getJobApplicantCount(job);
+  const hasAvatars = (job.applicantAvatars?.length ?? 0) > 0;
+  const isVerified = Boolean(
+    (job.seller as { isVerified?: boolean } | undefined)?.isVerified,
+  );
+
+  const cardBg = isDark ? colors.surfaceElevated : JOBS_CARD_BG;
+
+  const salaryDisplay = useMemo(() => {
+    if (salaryText === "Salary not disclosed") return salaryText;
+    if (salaryText.includes("/")) return salaryText;
+    return `${salaryText}${salaryPeriod}`;
+  }, [salaryPeriod, salaryText]);
 
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => ({
+        borderRadius: 26,
+        backgroundColor: cardBg,
         overflow: "hidden",
-        borderRadius: 16,
-        backgroundColor: isDark ? colors.surfaceElevated : colors.surface,
-        opacity: pressed ? 0.96 : 1,
-        borderWidth: 1,
-        borderColor: colors.border,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: isDark ? 0.28 : 0.06,
-        shadowRadius: 8,
-        elevation: 2,
+        transform: [{ scale: pressed ? 0.985 : 1 }],
+        shadowColor: "#64748B",
+        shadowOffset: { width: 0, height: pressed ? 10 : 8 },
+        shadowOpacity: pressed ? 0.18 : 0.1,
+        shadowRadius: pressed ? 22 : 16,
+        elevation: pressed ? 6 : 4,
       })}
     >
-      <ListingTimeBadge
-        date={job.createdAt}
-        style={{ left: 12, top: 12, position: "absolute", zIndex: 3 }}
-      />
-      <View style={{ padding: 16 }}>
-        <View style={{ marginBottom: 12, flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
-          <View
-            style={{
-              height: 48,
-              width: 48,
-              overflow: "hidden",
-              borderRadius: 12,
-              backgroundColor: colors.surfaceMuted,
-            }}
-          >
-            {companyLogo ? (
-              <Image
-                source={companyLogo}
-                contentFit="cover"
-                transition={120}
-                cachePolicy="memory-disk"
-                recyclingKey={companyLogo}
-                style={{ height: "100%", width: "100%" }}
-              />
-            ) : (
-              <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-                <MaterialIcons name="business" size={22} color={colors.iconMuted} />
-              </View>
-            )}
+      <View style={{ paddingHorizontal: 18, paddingTop: 18, paddingBottom: 14 }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
+          <CompanyLogo
+            job={job}
+            size={48}
+            imageSize={40}
+            borderWidth={1}
+            borderColor={isDark ? colors.border : "#EEF2F7"}
+          />
+
+          <View style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+            <Text
+              numberOfLines={1}
+              style={{
+                fontFamily: ListifyFonts.semiBold,
+                fontSize: 16,
+                color: colors.textPrimary,
+              }}
+            >
+              {companyName}
+            </Text>
+            <View style={{ marginTop: 4, flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
+              {location ? (
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    fontFamily: ListifyFonts.regular,
+                    fontSize: 13,
+                    color: "#9CA3AF",
+                  }}
+                >
+                  {location}
+                </Text>
+              ) : null}
+              {location && isVerified ? (
+                <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: "#9CA3AF" }}>
+                  {" · "}
+                </Text>
+              ) : null}
+              {isVerified ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Image
+                    source={JOBS_UI_ICONS.trusted}
+                    contentFit="contain"
+                    style={{ width: 14, height: 14 }}
+                  />
+                  <Text style={{ fontFamily: ListifyFonts.medium, fontSize: 12, color: "#22C55E" }}>
+                    Trusted
+                  </Text>
+                </View>
+              ) : null}
+            </View>
           </View>
-          <View style={{ minWidth: 0, flex: 1 }}>
+
+          <Pressable onPress={onToggleSave} hitSlop={12}>
+            <MaterialIcons
+              name={isSaved ? "bookmark" : "bookmark-border"}
+              size={24}
+              color={isSaved ? "#EF4444" : colors.iconMuted}
+            />
+          </Pressable>
+        </View>
+
+        <View style={{ marginTop: 16, flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <Text
               numberOfLines={2}
               style={{
-                fontSize: 17,
+                fontFamily: ListifyFonts.bold,
+                fontSize: 19,
+                lineHeight: 26,
                 color: colors.textPrimary,
-                fontFamily: ListifyFonts.semiBold,
               }}
             >
               {job.title}
             </Text>
-            {companyName ? (
-              <Text
-                style={{
-                  marginTop: 2,
-                  fontSize: 14,
-                  color: colors.textSecondary,
-                  fontFamily: ListifyFonts.regular,
-                }}
-              >
-                {companyName}
-              </Text>
-            ) : null}
-          </View>
-          {isNew ? (
-            <View
+            <Text
               style={{
-                borderRadius: 6,
-                backgroundColor: colors.primarySoft,
-                paddingHorizontal: 8,
-                paddingVertical: 4,
+                marginTop: 6,
+                fontFamily: ListifyFonts.regular,
+                fontSize: 14,
+                color: "#9CA3AF",
               }}
             >
-              <Text
+              {salaryDisplay}
+            </Text>
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 2, flexShrink: 0 }}>
+            {primaryBadge ? (
+              <View
                 style={{
-                  fontSize: 10,
-                  color: colors.primary,
-                  fontFamily: ListifyFonts.bold,
+                  borderRadius: 999,
+                  backgroundColor: isDark ? colors.surfaceMuted : "#F3F4F6",
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
                 }}
               >
-                NEW
-              </Text>
-            </View>
+                <Text style={{ fontFamily: ListifyFonts.medium, fontSize: 12, color: "#6B7280" }}>
+                  {primaryBadge}
+                </Text>
+              </View>
+            ) : null}
+            {extraCount > 0 ? (
+              <View
+                style={{
+                  borderRadius: 999,
+                  backgroundColor: isDark ? colors.surfaceMuted : "#F3F4F6",
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                }}
+              >
+                <Text style={{ fontFamily: ListifyFonts.medium, fontSize: 11, color: "#9CA3AF" }}>
+                  +{extraCount}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </View>
+
+      <LinearGradient
+        colors={
+          isDark
+            ? ["transparent", "rgba(39,187,151,0.06)"]
+            : ["#FFFFFF", "#F0F8FF"]
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{
+          paddingHorizontal: 18,
+          paddingVertical: 16,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", flex: 1, minWidth: 0 }}>
+          {hasAvatars ? (
+            <>
+              <ApplicantAvatarStack job={job} borderColor={cardBg} />
+              {applicantCount > 0 ? (
+                <Text
+                  style={{
+                    marginLeft: 8,
+                    fontFamily: ListifyFonts.medium,
+                    fontSize: 13,
+                    color: "#9CA3AF",
+                  }}
+                >
+                  +{applicantCount}
+                </Text>
+              ) : null}
+            </>
           ) : null}
         </View>
 
-        {jobType || workMode || job.subcategory ? (
-          <View style={{ marginBottom: 12, flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {jobType ? (
-              <View
-                style={{
-                  borderRadius: 999,
-                  backgroundColor: colors.surfaceMuted,
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 11,
-                    color: colors.textSecondary,
-                    fontFamily: ListifyFonts.medium,
-                  }}
-                >
-                  {jobType}
-                </Text>
-              </View>
-            ) : null}
-            {workMode ? (
-              <View
-                style={{
-                  borderRadius: 999,
-                  backgroundColor: isDark ? "rgba(59,130,246,0.18)" : "#EFF6FF",
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 11,
-                    color: isDark ? "#93C5FD" : "#2563EB",
-                    fontFamily: ListifyFonts.medium,
-                  }}
-                >
-                  {workMode}
-                </Text>
-              </View>
-            ) : null}
-            {job.subcategory ? (
-              <View
-                style={{
-                  borderRadius: 999,
-                  backgroundColor: colors.primarySoft,
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 11,
-                    color: colors.primary,
-                    fontFamily: ListifyFonts.medium,
-                  }}
-                >
-                  {job.subcategory}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-
-        <Text
-          style={{
-            fontSize: 16,
-            color: colors.textPrimary,
-            fontFamily: ListifyFonts.bold,
-          }}
+        <Pressable
+          onPress={onPress}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            opacity: pressed ? 0.75 : 1,
+            transform: [{ scale: pressed ? 0.97 : 1 }],
+            marginLeft: 12,
+          })}
         >
-          {salaryText}
-        </Text>
-        {job.location ? (
-          <View style={{ marginTop: 4, flexDirection: "row", alignItems: "center", gap: 4 }}>
-            <MaterialIcons name="location-on" size={14} color={colors.iconMuted} />
-            <Text
-              numberOfLines={1}
-              style={{
-                flex: 1,
-                fontSize: 13,
-                color: colors.textTertiary,
-                fontFamily: ListifyFonts.regular,
-              }}
-            >
-              {job.location}
-            </Text>
-          </View>
-        ) : null}
-
-        <View style={{ marginTop: 16, flexDirection: "row", gap: 8 }}>
-          <Pressable
-            onPress={onPress}
+          <Text
             style={{
-              flex: 1,
-              alignItems: "center",
-              borderRadius: 12,
-              paddingVertical: 12,
-              backgroundColor: colors.primary,
+              fontFamily: ListifyFonts.bold,
+              fontSize: 15,
+              color: JOBS_APPLY_TEAL,
+              ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
             }}
           >
-            <Text
-              style={{
-                fontSize: 14,
-                color: colors.textOnPrimary,
-                fontFamily: ListifyFonts.semiBold,
-              }}
-            >
-              View details
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={onToggleSave}
-            style={{
-              height: 48,
-              width: 48,
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: colors.borderStrong,
-              backgroundColor: colors.surface,
-            }}
-          >
-            <MaterialIcons
-              name={isSaved ? "bookmark" : "bookmark-border"}
-              size={22}
-              color={isSaved ? colors.primary : colors.textPrimary}
-            />
-          </Pressable>
-        </View>
-      </View>
+            Apply
+          </Text>
+          <MaterialIcons name="north-east" size={18} color={JOBS_APPLY_TEAL} />
+        </Pressable>
+      </LinearGradient>
     </Pressable>
   );
 }

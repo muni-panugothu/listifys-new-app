@@ -12,11 +12,15 @@ import {
   requestJson,
   resolveAbsoluteMediaUrl,
 } from "@/features/auth/services/auth-api";
+import {
+  normalizeListingVideos,
+  normalizeVideoDurationSeconds,
+  type ListingVideoEntry,
+} from "@/lib/listing-media";
 import { authenticatedMultipartPost } from "@/lib/authenticated-multipart";
 import type { CategorySlug } from "@/constants/categories";
 import { cacheKeys, invalidateCache, seedListingsBatch, withCache } from "@/lib/cache";
 import { getListingSellerId } from "@/lib/is-own-listing";
-
 import Constants from "expo-constants";
 import { requireOptionalNativeModule } from "expo-modules-core";
 
@@ -64,6 +68,7 @@ export type ListingItem = {
   location?: string;
   countryCode?: string;
   images: string[];
+  videos?: ListingVideoEntry[];
   sellerName?: string;
   seller?: {
     _id: string;
@@ -158,6 +163,12 @@ export type ImageUploadResponse = {
   message?: string;
 };
 
+export type VideoUploadResponse = {
+  success: boolean;
+  videos: ListingVideoEntry[];
+  message?: string;
+};
+
 // ── Normalise image URLs in listings ───────────────────────────────────────────
 
 /**
@@ -217,17 +228,34 @@ function normaliseListingImages(listing: ListingItem): ListingItem {
     listing.sellerId ??
     (typeof seller === "string" ? seller : seller?._id);
 
+  const applicantAvatars = (
+    listing as ListingItem & {
+      applicantAvatars?: Array<{ profileImage?: string | null; name?: string }>;
+    }
+  ).applicantAvatars?.map((avatar) => ({
+    ...avatar,
+    profileImage: resolveAbsoluteMediaUrl(avatar.profileImage) ?? avatar.profileImage ?? null,
+  }));
+
   return {
     ...listing,
     userId,
     seller,
     sellerId: sellerId ? String(sellerId) : listing.sellerId,
+    companyLogo: resolveAbsoluteMediaUrl(listing.companyLogo) ?? listing.companyLogo ?? undefined,
+    applicantAvatars,
     images: (listing.images || []).map((img) => {
       // Server may return image objects {url, publicId, isPrimary} — extract the URL string
       const rawUrl = typeof img === "string" ? img : ((img as unknown as { url?: string }).url ?? "");
       return resolveAbsoluteMediaUrl(rawUrl) ?? rawUrl;
     }).filter(Boolean),
+    videos: normalizeListingVideos(listing.videos),
   };
+}
+
+/** Normalise listing media URLs (images + videos) for client display. */
+export function normalizeListingItem(listing: ListingItem): ListingItem {
+  return normaliseListingImages(listing);
 }
 
 function normaliseFeedResponse(data: FeedResponse): FeedResponse {
@@ -405,6 +433,8 @@ export async function fetchCategoryListings(
     lng?: number;
     radius?: number;
     countryCode?: string | null;
+    workMode?: string;
+    jobType?: string;
   },
 ): Promise<ListingsResponse> {
   const query = new URLSearchParams();
@@ -421,6 +451,8 @@ export async function fetchCategoryListings(
   if (params?.lng != null) query.set("lng", String(params.lng));
   if (params?.radius != null) query.set("radius", String(params.radius));
   if (params?.countryCode) query.set("countryCode", params.countryCode);
+  if (params?.workMode) query.set("workMode", params.workMode);
+  if (params?.jobType) query.set("jobType", params.jobType);
 
   const qs = query.toString();
 
@@ -440,6 +472,8 @@ export async function fetchCategoryListings(
     `lng:${params?.lng ?? ""}`,
     `radius:${params?.radius ?? ""}`,
     `cc:${params?.countryCode ?? ""}`,
+    `wm:${params?.workMode ?? ""}`,
+    `jt:${params?.jobType ?? ""}`,
   ].join(":");
 
   return withCache(
@@ -470,21 +504,30 @@ function categoryApiBase(categorySlug: CategorySlug): string {
 
 // ── Single Listing Detail ──────────────────────────────────────────────────────
 
-export async function fetchListingById(
+async function fetchListingByIdFromNetwork(
   categorySlug: CategorySlug,
   id: string,
 ): Promise<SingleListingResponse> {
+  const raw = await apiRequest<{ success: boolean; listing?: ListingItem; data?: ListingItem }>(
+    `${categoryApiBase(categorySlug)}/${id}`,
+  );
+  const found = raw.listing ?? raw.data;
+  const normalised = found ? normaliseListingImages(found) : undefined;
+  return { ...raw, listing: normalised } as SingleListingResponse;
+}
+
+export async function fetchListingById(
+  categorySlug: CategorySlug,
+  id: string,
+  options?: { fresh?: boolean },
+): Promise<SingleListingResponse> {
+  if (options?.fresh) {
+    return fetchListingByIdFromNetwork(categorySlug, id);
+  }
+
   return withCache(
     cacheKeys.listingDetail(categorySlug, id),
-    async () => {
-      // Some endpoints return { listing } while others (e.g. services) return { data }
-      const raw = await apiRequest<{ success: boolean; listing?: ListingItem; data?: ListingItem }>(
-        `${categoryApiBase(categorySlug)}/${id}`,
-      );
-      const found = raw.listing ?? raw.data;
-      const normalised = found ? normaliseListingImages(found) : undefined;
-      return { ...raw, listing: normalised } as SingleListingResponse;
-    },
+    () => fetchListingByIdFromNetwork(categorySlug, id),
     120_000, // 2 minutes TTL
   );
 }
@@ -577,6 +620,15 @@ export async function toggleSaveListing(
   return apiRequest(`${categoryApiBase(categorySlug)}/${id}/toggle-save`, {
     method: "POST",
   });
+}
+
+export async function recordJobApply(jobId: string): Promise<{
+  success: boolean;
+  applied: boolean;
+  applicantCount: number;
+  applyLink?: string | null;
+}> {
+  return apiRequest(`/api/jobs/${jobId}/apply`, { method: "POST" });
 }
 
 // ── Service Listings (different route pattern: /api/services/listings) ─────────
@@ -719,6 +771,82 @@ export async function uploadListingImages(
   );
 
   return { ...data, images } as ImageUploadResponse;
+}
+
+function normalizeUploadUri(uri: string): string {
+  return Platform.OS === "android" ? uri : uri.replace("file://", "");
+}
+
+function guessVideoMimeType(filename: string, fallback = "video/mp4"): string {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "mov":
+      return "video/quicktime";
+    case "webm":
+      return "video/webm";
+    case "m4v":
+      return "video/x-m4v";
+    case "3gp":
+    case "3gpp":
+      return "video/3gpp";
+    default:
+      return fallback;
+  }
+}
+
+export async function uploadListingVideos(
+  categorySlug: CategorySlug,
+  items: Array<{ uri: string; duration?: number; mimeType?: string; order?: number }>,
+): Promise<VideoUploadResponse> {
+  const buildFormData = () => {
+    const formData = new FormData();
+    const metadata: Array<{ duration?: number; order?: number }> = [];
+
+    for (const item of items) {
+      const filename = item.uri.split("/").pop() || `video_${Date.now()}.mp4`;
+      const mimeType = item.mimeType || guessVideoMimeType(filename);
+
+      formData.append("videos", {
+        uri: normalizeUploadUri(item.uri),
+        name: filename,
+        type: mimeType,
+      } as unknown as Blob);
+
+      metadata.push({
+        duration: normalizeVideoDurationSeconds(item.duration),
+        order: item.order,
+      });
+    }
+
+    formData.append("metadata", JSON.stringify(metadata));
+    return formData;
+  };
+
+  const url = `${AUTH_API_BASE_URL}${categoryApiBase(categorySlug)}/upload-videos`;
+  const response = await authenticatedMultipartPost(url, buildFormData, {
+    timeoutMs: 180_000,
+  });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const message =
+      (data as { message?: string })?.message ||
+      (response.status === 401
+        ? "Your session expired. Please sign in again."
+        : "Video upload failed");
+    throw new AuthApiError(message, response.status, data);
+  }
+
+  const rawVideos: ListingVideoEntry[] = (data as VideoUploadResponse).videos ?? [];
+  const videos = rawVideos.map((video) => ({
+    ...video,
+    url: resolveAbsoluteMediaUrl(video.url) ?? video.url,
+    thumbnailUrl: video.thumbnailUrl
+      ? resolveAbsoluteMediaUrl(video.thumbnailUrl) ?? video.thumbnailUrl
+      : undefined,
+  }));
+
+  return { ...(data as VideoUploadResponse), videos };
 }
 
 // ── My Listings (all categories unified) ───────────────────────────────────────

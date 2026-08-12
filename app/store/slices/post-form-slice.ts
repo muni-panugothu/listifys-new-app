@@ -1,6 +1,8 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 import type { CategorySlug } from "@/constants/categories";
+import type { PostMediaItem } from "@/lib/listing-media";
+import { createPostMediaId } from "@/lib/listing-media";
 
 export type PostFormState = {
   // Step 1
@@ -56,6 +58,8 @@ export type PostFormState = {
   companyName: string;
   companyWebsite: string;
   companyEmail: string;
+  companyLogoUri: string;
+  uploadedCompanyLogoUrl: string;
   applyLink: string;
   jobType: string;
   experience: string;
@@ -140,8 +144,17 @@ export type PostFormState = {
   serviceMode: string;
   responseTime: string;
   // Step 3
+  mediaItems: PostMediaItem[];
+  /** @deprecated Legacy image URIs — kept in sync with mediaItems for older callers */
   imageUris: string[];
   uploadedImageUrls: string[];
+  uploadedVideos: Array<{
+    url: string;
+    duration?: number;
+    mimeType?: string;
+    order?: number;
+    size?: number;
+  }>;
   phone: string;
   currency: string;
   // Listing GPS coords (set when user picks location from autocomplete or uses device GPS)
@@ -202,6 +215,8 @@ const initialState: PostFormState = {
   companyName: "",
   companyWebsite: "",
   companyEmail: "",
+  companyLogoUri: "",
+  uploadedCompanyLogoUrl: "",
   applyLink: "",
   jobType: "",
   experience: "",
@@ -273,8 +288,10 @@ const initialState: PostFormState = {
   serviceArea: "",
   serviceMode: "",
   responseTime: "",
+  mediaItems: [],
   imageUris: [],
   uploadedImageUrls: [],
+  uploadedVideos: [],
   phone: "",
   currency: "",
   locationLat: null,
@@ -283,6 +300,13 @@ const initialState: PostFormState = {
   submitError: null,
   editListingId: null,
 };
+
+function syncLegacyImageUris(state: PostFormState) {
+  state.imageUris = state.mediaItems
+    .filter((item) => item.type === "image")
+    .sort((a, b) => a.order - b.order)
+    .map((item) => item.uri);
+}
 
 const postFormSlice = createSlice({
   name: "postForm",
@@ -434,6 +458,16 @@ const postFormSlice = createSlice({
     },
     setCompanyEmail(state, action: PayloadAction<string>) {
       state.companyEmail = action.payload;
+    },
+    setCompanyLogoUri(state, action: PayloadAction<string>) {
+      state.companyLogoUri = action.payload;
+    },
+    setUploadedCompanyLogoUrl(state, action: PayloadAction<string>) {
+      state.uploadedCompanyLogoUrl = action.payload;
+    },
+    clearCompanyLogo(state) {
+      state.companyLogoUri = "";
+      state.uploadedCompanyLogoUrl = "";
     },
     setApplyLink(state, action: PayloadAction<string>) {
       state.applyLink = action.payload;
@@ -668,19 +702,90 @@ const postFormSlice = createSlice({
     setResponseTime(state, action: PayloadAction<string>) {
       state.responseTime = action.payload;
     },
+    setMediaItems(state, action: PayloadAction<PostMediaItem[]>) {
+      state.mediaItems = action.payload
+        .slice(0, 6)
+        .map((item, index) => ({ ...item, order: item.order ?? index }));
+      syncLegacyImageUris(state);
+    },
+    addMediaItems(state, action: PayloadAction<PostMediaItem[]>) {
+      const room = 6 - state.mediaItems.length;
+      if (room <= 0) return;
+      const toAdd = action.payload.slice(0, room).map((item, offset) => ({
+        ...item,
+        order: item.order ?? state.mediaItems.length + offset,
+      }));
+      state.mediaItems.push(...toAdd);
+      syncLegacyImageUris(state);
+    },
+    removeMediaItemAt(state, action: PayloadAction<number>) {
+      state.mediaItems.splice(action.payload, 1);
+      state.mediaItems.forEach((item, index) => {
+        item.order = index;
+      });
+      syncLegacyImageUris(state);
+    },
+    updateMediaItemAt(
+      state,
+      action: PayloadAction<{ index: number; patch: Partial<PostMediaItem> }>,
+    ) {
+      const item = state.mediaItems[action.payload.index];
+      if (!item) return;
+      state.mediaItems[action.payload.index] = {
+        ...item,
+        ...action.payload.patch,
+      };
+      syncLegacyImageUris(state);
+    },
     setImageUris(state, action: PayloadAction<string[]>) {
-      state.imageUris = action.payload;
+      state.mediaItems = action.payload.map((uri, index) => ({
+        id: createPostMediaId(),
+        type: "image" as const,
+        uri,
+        order: index,
+        uploadStatus: "idle" as const,
+      }));
+      syncLegacyImageUris(state);
     },
     addImageUri(state, action: PayloadAction<string>) {
-      if (state.imageUris.length < 6) {
-        state.imageUris.push(action.payload);
-      }
+      if (state.mediaItems.length >= 6) return;
+      state.mediaItems.push({
+        id: createPostMediaId(),
+        type: "image",
+        uri: action.payload,
+        order: state.mediaItems.length,
+        uploadStatus: "idle",
+      });
+      syncLegacyImageUris(state);
     },
     removeImageUri(state, action: PayloadAction<number>) {
-      state.imageUris.splice(action.payload, 1);
+      const imageItems = state.mediaItems
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => item.type === "image");
+      const target = imageItems[action.payload];
+      if (!target) return;
+      state.mediaItems.splice(target.index, 1);
+      state.mediaItems.forEach((item, index) => {
+        item.order = index;
+      });
+      syncLegacyImageUris(state);
     },
     setUploadedImageUrls(state, action: PayloadAction<string[]>) {
       state.uploadedImageUrls = action.payload;
+    },
+    setUploadedVideos(
+      state,
+      action: PayloadAction<
+        Array<{
+          url: string;
+          duration?: number;
+          mimeType?: string;
+          order?: number;
+          size?: number;
+        }>
+      >,
+    ) {
+      state.uploadedVideos = action.payload;
     },
     setPhone(state, action: PayloadAction<string>) {
       state.phone = action.payload;
@@ -759,6 +864,9 @@ export const {
   setCompanyName,
   setCompanyWebsite,
   setCompanyEmail,
+  setCompanyLogoUri,
+  setUploadedCompanyLogoUrl,
+  clearCompanyLogo,
   setApplyLink,
   setJobType,
   setExperience,
@@ -834,10 +942,15 @@ export const {
   setServiceArea,
   setServiceMode,
   setResponseTime,
+  setMediaItems,
+  addMediaItems,
+  removeMediaItemAt,
+  updateMediaItemAt,
   setImageUris,
   addImageUri,
   removeImageUri,
   setUploadedImageUrls,
+  setUploadedVideos,
   setPhone,
   setCurrency,
   setSubmitting,

@@ -1,5 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
@@ -9,12 +9,6 @@ import {
   type MessageModalType,
 } from "@/lib/message-modal";
 import { useTheme } from "@/providers/theme-provider";
-
-const ICON_BY_TYPE: Record<MessageModalType, { name: keyof typeof MaterialIcons.glyphMap; color: string; bg: string }> = {
-  error: { name: "error-outline", color: "#BA1A1A", bg: "rgba(186,26,26,0.1)" },
-  success: { name: "check-circle", color: "#1D9477", bg: "rgba(39,187,151,0.12)" },
-  info: { name: "info-outline", color: "#2563EB", bg: "rgba(37,99,235,0.1)" },
-};
 
 export function AppMessageModal() {
   const [visible, setVisible] = useState(false);
@@ -30,7 +24,28 @@ export function AppMessageModal() {
 
   const dismiss = () => setVisible(false);
 
-  const icon = payload ? ICON_BY_TYPE[payload.type] : ICON_BY_TYPE.error;
+  const icon = useMemo(() => {
+    const type: MessageModalType = payload?.type ?? "error";
+    if (type === "success") {
+      return {
+        name: "check-circle" as const,
+        color: colors.primaryDeep,
+        bg: colors.primarySoft,
+      };
+    }
+    if (type === "info") {
+      return {
+        name: "info-outline" as const,
+        color: colors.accentBlue,
+        bg: "rgba(37,99,235,0.14)",
+      };
+    }
+    return {
+      name: "error-outline" as const,
+      color: colors.danger,
+      bg: "rgba(239,68,68,0.14)",
+    };
+  }, [colors, payload?.type]);
 
   return (
     <Modal
@@ -40,14 +55,24 @@ export function AppMessageModal() {
       onRequestClose={dismiss}
     >
       <View
-        className="flex-1 items-center justify-center p-4"
-        style={{ backgroundColor: colors.scrim }}
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 16,
+          backgroundColor: colors.scrim,
+        }}
       >
-        <Pressable className="absolute inset-0" onPress={dismiss} />
+        <Pressable style={{ position: "absolute", inset: 0 }} onPress={dismiss} />
         <View
-          className="w-full max-w-sm overflow-hidden rounded-2xl"
           style={{
-            backgroundColor: colors.surface,
+            width: "100%",
+            maxWidth: 360,
+            overflow: "hidden",
+            borderRadius: 20,
+            backgroundColor: colors.surfaceElevated,
+            borderWidth: 1,
+            borderColor: colors.border,
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 8 },
             shadowOpacity: 0.25,
@@ -55,17 +80,26 @@ export function AppMessageModal() {
             elevation: 12,
           }}
         >
-          <View className="items-center p-6">
+          <View style={{ alignItems: "center", padding: 24 }}>
             <View
-              className="mb-4 h-16 w-16 items-center justify-center rounded-full"
-              style={{ backgroundColor: icon.bg }}
+              style={{
+                marginBottom: 16,
+                height: 64,
+                width: 64,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 32,
+                backgroundColor: icon.bg,
+              }}
             >
               <MaterialIcons name={icon.name} size={30} color={icon.color} />
             </View>
 
             <Text
-              className="mb-2 text-center text-[20px]"
               style={{
+                marginBottom: 8,
+                textAlign: "center",
+                fontSize: 20,
                 fontFamily: ListifyFonts.semiBold,
                 color: colors.textPrimary,
               }}
@@ -74,8 +108,11 @@ export function AppMessageModal() {
             </Text>
             {payload?.message && payload.message !== payload.title ? (
               <Text
-                className="mb-6 text-center text-[14px] leading-5"
                 style={{
+                  marginBottom: 24,
+                  textAlign: "center",
+                  fontSize: 14,
+                  lineHeight: 20,
                   fontFamily: ListifyFonts.regular,
                   color: colors.textSecondary,
                 }}
@@ -83,26 +120,32 @@ export function AppMessageModal() {
                 {payload.message}
               </Text>
             ) : (
-              <View className="mb-6" />
+              <View style={{ marginBottom: 24 }} />
             )}
 
             <Pressable
               onPress={dismiss}
-              className="h-12 w-full items-center justify-center rounded-xl"
-              style={({ pressed }) => ({
-                opacity: pressed ? 0.88 : 1,
-                backgroundColor: colors.textPrimary,
-              })}
+              style={({ pressed }) => ({ width: "100%", opacity: pressed ? 0.9 : 1 })}
             >
-              <Text
-                className="text-[16px]"
+              <View
                 style={{
-                  fontFamily: ListifyFonts.semiBold,
-                  color: colors.background,
+                  minHeight: 48,
+                  borderRadius: 14,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: colors.primary,
                 }}
               >
-                OK
-              </Text>
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontFamily: ListifyFonts.semiBold,
+                    color: colors.textOnPrimary,
+                  }}
+                >
+                  OK
+                </Text>
+              </View>
             </Pressable>
           </View>
         </View>

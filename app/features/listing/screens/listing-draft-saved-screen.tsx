@@ -6,7 +6,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Image } from "@/lib/nativewind-interop";
-import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useFloatingNavPress } from "@/hooks/use-floating-nav-press";
 import { FloatingBottomNav } from "@/components/floating-bottom-nav";
 
 const draftWatch =
@@ -20,7 +20,7 @@ export function ListingDraftSavedScreen() {
   const topBarHeight = useMemo(() => insets.top + 64, [insets.top]);
   const bottomNavPadding = Math.max(insets.bottom, 8);
 
-  const handleBottomTabPress = useTabNavigation();
+  const handleBottomTabPress = useFloatingNavPress();
 
   return (
     <View className="flex-1 bg-[#F6F7F8]">

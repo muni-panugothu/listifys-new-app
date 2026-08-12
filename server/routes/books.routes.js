@@ -59,6 +59,9 @@ router.post(
   uploadImages,
 );
 
+
+const { registerListingVideoUpload } = require("../utils/register-listing-video-upload.js");
+registerListingVideoUpload(router, "books");
 router.get(
   "/:id",
   searchLimiter,

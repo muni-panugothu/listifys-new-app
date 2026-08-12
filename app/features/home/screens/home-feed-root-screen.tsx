@@ -63,6 +63,7 @@ import {
 } from "@/lib/location-service";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { selectIsAppOffline } from "@/store/selectors";
 import { fetchProfile } from "@/store/slices/auth-slice";
 import {
   hydrateAppLocation,
@@ -156,7 +157,7 @@ export function HomeFeedRootScreen() {
   const user = useAppSelector((s) => s.auth.user);
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const sessionHydrated = useAppSelector((s) => s.auth.sessionHydrated);
-  const network = useAppSelector((s) => s.network);
+  const isOffline = useAppSelector(selectIsAppOffline);
   const displayLocation = useAppSelector(selectLocationLabel);
   const locationCoords = useAppSelector(selectLocationCoords);
   const isoCountryCode = useAppSelector(selectIsoCountryCode);
@@ -170,7 +171,6 @@ export function HomeFeedRootScreen() {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [showLoginSheet, setShowLoginSheet] = useState(false);
   const locationPromptAttempted = useRef(false);
-  const isOffline = !network.isConnected || network.isInternetReachable === false;
    // Apply location filter when user has a valid location (GPS/manual) or when the user is in the US.
    const hasValidLocation = locationCoords.lat != null && locationCoords.lng != null;
    const effectiveCountryCode = (isoCountryCode ?? localeCountryCode ?? null)?.toUpperCase() ?? null;
@@ -364,10 +364,11 @@ export function HomeFeedRootScreen() {
 
   useEffect(() => {
     if (!locationHydrated) return;
-    // Coord changes are an explicit signal — always honor immediately and
-    // reset the cooldown.
-    lastFeedFetchAtRef.current = Date.now();
-    loadFeed({ allowCacheFallback: false }).catch(() => {});
+    const timer = setTimeout(() => {
+      lastFeedFetchAtRef.current = Date.now();
+      loadFeed({ allowCacheFallback: false }).catch(() => {});
+    }, 400);
+    return () => clearTimeout(timer);
   }, [locationHydrated, locationCoords.lat, locationCoords.lng, loadFeed]);
 
   useEffect(() => {
@@ -954,8 +955,8 @@ export function HomeFeedRootScreen() {
           )
         ) : null}
 
-        {/* ===== Featured Profiles — "Artists in your District" ===== */}
-        {!isOffline ? (
+        {/* ===== Featured Profiles — "Artists in your City" (hidden) ===== */}
+        {/* {!isOffline ? (
           <View className="mb-6">
             <View className=" flex-row items-center justify-between px-4">
               <Text
@@ -999,7 +1000,7 @@ export function HomeFeedRootScreen() {
               scrollEventThrottle={16}
             />
           </View>
-        ) : null}
+        ) : null} */}
 
         {/* ===== Explore Near You — image cards ===== */}
         {!isOffline ? (

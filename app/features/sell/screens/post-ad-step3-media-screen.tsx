@@ -1,9 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import { type Href, useRouter } from "@/lib/safe-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   BackHandler,
   Pressable,
   Text,
@@ -12,8 +10,8 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 
 import { SellFlowLayout, SellSectionCard } from "@/components/sell-flow-layout";
-import { ListifyColors } from "@/constants/listify-theme";
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 
 import {
   CATEGORY_MAP,
@@ -26,8 +24,11 @@ import {
   createListing,
   updateListing,
   uploadListingImages,
+  uploadListingVideos,
 } from "@/features/listing/services/listing-api";
-import { Image } from "@/lib/nativewind-interop";
+import { uploadEmployerCompanyLogo } from "@/features/jobs/services/jobs-company-api";
+import { ListingMediaPicker } from "@/components/listing-media-picker";
+import { isRemoteMediaUri, type PostMediaItem } from "@/lib/listing-media";
 import { showErrorToast } from "@/lib/toast";
 import { PostLocationMapPreview } from "@/components/post-location-map-preview";
 import { PhoneInputWithCountry } from "@/components/phone-input-with-country";
@@ -42,8 +43,8 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { refreshDeviceLocation, selectLocationCoords, setLocationDirect } from "@/store/slices/location-slice";
 import { showAuthGate } from "@/store/slices/auth-gate-slice";
 import {
-  addImageUri,
-  removeImageUri,
+  addMediaItems,
+  removeMediaItemAt,
   resetPostForm,
   setListingCoords,
   setLocation,
@@ -53,6 +54,9 @@ import {
   setSubmitError,
   setSubmitting,
   setUploadedImageUrls,
+  setUploadedVideos,
+  setUploadedCompanyLogoUrl,
+  updateMediaItemAt,
 } from "@/store/slices/post-form-slice";
 
 // ── Per-image live moderation state ────────────────────────────────────────────
@@ -102,6 +106,7 @@ function isAuthFailureMessage(message: string) {
 export function PostAdStep3MediaScreen() {
   const router = useRouter();
   const dispatch = useAppDispatch();
+  const { colors } = useTheme();
   const {
     phoneCode: localePhoneCode,
     isoCountryCode: localeCountryCode,
@@ -117,6 +122,7 @@ export function PostAdStep3MediaScreen() {
 
   // Tracks Vision API scan result per image URI — populated as images are picked.
   const [imageScanMap, setImageScanMap] = useState<Record<string, ImageScanResult>>({});
+  const [submitPhase, setSubmitPhase] = useState<"idle" | "uploading" | "publishing">("idle");
   const activePhoneCode = overridePhoneCode ?? localePhoneCode;
   const activePhoneIso  = overridePhoneIso  ?? locationIso ?? undefined;
 
@@ -128,7 +134,8 @@ export function PostAdStep3MediaScreen() {
     processor, ram, storage, capacity, energyRating, megapixels, lensType,
     variant, year, kmDriven, mileageUnit, fuelType, transmission, ownership, color, engineCC,
     cycleType, gearCount, frameSize, compatibleVehicle, partCategory,
-    companyName, companyEmail, applyLink, jobType, experience, education,
+    companyName, companyWebsite, companyEmail, companyLogoUri, uploadedCompanyLogoUrl,
+    applyLink, jobType, experience, education,
     employmentType, workMode, salaryMin, salaryMax, salaryType, industry, positions,
     availability, age, languages, certifications,
     eventDate, eventTime, organizer, venue, ticketsAvailable, ageRestriction, dressCode,
@@ -142,7 +149,7 @@ export function PostAdStep3MediaScreen() {
     skinType, shade, volume, ingredients, expiryDate,
     batteryRequired, playMode, characterTheme,
     priceUnit, serviceArea, serviceMode, responseTime,
-    imageUris, phone, currency, locationLat, locationLng, isSubmitting, editListingId,
+    mediaItems, phone, currency, locationLat, locationLng, isSubmitting, editListingId,
   } = useAppSelector((s) => s.postForm);
 
   const isEditMode = Boolean(editListingId);
@@ -238,24 +245,26 @@ export function PostAdStep3MediaScreen() {
     }
   };
 
-  const processNewImages = async (newUris: string[]) => {
-    if (newUris.length === 0) return;
+  const handleAddMedia = async (newItems: PostMediaItem[]) => {
+    if (newItems.length === 0) return;
+    dispatch(addMediaItems(newItems));
 
-    for (const uri of newUris) {
-      dispatch(addImageUri(uri));
-    }
+    const imageUris = newItems
+      .filter((item) => item.type === "image")
+      .map((item) => item.uri);
+    if (imageUris.length === 0) return;
 
     setImageScanMap((prev) => ({
       ...(prev ?? {}),
-      ...Object.fromEntries(newUris.map((u) => [u, { status: "scanning" } as ImageScanResult])),
+      ...Object.fromEntries(imageUris.map((u) => [u, { status: "scanning" } as ImageScanResult])),
     }));
 
     try {
-      const modResult = await checkImageModeration(newUris);
+      const modResult = await checkImageModeration(imageUris);
       setImageScanMap((prev) => {
         const next = { ...(prev ?? {}) };
         const results = Array.isArray(modResult?.results) ? modResult.results : [];
-        newUris.forEach((uri, i) => {
+        imageUris.forEach((uri, i) => {
           const r = results[i];
           if (r) {
             next[uri] = {
@@ -271,56 +280,28 @@ export function PostAdStep3MediaScreen() {
     } catch {
       setImageScanMap((prev) => ({
         ...(prev ?? {}),
-        ...Object.fromEntries(newUris.map((u) => [u, { status: "allowed" } as ImageScanResult])),
+        ...Object.fromEntries(imageUris.map((u) => [u, { status: "allowed" } as ImageScanResult])),
       }));
     }
   };
 
-  const pickImages = async () => {
-    const remaining = 6 - imageUris.length;
-    if (remaining <= 0) return;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsMultipleSelection: true,
-      selectionLimit: remaining,
-      // Lower quality dramatically reduces upload size (3-5 MB → ~700 KB)
-      // for camera-resolution photos with no perceptible quality loss
-      // in the listing UI. This is the biggest single win for save speed.
-      quality: 0.6,
-    });
-
-    if (!result.canceled) {
-      await processNewImages(result.assets.map((a) => a.uri));
-    }
-  };
-
-  const takePhoto = async () => {
-    if (imageUris.length >= 6) return;
-
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      showErrorToast(
-        "Camera permission required",
-        "Allow camera access in settings to take listing photos.",
-      );
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images"],
-      // Match gallery quality so camera capture uploads at the same speed.
-      quality: 0.6,
-    });
-
-    if (!result.canceled) {
-      await processNewImages(result.assets.map((a) => a.uri));
+  const handleRemoveMedia = (index: number) => {
+    const sorted = [...mediaItems].sort((a, b) => a.order - b.order);
+    const target = sorted[index];
+    if (!target) return;
+    dispatch(removeMediaItemAt(mediaItems.findIndex((item) => item.id === target.id)));
+    if (target.type === "image") {
+      setImageScanMap((prev) => {
+        const next = { ...(prev ?? {}) };
+        delete next[target.uri];
+        return next;
+      });
     }
   };
 
   const handleSubmit = async () => {
-    if (imageUris.length === 0) {
-      showErrorToast("Photos required", "Please add at least one photo.");
+    if (mediaItems.length === 0) {
+      showErrorToast("Media required", "Please add at least one photo or video.");
       return;
     }
     if (!title || title.length < 3) {
@@ -367,12 +348,14 @@ export function PostAdStep3MediaScreen() {
     };
 
     // ── Guard: check live scan results (populated at pick time) ─────────────────
-    const hasScanningImages = imageUris.some((u) => imageScanMap[u]?.status === "scanning");
+    const sortedMedia = [...mediaItems].sort((a, b) => a.order - b.order);
+    const imageItems = sortedMedia.filter((item) => item.type === "image");
+    const hasScanningImages = imageItems.some((item) => imageScanMap[item.uri]?.status === "scanning");
     if (hasScanningImages) {
       showErrorToast("Please wait", "Images are still being scanned for policy compliance.");
       return;
     }
-    const firstBlockedUri = imageUris.find((u) => imageScanMap[u]?.status === "blocked");
+    const firstBlockedUri = imageItems.find((item) => imageScanMap[item.uri]?.status === "blocked")?.uri;
     if (firstBlockedUri) {
       const violationType =
         MODERATION_LABELS[imageScanMap[firstBlockedUri]?.category ?? ""] ??
@@ -383,7 +366,7 @@ export function PostAdStep3MediaScreen() {
       );
       return;
     }
-    const firstFlaggedUri = imageUris.find((u) => imageScanMap[u]?.status === "review");
+    const firstFlaggedUri = imageItems.find((item) => imageScanMap[item.uri]?.status === "review")?.uri;
     if (firstFlaggedUri) {
       const violationType =
         MODERATION_LABELS[imageScanMap[firstFlaggedUri]?.category ?? ""] ?? "sensitive content";
@@ -396,26 +379,137 @@ export function PostAdStep3MediaScreen() {
 
     dispatch(setSubmitting(true));
     dispatch(setSubmitError(null));
+    setSubmitPhase("idle");
 
     try {
-      const isRemoteImageUri = (uri: string) => /^https?:\/\//i.test(uri);
-      const remoteImageUris = imageUris.filter(isRemoteImageUri);
-      const localImageUris = imageUris.filter((uri) => !isRemoteImageUri(uri));
+      const orderedMedia = [...mediaItems].sort((a, b) => a.order - b.order);
 
-      let imageUrls: string[] = [];
-      if (localImageUris.length > 0) {
-        const uploadResult = await uploadListingImages(category, localImageUris);
-        imageUrls = uploadResult.images ?? [];
-        dispatch(setUploadedImageUrls(imageUrls));
+      const markUploadStatus = (id: string, status: PostMediaItem["uploadStatus"]) => {
+        const index = mediaItems.findIndex((item) => item.id === id);
+        if (index >= 0) {
+          dispatch(updateMediaItemAt({ index, patch: { uploadStatus: status } }));
+        }
+      };
 
-        if (imageUrls.length === 0) {
+      const imageItemsToUpload = orderedMedia.filter(
+        (item) => item.type === "image" && !isRemoteMediaUri(item.uri),
+      );
+      const videoItemsToUpload = orderedMedia.filter(
+        (item) => item.type === "video" && !isRemoteMediaUri(item.uri),
+      );
+
+      imageItemsToUpload.forEach((item) => markUploadStatus(item.id, "uploading"));
+      videoItemsToUpload.forEach((item) => markUploadStatus(item.id, "uploading"));
+
+      if (videoItemsToUpload.length > 0) {
+        setSubmitPhase("uploading");
+      } else if (imageItemsToUpload.length > 0) {
+        setSubmitPhase("uploading");
+      }
+
+      let uploadedImageUrls: string[] = [];
+      if (imageItemsToUpload.length > 0) {
+        const uploadResult = await uploadListingImages(
+          category,
+          imageItemsToUpload.map((item) => item.uri),
+        );
+        uploadedImageUrls = uploadResult.images ?? [];
+        dispatch(setUploadedImageUrls(uploadedImageUrls));
+        if (uploadedImageUrls.length === 0) {
           throw new Error("Image upload succeeded but no URLs were returned. Please try again.");
+        }
+        imageItemsToUpload.forEach((item, index) => {
+          const indexInState = mediaItems.findIndex((m) => m.id === item.id);
+          if (indexInState >= 0) {
+            dispatch(
+              updateMediaItemAt({
+                index: indexInState,
+                patch: {
+                  uploadStatus: "done",
+                  uploadedUrl: uploadedImageUrls[index],
+                  uri: uploadedImageUrls[index] ?? item.uri,
+                },
+              }),
+            );
+          }
+        });
+      }
+
+      let uploadedVideos: Array<{
+        url: string;
+        duration?: number;
+        mimeType?: string;
+        order?: number;
+        size?: number;
+      }> = [];
+
+      if (videoItemsToUpload.length > 0) {
+        const videoUploadResult = await uploadListingVideos(
+          category,
+          videoItemsToUpload.map((item) => ({
+            uri: item.uri,
+            duration: item.duration,
+            mimeType: item.mimeType,
+            order: item.order,
+          })),
+        );
+        uploadedVideos = videoUploadResult.videos ?? [];
+        dispatch(setUploadedVideos(uploadedVideos));
+        if (uploadedVideos.length === 0) {
+          throw new Error("Video upload succeeded but no URLs were returned. Please try again.");
+        }
+        videoItemsToUpload.forEach((item, index) => {
+          const uploaded = uploadedVideos[index];
+          const indexInState = mediaItems.findIndex((m) => m.id === item.id);
+          if (indexInState >= 0 && uploaded?.url) {
+            dispatch(
+              updateMediaItemAt({
+                index: indexInState,
+                patch: {
+                  uploadStatus: "done",
+                  uploadedUrl: uploaded.url,
+                  uri: uploaded.url,
+                  duration: uploaded.duration ?? item.duration,
+                  mimeType: uploaded.mimeType ?? item.mimeType,
+                },
+              }),
+            );
+          }
+        });
+      }
+
+      let imageCursor = 0;
+      let videoCursor = 0;
+      const allImageUrls: string[] = [];
+      const allVideos: Array<{
+        url: string;
+        duration?: number;
+        mimeType?: string;
+        order?: number;
+        size?: number;
+      }> = [];
+
+      for (const item of orderedMedia) {
+        if (item.type === "image") {
+          const url = isRemoteMediaUri(item.uri)
+            ? item.uri
+            : uploadedImageUrls[imageCursor++];
+          if (url) allImageUrls.push(url);
+        } else {
+          const uploaded = isRemoteMediaUri(item.uri)
+            ? {
+                url: item.uri,
+                duration: item.duration,
+                mimeType: item.mimeType,
+                order: item.order,
+              }
+            : uploadedVideos[videoCursor++];
+          if (uploaded?.url) allVideos.push(uploaded);
         }
       }
 
-      const allImageUrls = [...remoteImageUris, ...imageUrls];
-      if (allImageUrls.length === 0) {
-        throw new Error("Please keep at least one photo on the listing.");
+      if (allImageUrls.length === 0 && allVideos.length === 0) {
+        throw new Error("Please keep at least one photo or video on the listing.");
       }
       const categoryConfig = CATEGORY_MAP[category];
 
@@ -443,6 +537,7 @@ export function PostAdStep3MediaScreen() {
         subcategory,
         images: allImageUrls,
         imageUrls: allImageUrls,
+        ...(allVideos.length > 0 ? { videos: allVideos } : {}),
         location,
         ...(locationIso ? { countryCode: locationIso.toUpperCase() } : {}),
         ...(phoneValidation.e164Phone ? { phone: phoneValidation.e164Phone } : {}),
@@ -509,8 +604,22 @@ export function PostAdStep3MediaScreen() {
 
       // Attach job-specific fields
       if (category === "jobs") {
+        let companyLogoUrl = uploadedCompanyLogoUrl;
+        const isRemoteLogo = companyLogoUri && /^https?:\/\//i.test(companyLogoUri);
+        const localLogoUri =
+          companyLogoUri && !isRemoteLogo ? companyLogoUri : "";
+
+        if (localLogoUri) {
+          companyLogoUrl = await uploadEmployerCompanyLogo(localLogoUri);
+          dispatch(setUploadedCompanyLogoUrl(companyLogoUrl));
+        } else if (isRemoteLogo) {
+          companyLogoUrl = companyLogoUri;
+        }
+
         if (companyName) listingBody.companyName = companyName;
+        if (companyWebsite) listingBody.companyWebsite = companyWebsite;
         if (companyEmail) listingBody.companyEmail = companyEmail;
+        if (companyLogoUrl) listingBody.companyLogo = companyLogoUrl;
         if (applyLink) listingBody.applyLink = applyLink;
         if (experience) listingBody.experience = experience;
         if (education) listingBody.education = education;
@@ -700,16 +809,20 @@ export function PostAdStep3MediaScreen() {
       }
 
       if (isEditMode && editListingId) {
+        setSubmitPhase("publishing");
         await updateListing(category, editListingId, listingBody);
         dispatch(setSubmitting(false));
+        setSubmitPhase("idle");
         dispatch(resetPostForm());
         router.replace("/my-listings-active" as Href);
         return;
       }
 
+      setSubmitPhase("publishing");
       const result = await createListing(category, listingBody);
 
       dispatch(setSubmitting(false));
+      setSubmitPhase("idle");
       dispatch(resetPostForm());
 
       // Pass the created listing data to success screen.
@@ -727,7 +840,7 @@ export function PostAdStep3MediaScreen() {
           title: listing?.title ?? title,
           price: String(listing?.price ?? price),
           location: listing?.location ?? location,
-          image: allImageUrls[0] ?? listing?.images?.[0] ?? "",
+          image: allImageUrls[0] ?? allVideos[0]?.url ?? listing?.images?.[0] ?? "",
           category: categoryConfig?.name ?? category,
           currency,
         },
@@ -747,6 +860,7 @@ export function PostAdStep3MediaScreen() {
         err instanceof Error ? err.message : "Failed to post listing";
       dispatch(setSubmitError(message));
       dispatch(setSubmitting(false));
+      setSubmitPhase("idle");
       if (
         !isAuthenticated ||
         isAuthFailureMessage(message) ||
@@ -762,159 +876,38 @@ export function PostAdStep3MediaScreen() {
   return (
     <SellFlowLayout
       step={3}
-      title={isEditMode ? "Photos & location" : "Photos & publish"}
-      subtitle={isEditMode ? "Update images, location & contact" : "Images, location & contact"}
+      title={isEditMode ? "Media & location" : "Media & publish"}
+      subtitle={isEditMode ? "Update media, location & contact" : "Photos, videos, location & contact"}
       onBack={handleBack}
       footerLabel={isEditMode ? "Editing" : undefined}
       footerMeta={isEditMode ? (CATEGORY_MAP[category]?.name ?? category) : undefined}
-      primaryLabel={isEditMode ? "Update listing" : "Post ad"}
+      primaryLabel={
+        submitPhase === "uploading"
+          ? "Uploading media…"
+          : submitPhase === "publishing"
+            ? "Publishing…"
+            : isEditMode
+              ? "Update listing"
+              : "Post ad"
+      }
       onPrimaryPress={handleSubmit}
-      primaryDisabled={isSubmitting || imageUris.some((u) => imageScanMap[u]?.status === "scanning")}
+      primaryDisabled={
+        isSubmitting ||
+        mediaItems.some((item) => item.uploadStatus === "uploading") ||
+        mediaItems
+          .filter((item) => item.type === "image")
+          .some((item) => imageScanMap[item.uri]?.status === "scanning")
+      }
       primaryLoading={isSubmitting}
     >
-      <SellSectionCard title="Photos" required>
-        <View className="px-4 py-4">
-          <View className="mb-3 flex-row items-center justify-between">
-            <Text
-              className="text-[13px] text-[#6B7280]"
-              style={{ fontFamily: ListifyFonts.regular }}
-            >
-              Add up to 6 photos
-            </Text>
-            <Text
-              className="text-[12px] text-[#9CA3AF]"
-              style={{ fontFamily: ListifyFonts.medium }}
-            >
-              {imageUris.length} / 6
-            </Text>
-          </View>
-
-          <View className="flex-row flex-wrap gap-3">
-            {imageUris.length < 6 ? (
-              <>
-                <Pressable
-                  onPress={takePhoto}
-                  className="items-center justify-center rounded-2xl border-2 border-dashed border-[#E5E7EB] bg-[#F9FAFB]"
-                  style={{ width: 96, height: 96 }}
-                >
-                  <MaterialIcons name="photo-camera" size={26} color="#9CA3AF" />
-                  <Text
-                    className="mt-1 text-[10px] text-[#6B7280]"
-                    style={{ fontFamily: ListifyFonts.medium }}
-                  >
-                    Camera
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={pickImages}
-                  className="items-center justify-center rounded-2xl border-2 border-dashed border-[#E5E7EB] bg-[#F9FAFB]"
-                  style={{ width: 96, height: 96 }}
-                >
-                  <MaterialIcons name="photo-library" size={26} color="#9CA3AF" />
-                  <Text
-                    className="mt-1 text-[10px] text-[#6B7280]"
-                    style={{ fontFamily: ListifyFonts.medium }}
-                  >
-                    Gallery
-                  </Text>
-                </Pressable>
-              </>
-            ) : null}
-
-            {imageUris.map((uri, idx) => {
-              const scan = imageScanMap[uri];
-              return (
-                <View
-                  key={uri}
-                  className="overflow-hidden rounded-2xl border border-[#E5E7EB]"
-                  style={{ width: 96, height: 96 }}
-                >
-                  <Image source={uri} contentFit="cover" className="h-full w-full" />
-
-                  {/* ── Scanning spinner ──────────────────────────────── */}
-                  {scan?.status === "scanning" && (
-                    <View
-                      className="absolute inset-0 items-center justify-center bg-black/55"
-                      style={{ borderRadius: 16 }}
-                    >
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                      <Text
-                        className="mt-1 text-[9px] text-white"
-                        style={{ fontFamily: ListifyFonts.medium }}
-                      >
-                        Scanning…
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* ── RESTRICTED overlay ───────────────────────────── */}
-                  {scan?.status === "blocked" && (
-                    <View
-                      className="absolute inset-0 items-center justify-center"
-                      style={{ borderRadius: 16, backgroundColor: "rgba(185,28,28,0.92)" }}
-                    >
-                      <MaterialIcons name="block" size={26} color="#FFFFFF" />
-                      <Text
-                        className="mt-1 text-[10px] tracking-widest text-white"
-                        style={{ fontFamily: ListifyFonts.bold }}
-                      >
-                        RESTRICTED
-                      </Text>
-                      <Text
-                        className="mt-0.5 px-1 text-center text-[8px] text-white/80"
-                        style={{ fontFamily: ListifyFonts.regular }}
-                      >
-                        {MODERATION_CATEGORY_SHORT[scan.category ?? ""] ?? "Policy violation"}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* ── FLAGGED overlay ──────────────────────────────── */}
-                  {scan?.status === "review" && (
-                    <View
-                      className="absolute inset-0 items-center justify-center"
-                      style={{ borderRadius: 16, backgroundColor: "rgba(194,65,12,0.88)" }}
-                    >
-                      <MaterialIcons name="warning" size={24} color="#FFFFFF" />
-                      <Text
-                        className="mt-1 text-[9px] tracking-widest text-white"
-                        style={{ fontFamily: ListifyFonts.bold }}
-                      >
-                        FLAGGED
-                      </Text>
-                      <Text
-                        className="mt-0.5 px-1 text-center text-[8px] text-white/80"
-                        style={{ fontFamily: ListifyFonts.regular }}
-                      >
-                        {MODERATION_CATEGORY_SHORT[scan.category ?? ""] ?? "Review needed"}
-                      </Text>
-                    </View>
-                  )}
-
-                  <Pressable
-                    onPress={() => {
-                      dispatch(removeImageUri(idx));
-                      setImageScanMap((prev) => {
-                        const next = { ...(prev ?? {}) };
-                        delete next[uri];
-                        return next;
-                      });
-                    }}
-                    className="absolute right-1 top-1 rounded-full bg-white/90 p-1"
-                  >
-                    <MaterialIcons name="close" size={16} color="#DC2626" />
-                  </Pressable>
-                </View>
-              );
-            })}
-          </View>
-          <Text
-            className="mt-3 text-[12px] text-[#6B7280]"
-            style={{ fontFamily: ListifyFonts.regular }}
-          >
-            Ads with high-quality photos get 5x more clicks.
-          </Text>
-        </View>
+      <SellSectionCard title="Photos & videos" required>
+        <ListingMediaPicker
+          mediaItems={mediaItems}
+          onAddMedia={handleAddMedia}
+          onRemoveMedia={handleRemoveMedia}
+          imageScanMap={imageScanMap}
+          disabled={isSubmitting}
+        />
       </SellSectionCard>
 
       <SellSectionCard title="Item location" required>
@@ -955,10 +948,10 @@ export function PostAdStep3MediaScreen() {
             className="mt-3 mb-3 flex-row items-center gap-2"
             style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
           >
-            <MaterialIcons name="my-location" size={20} color="#1A1A1A" />
+            <MaterialIcons name="my-location" size={20} color={colors.textPrimary} />
             <Text
               className="text-[13px]"
-              style={{ fontFamily: ListifyFonts.semiBold, color: "#1A1A1A" }}
+              style={{ fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
             >
               {locationStatus === "loading"
                 ? "Detecting location..."
@@ -988,10 +981,10 @@ export function PostAdStep3MediaScreen() {
           />
           {phone && !phoneValidation.isValid ? (
             <View className="mt-2 flex-row items-start gap-2">
-              <MaterialIcons name="error-outline" size={16} color="#BA1A1A" />
+              <MaterialIcons name="error-outline" size={16} color={colors.danger} />
               <Text
-                className="flex-1 text-[12px] text-[#BA1A1A]"
-                style={{ fontFamily: ListifyFonts.medium }}
+                className="flex-1 text-[12px]"
+                style={{ fontFamily: ListifyFonts.medium, color: colors.danger }}
               >
                 {phoneValidation.message}
               </Text>
@@ -999,12 +992,12 @@ export function PostAdStep3MediaScreen() {
           ) : null}
           <View
             className="mt-3 flex-row items-center gap-3 rounded-2xl p-3"
-            style={{ backgroundColor: "#F3F4F6" }}
+            style={{ backgroundColor: colors.surfaceMuted }}
           >
-            <MaterialIcons name="verified-user" size={20} color="#6B7280" />
+            <MaterialIcons name="verified-user" size={20} color={colors.textSecondary} />
             <Text
-              className="flex-1 text-[11px] text-[#374151]"
-              style={{ fontFamily: ListifyFonts.regular }}
+              className="flex-1 text-[11px]"
+              style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
             >
               We&apos;ll verify this number to prevent spam and keep buyers safe.
             </Text>
@@ -1013,20 +1006,20 @@ export function PostAdStep3MediaScreen() {
       </SellSectionCard>
 
       <Text
-        className="mb-6 text-center text-[12px] text-[#6B7280]"
-        style={{ fontFamily: ListifyFonts.regular }}
+        className="mb-6 text-center text-[12px]"
+        style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
       >
         By posting, you agree to Listifys&apos;s{" "}
         <Text
           onPress={() => router.push("/terms-of-service")}
-          style={{ fontFamily: ListifyFonts.semiBold, color: ListifyColors.primary }}
+          style={{ fontFamily: ListifyFonts.semiBold, color: colors.primary }}
         >
           Terms
         </Text>{" "}
         and{" "}
         <Text
           onPress={() => router.push("/privacy-policy")}
-          style={{ fontFamily: ListifyFonts.semiBold, color: ListifyColors.primary }}
+          style={{ fontFamily: ListifyFonts.semiBold, color: colors.primary }}
         >
           Privacy Policy
         </Text>

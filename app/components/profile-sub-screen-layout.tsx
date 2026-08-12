@@ -98,7 +98,7 @@ export function ProfileSectionCard({
   title?: string;
   children: ReactNode;
 }) {
-  const { colors } = useTheme();
+  const { colors, resolvedMode } = useTheme();
 
   return (
     <View className="mb-5">
@@ -117,11 +117,13 @@ export function ProfileSectionCard({
         className="overflow-hidden rounded-2xl"
         style={{
           backgroundColor: colors.surface,
+          borderWidth: resolvedMode === "dark" ? 1 : 0,
+          borderColor: colors.border,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.04,
+          shadowOpacity: resolvedMode === "dark" ? 0.18 : 0.04,
           shadowRadius: 8,
-          elevation: 2,
+          elevation: resolvedMode === "dark" ? 2 : 2,
         }}
       >
         {children}

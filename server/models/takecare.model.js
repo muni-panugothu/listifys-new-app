@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const s3Service = require("../services/s3.service.js");
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require("../utils/slugify");
 
 const takeCareSchema = new mongoose.Schema(
@@ -195,6 +196,7 @@ takeCareSchema.index({ savedBy: 1 });
 takeCareSchema.index({ title: "text", description: "text", experience: "text" });
 takeCareSchema.index({ coordinates: "2dsphere" });
 
+attachListingVideosField(takeCareSchema);
 attachSlugPlugin(takeCareSchema);
 
 module.exports = mongoose.model("TakeCare", takeCareSchema);

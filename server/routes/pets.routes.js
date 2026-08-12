@@ -59,6 +59,9 @@ router.post(
   uploadImages,
 );
 
+
+const { registerListingVideoUpload } = require("../utils/register-listing-video-upload.js");
+registerListingVideoUpload(router, "pets");
 router.get(
   "/:id",
   searchLimiter,

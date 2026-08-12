@@ -23,6 +23,7 @@ import {
 } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 
 // ---------------------------------------------------------------------------
 // Country catalogue (name + ISO code)
@@ -167,6 +168,7 @@ export function PhoneInputWithCountry({
   onChangePhoneCode,
   onChangePhone,
 }: Props) {
+  const { colors } = useTheme();
   const [pickerVisible, setPickerVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -201,9 +203,9 @@ export function PhoneInputWithCountry({
           flexDirection: "row",
           alignItems: "center",
           borderWidth: 1.5,
-          borderColor: "#E5E7EB",
+          borderColor: colors.border,
           borderRadius: 12,
-          backgroundColor: "#FAFAFA",
+          backgroundColor: colors.inputBackground,
           overflow: "hidden",
           height: 52,
         }}
@@ -218,8 +220,8 @@ export function PhoneInputWithCountry({
             paddingHorizontal: 12,
             height: "100%",
             borderRightWidth: 1,
-            borderRightColor: "#E5E7EB",
-            backgroundColor: pressed ? "#F3F4F6" : "transparent",
+            borderRightColor: colors.border,
+            backgroundColor: pressed ? colors.surfaceMuted : "transparent",
           })}
           accessibilityLabel="Select country code"
         >
@@ -228,13 +230,13 @@ export function PhoneInputWithCountry({
             style={{
               fontSize: 14,
               fontFamily: ListifyFonts.semiBold,
-              color: "#111827",
+              color: colors.textPrimary,
               minWidth: 38,
             }}
           >
             {phoneCode}
           </Text>
-          <MaterialIcons name="arrow-drop-down" size={18} color="#6B7280" />
+          <MaterialIcons name="arrow-drop-down" size={18} color={colors.textSecondary} />
         </Pressable>
 
         {/* Phone number input */}
@@ -243,14 +245,14 @@ export function PhoneInputWithCountry({
           onChangeText={onChangePhone}
           keyboardType="phone-pad"
           placeholder="Phone number"
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={colors.inputPlaceholder}
           returnKeyType="done"
           style={{
             flex: 1,
             paddingHorizontal: 12,
             fontSize: 15,
             fontFamily: ListifyFonts.regular,
-            color: "#111827",
+            color: colors.textPrimary,
             paddingVertical: 0,
           }}
           accessibilityLabel="Phone number"
@@ -265,7 +267,7 @@ export function PhoneInputWithCountry({
         onRequestClose={() => setPickerVisible(false)}
       >
         <Pressable
-          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.35)" }}
+          style={{ flex: 1, backgroundColor: colors.scrim }}
           onPress={() => setPickerVisible(false)}
         />
         <View
@@ -274,7 +276,7 @@ export function PhoneInputWithCountry({
             bottom: 0,
             left: 0,
             right: 0,
-            backgroundColor: "#FFFFFF",
+            backgroundColor: colors.surfaceElevated,
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
             maxHeight: "75%",
@@ -287,7 +289,7 @@ export function PhoneInputWithCountry({
                 width: 40,
                 height: 4,
                 borderRadius: 2,
-                backgroundColor: "#D1D5DB",
+                backgroundColor: colors.borderStrong,
               }}
             />
           </View>
@@ -298,7 +300,7 @@ export function PhoneInputWithCountry({
               textAlign: "center",
               fontSize: 17,
               fontFamily: ListifyFonts.bold,
-              color: "#111827",
+              color: colors.textPrimary,
               marginBottom: 12,
               paddingHorizontal: 16,
             }}
@@ -317,30 +319,30 @@ export function PhoneInputWithCountry({
               height: 44,
               borderRadius: 10,
               borderWidth: 1,
-              borderColor: "#E5E7EB",
-              backgroundColor: "#F9FAFB",
+              borderColor: colors.border,
+              backgroundColor: colors.inputBackground,
               gap: 8,
             }}
           >
-            <MaterialIcons name="search" size={18} color="#9CA3AF" />
+            <MaterialIcons name="search" size={18} color={colors.iconMuted} />
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder="Search country or code…"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={colors.inputPlaceholder}
               returnKeyType="search"
               autoCapitalize="words"
               style={{
                 flex: 1,
                 fontSize: 14,
                 fontFamily: ListifyFonts.regular,
-                color: "#111827",
+                color: colors.textPrimary,
                 paddingVertical: 0,
               }}
             />
             {searchQuery.length > 0 && (
               <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
-                <MaterialIcons name="close" size={16} color="#9CA3AF" />
+                <MaterialIcons name="close" size={16} color={colors.iconMuted} />
               </Pressable>
             )}
           </View>
@@ -368,12 +370,12 @@ export function PhoneInputWithCountry({
                     paddingVertical: 14,
                     gap: 12,
                     backgroundColor: pressed
-                      ? "#F3F4F6"
+                      ? colors.surfaceMuted
                       : isSelected
-                        ? "#F0FBF8"
-                        : "#FFFFFF",
+                        ? colors.primarySoft
+                        : colors.surfaceElevated,
                     borderBottomWidth: 1,
-                    borderBottomColor: "#F3F4F6",
+                    borderBottomColor: colors.border,
                   })}
                 >
                   <Text style={{ fontSize: 22, width: 30 }}>
@@ -384,7 +386,7 @@ export function PhoneInputWithCountry({
                       flex: 1,
                       fontSize: 15,
                       fontFamily: ListifyFonts.regular,
-                      color: "#111827",
+                      color: colors.textPrimary,
                     }}
                     numberOfLines={1}
                   >
@@ -394,7 +396,7 @@ export function PhoneInputWithCountry({
                     style={{
                       fontSize: 14,
                       fontFamily: ListifyFonts.semiBold,
-                      color: isSelected ? "#1D9477" : "#6B7280",
+                      color: isSelected ? colors.primaryDeep : colors.textSecondary,
                       minWidth: 44,
                       textAlign: "right",
                     }}
@@ -405,7 +407,7 @@ export function PhoneInputWithCountry({
                     <MaterialIcons
                       name="check-circle"
                       size={18}
-                      color="#1D9477"
+                      color={colors.primaryDeep}
                     />
                   )}
                 </Pressable>

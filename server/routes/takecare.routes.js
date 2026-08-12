@@ -42,6 +42,9 @@ router.post(
   uploadImages
 );
 
+
+const { registerListingVideoUpload } = require("../utils/register-listing-video-upload.js");
+registerListingVideoUpload(router, "takecare");
 router.get("/:id", searchLimiter, cacheResponseTracked("takecare", 300, "detail"), getTakeCareById);
 router.put("/:id", protect, postingLimiter, validateListingInput, invalidateAfter("takecare"), updateTakeCare);
 router.delete("/:id", protect, invalidateAfter("takecare"), deleteTakeCare);

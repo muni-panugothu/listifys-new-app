@@ -274,7 +274,7 @@ exports.getListingById = async (req, res) => {
 exports.createListing = async (req, res) => {
   try {
     const {
-      title, description, category, subcategory, price, location, phone, phoneCode, currency, countryCode, images, lat, lng,
+      title, description, category, subcategory, price, location, phone, phoneCode, currency, countryCode, images, videos, lat, lng,
       condition,
       // Service-specific fields
       serviceType, experience, availability, priceType,
@@ -349,6 +349,7 @@ exports.createListing = async (req, res) => {
       currency,
       countryCode,
       images: normalisedImages,
+      videos: Array.isArray(videos) ? videos : [],
       availability: availabilityObject,
       // Service-specific
       serviceType: serviceType || '',

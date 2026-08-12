@@ -107,6 +107,7 @@ exports.createTakeCare = async (req, res) => {
       countryCode,
       features: Array.isArray(features) ? features : [],
       images: Array.isArray(images) ? images : [],
+      videos: Array.isArray(videos) ? videos : [],
       ...(experience && { experience }),
       ...(availability && { availability }),
       ...(age && { age: Number(age) }),

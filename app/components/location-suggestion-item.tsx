@@ -2,9 +2,6 @@
  * LocationSuggestionItem
  *
  * Renders a single row in the location autocomplete list.
- * Supports two modes:
- *   "prediction" — a Google Places result with highlight support
- *   "recent"     — a locally stored past selection (shown with clock icon)
  */
 import { MaterialIcons } from "@expo/vector-icons";
 import { memo } from "react";
@@ -13,10 +10,7 @@ import { Pressable, Text, View } from "react-native";
 import { HighlightedText } from "@/components/highlighted-text";
 import { ListifyFonts } from "@/constants/typography";
 import type { MatchedSubstring, PlacePrediction, RecentLocation } from "@/lib/google-places.service";
-
-const BRAND = "#27BB97";
-
-// ── Prediction item ────────────────────────────────────────────────────────────
+import { useTheme } from "@/providers/theme-provider";
 
 type PredictionItemProps = {
   prediction: PlacePrediction;
@@ -29,24 +23,25 @@ export const PlacePredictionItem = memo(function PlacePredictionItem({
   onPress,
   isLast,
 }: PredictionItemProps) {
+  const { colors } = useTheme();
   const { main_text, secondary_text, main_text_matched_substrings } =
     prediction.structured_formatting;
 
   return (
     <Pressable
       onPress={() => onPress(prediction)}
-      android_ripple={{ color: "#E6FBF4", borderless: false }}
+      android_ripple={{ color: colors.primarySoft, borderless: false }}
       style={({ pressed }) => ({
         flexDirection: "row",
         alignItems: "center",
         paddingHorizontal: 16,
         paddingVertical: 13,
-        backgroundColor: pressed ? "#F0FDF9" : "#FFFFFF",
+        backgroundColor: pressed ? colors.surfaceMuted : colors.surface,
         borderBottomWidth: isLast ? 0 : 1,
-        borderBottomColor: "#F3F4F6",
+        borderBottomColor: colors.border,
       })}
     >
-      <IconCircle icon="location-on" color={BRAND} bg="#ECFDF5" />
+      <IconCircle icon="location-on" color={colors.primary} bg={colors.primarySoftStrong} />
 
       <View style={{ flex: 1, gap: 3 }}>
         <HighlightedText
@@ -60,7 +55,7 @@ export const PlacePredictionItem = memo(function PlacePredictionItem({
             numberOfLines={1}
             style={{
               fontSize: 12,
-              color: "#6B7280",
+              color: colors.textSecondary,
               fontFamily: ListifyFonts.regular,
               lineHeight: 17,
             }}
@@ -73,14 +68,12 @@ export const PlacePredictionItem = memo(function PlacePredictionItem({
       <MaterialIcons
         name="north-west"
         size={15}
-        color="#C4C9D4"
+        color={colors.iconMuted}
         style={{ marginLeft: 10, flexShrink: 0 }}
       />
     </Pressable>
   );
 });
-
-// ── Recent item ────────────────────────────────────────────────────────────────
 
 type RecentItemProps = {
   item: RecentLocation;
@@ -93,21 +86,23 @@ export const RecentLocationItem = memo(function RecentLocationItem({
   onPress,
   isLast,
 }: RecentItemProps) {
+  const { colors } = useTheme();
+
   return (
     <Pressable
       onPress={() => onPress(item)}
-      android_ripple={{ color: "#F3F4F6", borderless: false }}
+      android_ripple={{ color: colors.surfaceMuted, borderless: false }}
       style={({ pressed }) => ({
         flexDirection: "row",
         alignItems: "center",
         paddingHorizontal: 16,
         paddingVertical: 13,
-        backgroundColor: pressed ? "#F9FAFB" : "#FFFFFF",
+        backgroundColor: pressed ? colors.surfaceMuted : colors.surface,
         borderBottomWidth: isLast ? 0 : 1,
-        borderBottomColor: "#F3F4F6",
+        borderBottomColor: colors.border,
       })}
     >
-      <IconCircle icon="history" color="#6B7280" bg="#F3F4F6" />
+      <IconCircle icon="history" color={colors.textSecondary} bg={colors.surfaceMuted} />
 
       <View style={{ flex: 1, gap: 3 }}>
         <Text
@@ -115,7 +110,7 @@ export const RecentLocationItem = memo(function RecentLocationItem({
           style={{
             fontSize: 14.5,
             fontFamily: ListifyFonts.medium,
-            color: "#111827",
+            color: colors.textPrimary,
             lineHeight: 20,
           }}
         >
@@ -126,7 +121,7 @@ export const RecentLocationItem = memo(function RecentLocationItem({
             numberOfLines={1}
             style={{
               fontSize: 12,
-              color: "#6B7280",
+              color: colors.textSecondary,
               fontFamily: ListifyFonts.regular,
               lineHeight: 17,
             }}
@@ -139,14 +134,12 @@ export const RecentLocationItem = memo(function RecentLocationItem({
       <MaterialIcons
         name="north-west"
         size={15}
-        color="#C4C9D4"
+        color={colors.iconMuted}
         style={{ marginLeft: 10, flexShrink: 0 }}
       />
     </Pressable>
   );
 });
-
-// ── Shared icon circle ─────────────────────────────────────────────────────────
 
 function IconCircle({
   icon,

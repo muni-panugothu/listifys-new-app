@@ -3,9 +3,10 @@ import { memo } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
+import { EventListingMedia } from "@/features/events/components/event-listing-media";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { formatEventDisplayLabel } from "@/lib/event-dates";
-import { Image } from "@/lib/nativewind-interop";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 
 export type FeaturedEventCardProps = {
@@ -15,6 +16,8 @@ export type FeaturedEventCardProps = {
   offerLabel?: string | null;
   /** carousel ≈ 3:4 poster; feed is shorter for full-width rows */
   variant?: "carousel" | "feed";
+  /** When true, autoplay muted video in the card media area. */
+  isMediaActive?: boolean;
   onPress: () => void;
   onToggleSave: () => void;
 };
@@ -25,10 +28,12 @@ function FeaturedEventCardImpl({
   isSaved,
   offerLabel,
   variant = "carousel",
+  isMediaActive = false,
   onPress,
   onToggleSave,
 }: FeaturedEventCardProps) {
   const { colors } = useTheme();
+  const { bookmarkBg, bookmarkIcon } = useEventsTheme();
   // Reference comedy posters are tall ~3:4
   const imageHeight = cardWidth * (variant === "feed" ? 0.72 : 1.35);
   const venue =
@@ -56,27 +61,16 @@ function FeaturedEventCardImpl({
           backgroundColor: colors.surfaceMuted,
         }}
       >
-        {event.images?.[0] ? (
-          <Image
-            source={event.images[0]}
-            contentFit="cover"
-            transition={140}
-            cachePolicy="memory-disk"
-            recyclingKey={event.images[0]}
-            style={{ width: "100%", height: "100%" }}
-          />
-        ) : (
-          <View
-            style={{
-              flex: 1,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <MaterialIcons name="event" size={40} color={colors.iconMuted} />
-          </View>
-        )}
-
+        <EventListingMedia
+          listing={event}
+          recyclingKey={`featured-${event._id}`}
+          isActive={isMediaActive}
+          autoPlay={isMediaActive}
+          loop={isMediaActive}
+          muted
+          style={{ width: "100%", height: "100%" }}
+          placeholderIconSize={40}
+        />
         <Pressable
           onPress={(e) => {
             e.stopPropagation();
@@ -92,13 +86,13 @@ function FeaturedEventCardImpl({
             borderRadius: 8,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: "rgba(0,0,0,0.55)",
+            backgroundColor: bookmarkBg,
           }}
         >
           <MaterialIcons
             name={isSaved ? "bookmark" : "bookmark-border"}
             size={18}
-            color="#FFFFFF"
+            color={bookmarkIcon}
           />
         </Pressable>
       </View>

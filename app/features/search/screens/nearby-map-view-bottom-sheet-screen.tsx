@@ -1,4 +1,4 @@
-﻿import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "@/lib/safe-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { Image } from "@/lib/nativewind-interop";
 import { useLocale } from "@/providers/locale-provider";
-import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useFloatingNavPress } from "@/hooks/use-floating-nav-press";
 import { FloatingBottomNav } from "@/components/floating-bottom-nav";
 import { useAppSelector } from "@/store/hooks";
 import { selectLocationCoords, selectIsoCountryCode } from "@/store/slices/location-slice";
@@ -212,7 +212,7 @@ export function NearbyMapViewBottomSheetScreen() {
     [collapsedTranslateY],
   );
 
-  const handleBottomTabPress = useTabNavigation();
+  const handleBottomTabPress = useFloatingNavPress();
 
   const radiusLabel = formatRadiusLabel(NEARBY_RADIUS, isoCountryCode);
 

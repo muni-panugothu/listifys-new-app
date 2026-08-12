@@ -18,6 +18,7 @@ import {
   type EventsHeroSlide,
 } from "@/features/events/data/events-discovery";
 import { Image } from "@/lib/nativewind-interop";
+import { useTheme } from "@/providers/theme-provider";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const H_PAD = 16;
@@ -30,6 +31,7 @@ type EventsHeroCarouselProps = {
 };
 
 function EventsHeroCarouselImpl({ onExplore }: EventsHeroCarouselProps) {
+  const { colors } = useTheme();
   const listRef = useRef<FlatList<EventsHeroSlide>>(null);
   const [index, setIndex] = useState(0);
   const indexRef = useRef(0);
@@ -210,7 +212,7 @@ function EventsHeroCarouselImpl({ onExplore }: EventsHeroCarouselProps) {
               height: 6,
               borderRadius: 3,
               backgroundColor:
-                i === index ? "#A855F7" : "rgba(168,85,247,0.35)",
+                i === index ? colors.accentPurple : `${colors.accentPurple}59`,
             }}
           />
         ))}

@@ -527,29 +527,49 @@ exports.validateListingInput = (req, res, next) => {
     }
   }
 
-  // ── 10. Validate images array (mandatory) ───────────────────
+  // ── 10. Validate images / videos (at least one media item) ──
   // Accept "imageUrls" as alias for "images" (some clients/controllers use this)
   if (!body.images && Array.isArray(body.imageUrls)) {
     body.images = body.imageUrls;
   }
-  if (!isPartialUpdate || body.images !== undefined) {
-    if (!Array.isArray(body.images)) {
-      errors.images = 'At least one image is required';
-    } else if (body.images.length < 1) {
-      errors.images = 'At least one image is required';
-    } else if (body.images.length > 10) {
-      errors.images = 'Maximum 10 images allowed';
+
+  const { normalizeVideos, validateVideosPayload } = require('../utils/listing-media');
+  const shouldValidateMedia =
+    !isPartialUpdate || body.images !== undefined || body.videos !== undefined;
+
+  if (shouldValidateMedia) {
+    const images = Array.isArray(body.images) ? body.images : [];
+    const videos = Array.isArray(body.videos) ? body.videos : [];
+
+    if (images.length === 0 && videos.length === 0) {
+      errors.media = 'At least one photo or video is required';
+    }
+
+    if (body.images !== undefined && !Array.isArray(body.images)) {
+      errors.images = 'Images must be an array';
+    } else if (images.length > 6) {
+      errors.images = 'Maximum 6 images allowed';
     } else {
-      for (const url of body.images) {
+      for (const url of images) {
         if (typeof url !== 'string' || url.length > 2048) {
           errors.images = 'Invalid image URL detected';
           break;
         }
-        // Allow HTTP/HTTPS URLs, proxy URLs (/api/images/), and data URIs
         if (!/^(https?:\/\/|\/api\/images\/|data:image\/)/i.test(url)) {
           errors.images = 'Invalid image URL format';
           break;
         }
+      }
+    }
+
+    if (body.videos !== undefined && !Array.isArray(body.videos)) {
+      errors.videos = 'Videos must be an array';
+    } else {
+      const videoErrors = validateVideosPayload(videos);
+      if (videoErrors.length > 0) {
+        errors.videos = videoErrors[0];
+      } else if (videos.length > 0) {
+        body.videos = normalizeVideos(videos);
       }
     }
   }

@@ -1,47 +1,48 @@
 /**
  * ConnectivityService
  *
- * True internet reachability validation that goes beyond NetInfo's
- * `isInternetReachable` (which can return `null` on Android and reports
- * only layer-2 connectivity, not actual internet access).
+ * Separates **general internet** from **app backend reachability**.
+ * A device on Wi-Fi with working internet must NOT show "No Internet" just
+ * because the dev-server LAN IP is wrong on one phone.
  *
- * Strategy (first success wins, all run in parallel):
- *   1. Backend health endpoint — validates app-server reachability
- *   2. Cloudflare DNS-over-HTTPS (1.1.1.1) — lightweight, always fast
- *   3. Google connectivity check — canonical captive-portal probe
+ * General internet probes (any success = online):
+ *   - Google captive-portal check (GET)
+ *   - Cloudflare trace endpoint (GET)
  *
- * Edge cases handled:
- *   - WiFi connected but no internet (captive portal, ISP block)
- *   - VPN connected with broken routing
- *   - Server unreachable but internet works (app-specific outage)
- *   - Airplane mode toggle
- *   - Rapid connect/disconnect (debounced)
+ * Backend probe (separate flag):
+ *   - Tries candidate API base URLs (same list as auth-api)
  */
 
-import { AUTH_API_BASE_URL } from "@/features/auth/services/auth-api";
+import {
+  getAuthApiBaseUrl,
+  getCandidateApiBaseUrls,
+} from "@/features/auth/services/auth-api";
 
-const PROBE_TIMEOUT_MS = 4_000;
+const PROBE_TIMEOUT_MS = 5_000;
 const DEBOUNCE_MS = 800;
+/** Avoid flip-flopping on a single failed probe during Wi-Fi handoff. */
+const OFFLINE_CONFIRM_COUNT = 2;
 
-// Cloudflare DNS-over-HTTPS — resolves in <50ms globally.
-const CF_PROBE_URL = "https://1.1.1.1/dns-query?name=listify.app&type=A";
-// Google's standard captive-portal check endpoint.
 const GOOGLE_PROBE_URL = "https://connectivitycheck.gstatic.com/generate_204";
+const CF_PROBE_URL = "https://1.1.1.1/cdn-cgi/trace";
 
-/**
- * Fire-and-forget fetch that resolves true on any HTTP response (incl. 4xx),
- * resolves false only on network error or timeout.
- */
-async function probe(url: string): Promise<boolean> {
+export type ConnectivitySnapshot = {
+  /** TCP/IP routing to the public internet works. */
+  hasInternet: boolean;
+  /** At least one API base URL responds to /health. */
+  backendReachable: boolean;
+};
+
+async function probeGet(url: string, headers?: Record<string, string>): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
-      method: "HEAD",
+      method: "GET",
       signal: controller.signal,
       cache: "no-store",
+      headers,
     });
-    // Any HTTP response (including 204, 301, 403 etc.) proves TCP + IP routing works.
     return res.status > 0;
   } catch {
     return false;
@@ -50,103 +51,151 @@ async function probe(url: string): Promise<boolean> {
   }
 }
 
-/**
- * Check if the backend health endpoint is reachable.
- * Validates app-specific connectivity on top of general internet.
- */
-async function probeBackend(): Promise<boolean> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${AUTH_API_BASE_URL}/health`, {
-      method: "GET",
-      signal: controller.signal,
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
-    return res.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/**
- * Returns true if *any* of the three probes succeeds.
- * Running in parallel means the check resolves as fast as the fastest probe.
- */
-export async function checkActualInternetAccess(): Promise<boolean> {
-  const [cfOk, googleOk, backendOk] = await Promise.all([
-    probe(CF_PROBE_URL),
-    probe(GOOGLE_PROBE_URL),
-    probeBackend(),
+/** Validates general internet — independent of our backend. */
+export async function checkGeneralInternet(): Promise<boolean> {
+  const [googleOk, cfOk] = await Promise.all([
+    probeGet(GOOGLE_PROBE_URL),
+    probeGet(CF_PROBE_URL),
   ]);
-  // Any one positive = we have internet. All negative = genuinely offline.
-  return cfOk || googleOk || backendOk;
+  return googleOk || cfOk;
 }
 
-/**
- * ConnectivityService
- *
- * Singleton class that manages an asynchronous internet-validation loop.
- * External callers (NetworkStatusLayer) subscribe via `onStatusChange`.
- * Debounces rapid changes to prevent flip-flopping during transition.
- */
-class ConnectivityService {
-  private _isOnline: boolean = true;
-  private _listeners = new Set<(online: boolean) => void>();
-  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private _checkInFlight: boolean = false;
+/** Validates app-server reachability using the same URL candidates as API calls. */
+export async function checkBackendReachable(): Promise<boolean> {
+  const bases = getCandidateApiBaseUrls();
+  const unique = [...new Set(bases.length ? bases : [getAuthApiBaseUrl()])];
 
-  /** Subscribe to connection state changes. Returns an unsubscribe function. */
-  subscribe(listener: (online: boolean) => void): () => void {
+  const results = await Promise.all(
+    unique.map(async (baseUrl) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      try {
+        const res = await fetch(`${baseUrl.replace(/\/$/, "")}/health`, {
+          method: "GET",
+          signal: controller.signal,
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        return res.ok;
+      } catch {
+        return false;
+      } finally {
+        clearTimeout(timer);
+      }
+    }),
+  );
+
+  return results.some(Boolean);
+}
+
+export async function checkConnectivity(): Promise<ConnectivitySnapshot> {
+  const [hasInternet, backendReachable] = await Promise.all([
+    checkGeneralInternet(),
+    checkBackendReachable(),
+  ]);
+  return { hasInternet, backendReachable };
+}
+
+/** @deprecated Use checkConnectivity — kept for callers that only need a boolean. */
+export async function checkActualInternetAccess(): Promise<boolean> {
+  const { hasInternet } = await checkConnectivity();
+  return hasInternet;
+}
+
+type ConnectivityListener = (snapshot: ConnectivitySnapshot) => void;
+
+class ConnectivityService {
+  private _snapshot: ConnectivitySnapshot = {
+    hasInternet: true,
+    backendReachable: true,
+  };
+  private _listeners = new Set<ConnectivityListener>();
+  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private _checkInFlight = false;
+  private _offlineStreak = 0;
+
+  subscribe(listener: ConnectivityListener): () => void {
     this._listeners.add(listener);
+    listener(this._snapshot);
     return () => this._listeners.delete(listener);
   }
 
-  get isOnline(): boolean {
-    return this._isOnline;
+  get snapshot(): ConnectivitySnapshot {
+    return this._snapshot;
   }
 
-  /**
-   * Called by NetworkStatusLayer when NetInfo reports a change.
-   * Debounces rapid events and runs real validation before notifying subscribers.
-   */
+  get isOnline(): boolean {
+    return this._snapshot.hasInternet;
+  }
+
+  get isBackendReachable(): boolean {
+    return this._snapshot.backendReachable;
+  }
+
+  /** Force a fresh probe (e.g. when user taps retry or app returns to foreground). */
+  recheck(): void {
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+    }
+    void this._validateAndNotify(true);
+  }
+
   handleNetInfoChange(netInfoIsConnected: boolean): void {
     if (this._debounceTimer) {
       clearTimeout(this._debounceTimer);
     }
 
-    // Fast path: when NetInfo says disconnected, trust it immediately (no false positives).
     if (!netInfoIsConnected) {
-      this._debounceTimer = setTimeout(() => this._setOnline(false), DEBOUNCE_MS);
+      this._debounceTimer = setTimeout(() => {
+        this._offlineStreak = OFFLINE_CONFIRM_COUNT;
+        this._setSnapshot({ hasInternet: false, backendReachable: false });
+      }, DEBOUNCE_MS);
       return;
     }
 
-    // Slow path: when NetInfo says connected, validate with real probes.
-    // Debounce to avoid hammering probes during rapid WiFi re-associations.
     this._debounceTimer = setTimeout(() => {
-      void this._validateAndNotify();
+      void this._validateAndNotify(false);
     }, DEBOUNCE_MS);
   }
 
-  private async _validateAndNotify(): Promise<void> {
+  private async _validateAndNotify(force: boolean): Promise<void> {
     if (this._checkInFlight) return;
     this._checkInFlight = true;
     try {
-      const online = await checkActualInternetAccess();
-      this._setOnline(online);
+      let snapshot = await checkConnectivity();
+
+      // One quick retry — probes can fail transiently during Wi-Fi association.
+      if (!snapshot.hasInternet && !force) {
+        await new Promise((r) => setTimeout(r, 1_500));
+        snapshot = await checkConnectivity();
+      }
+
+      if (!snapshot.hasInternet) {
+        this._offlineStreak += 1;
+        if (this._offlineStreak < OFFLINE_CONFIRM_COUNT && !force) {
+          return;
+        }
+      } else {
+        this._offlineStreak = 0;
+      }
+
+      this._setSnapshot(snapshot);
     } finally {
       this._checkInFlight = false;
     }
   }
 
-  private _setOnline(online: boolean): void {
-    if (this._isOnline === online) return;
-    this._isOnline = online;
+  private _setSnapshot(next: ConnectivitySnapshot): void {
+    const prev = this._snapshot;
+    if (
+      prev.hasInternet === next.hasInternet &&
+      prev.backendReachable === next.backendReachable
+    ) {
+      return;
+    }
+    this._snapshot = next;
     for (const listener of this._listeners) {
-      listener(online);
+      listener(next);
     }
   }
 

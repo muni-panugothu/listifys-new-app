@@ -7,6 +7,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { SellFlowLayout } from "@/components/sell-flow-layout";
 import { ListifyFonts } from "@/constants/typography";
 import { useLocale } from "@/providers/locale-provider";
+import { useTheme } from "@/providers/theme-provider";
 import { showErrorToast } from "@/lib/toast";
 import { getMileageUnitForCountry } from "@/lib/listing-distance";
 
@@ -18,7 +19,14 @@ import {
   normalizeEventTime,
   parseEventDateInput,
 } from "@/lib/post-form-validators";
+import {
+  EventDatePickerModal,
+  EventTimePickerModal,
+  PickerField,
+} from "@/features/sell/components/event-date-time-pickers";
 import { deleteListing } from "@/features/listing/services/listing-api";
+import { CompanyLogoPicker } from "@/features/jobs/components/company-logo-picker";
+import { fetchMyEmployerCompanyProfile } from "@/features/jobs/services/jobs-company-api";
 import {
   CONDITION_OPTIONS,
   CONDITION_SKIP_CATEGORIES,
@@ -37,9 +45,9 @@ import {
   setVariant, setYear, setKmDriven, setMileageUnit, setFuelType, setTransmission, setOwnership, setColor,
   setEngineCC, setCycleType, setGearCount, setFrameSize, setCompatibleVehicle, setPartCategory,
   // Jobs
-  setCompanyName, setCompanyEmail, setApplyLink, setExperience, setEducation,
+  setCompanyName, setCompanyWebsite, setCompanyEmail, setApplyLink, setExperience, setEducation,
   setEmploymentType, setWorkMode, setSalaryMin, setSalaryMax, setSalaryType,
-  setIndustry, setPositions,
+  setIndustry, setPositions, setCompanyLogoUri, setUploadedCompanyLogoUrl, clearCompanyLogo,
   // TakeCare
   setAvailability, setAge, toggleLanguage, toggleCertification,
   // Events
@@ -122,6 +130,8 @@ const SERVICE_RESPONSE_OPTIONS = ["Within 1 hour", "Within 2-4 hours", "Same Day
 
 /** Pill selector row */
 function PillRow({ options, value, onSelect }: { options: string[]; value: string; onSelect: (v: string) => void }) {
+  const { colors } = useTheme();
+
   return (
     <View className="flex-row flex-wrap gap-3">
       {options.map((opt) => {
@@ -132,12 +142,18 @@ function PillRow({ options, value, onSelect }: { options: string[]; value: strin
             onPress={() => onSelect(isActive ? "" : opt)}
             className="rounded-full px-5 py-2.5"
             style={{
-              backgroundColor: isActive ? "#1A1A1A" : "#FFFFFF",
+              backgroundColor: isActive ? colors.textPrimary : colors.inputBackground,
               borderWidth: 1,
-              borderColor: isActive ? "#1A1A1A" : "#E5E7EB",
+              borderColor: isActive ? colors.textPrimary : colors.border,
             }}
           >
-            <Text className="text-[12px] font-medium" style={{ color: isActive ? "#FFFFFF" : "#1A1A1A" }}>
+            <Text
+              style={{
+                fontSize: 12,
+                fontFamily: isActive ? ListifyFonts.semiBold : ListifyFonts.medium,
+                color: isActive ? colors.background : colors.textPrimary,
+              }}
+            >
               {opt}
             </Text>
           </Pressable>
@@ -149,6 +165,8 @@ function PillRow({ options, value, onSelect }: { options: string[]; value: strin
 
 /** Multi-select chip row */
 function ChipRow({ options, selected, onToggle }: { options: string[]; selected: string[]; onToggle: (v: string) => void }) {
+  const { colors } = useTheme();
+
   return (
     <View className="flex-row flex-wrap gap-2">
       {options.map((item) => {
@@ -159,17 +177,23 @@ function ChipRow({ options, selected, onToggle }: { options: string[]; selected:
             onPress={() => onToggle(item)}
             className="flex-row items-center gap-1.5 rounded-full px-4 py-2"
             style={{
-              backgroundColor: isActive ? "#F3F4F6" : "#FFFFFF",
+              backgroundColor: isActive ? colors.surfaceMuted : colors.inputBackground,
               borderWidth: 1,
-              borderColor: isActive ? "#1A1A1A" : "#E5E7EB",
+              borderColor: isActive ? colors.textPrimary : colors.border,
             }}
           >
             <MaterialIcons
               name={isActive ? "check-circle" : "add-circle-outline"}
               size={16}
-              color={isActive ? "#1A1A1A" : "#9CA3AF"}
+              color={isActive ? colors.textPrimary : colors.iconMuted}
             />
-            <Text className="text-[12px] font-medium" style={{ color: isActive ? "#1A1A1A" : "#4B5563" }}>
+            <Text
+              style={{
+                fontSize: 12,
+                fontFamily: ListifyFonts.medium,
+                color: isActive ? colors.textPrimary : colors.textSecondary,
+              }}
+            >
               {item}
             </Text>
           </Pressable>
@@ -207,9 +231,14 @@ function IconField({ icon, value, onChangeText, placeholder, numeric, maxLength,
     onChangeText(v);
   };
 
+  const { colors } = useTheme();
+
   return (
-    <View className="h-12 flex-row items-center rounded-2xl border border-[#E5E7EB] bg-white px-4">
-      <MaterialIcons name={icon} size={20} color="#6C7A74" />
+    <View
+      className="h-12 flex-row items-center rounded-2xl border px-4"
+      style={{ borderColor: colors.border, backgroundColor: colors.inputBackground }}
+    >
+      <MaterialIcons name={icon} size={20} color={colors.icon} />
       <TextInput
         value={value}
         onChangeText={handleChange}
@@ -217,9 +246,9 @@ function IconField({ icon, value, onChangeText, placeholder, numeric, maxLength,
         keyboardType={numeric || dateExpiry ? "numeric" : "default"}
         maxLength={dateExpiry ? 7 : maxLength}
         placeholder={placeholder}
-        placeholderTextColor="#94A3B8"
-        className="ml-2 flex-1 text-[14px] text-[#161D1A]"
-        style={{ paddingVertical: 0 }}
+        placeholderTextColor={colors.inputPlaceholder}
+        className="ml-2 flex-1"
+        style={{ paddingVertical: 0, fontSize: 14, color: colors.textPrimary }}
       />
     </View>
   );
@@ -236,30 +265,48 @@ function isValidExpiryDate(value: string): boolean {
 
 /** Section label */
 function Label({ text, required }: { text: string; required?: boolean }) {
+  const { colors } = useTheme();
+
   return (
-    <Text
-      className="mb-2 text-[12px] text-[#1A1A1A]"
-      style={{ fontFamily: ListifyFonts.medium }}
-    >
-      {text}
+    <View style={{ marginBottom: 8, flexDirection: "row", alignItems: "center" }}>
+      <Text
+        style={{
+          fontSize: 12,
+          fontFamily: ListifyFonts.medium,
+          color: colors.textPrimary,
+        }}
+      >
+        {text}
+      </Text>
       {required ? (
-        <Text style={{ color: "#EF4444" }}> *</Text>
+        <Text style={{ fontSize: 12, fontFamily: ListifyFonts.medium, color: colors.danger }}>
+          {" *"}
+        </Text>
       ) : null}
-    </Text>
+    </View>
   );
 }
 
 function LabelPill({ text, required }: { text: string; required?: boolean }) {
+  const { colors } = useTheme();
+
   return (
-    <Text
-      className="mb-3 text-[12px] text-[#1A1A1A]"
-      style={{ fontFamily: ListifyFonts.medium }}
-    >
-      {text}
+    <View style={{ marginBottom: 12, flexDirection: "row", alignItems: "center" }}>
+      <Text
+        style={{
+          fontSize: 12,
+          fontFamily: ListifyFonts.medium,
+          color: colors.textPrimary,
+        }}
+      >
+        {text}
+      </Text>
       {required ? (
-        <Text style={{ color: "#EF4444" }}> *</Text>
+        <Text style={{ fontSize: 12, fontFamily: ListifyFonts.medium, color: colors.danger }}>
+          {" *"}
+        </Text>
       ) : null}
-    </Text>
+    </View>
   );
 }
 
@@ -268,6 +315,7 @@ function LabelPill({ text, required }: { text: string; required?: boolean }) {
 export function PostAdStep2DetailsScreen() {
   const router = useRouter();
   const dispatch = useAppDispatch();
+  const { colors } = useTheme();
   const { currencyCode, currencySymbol, isoCountryCode } = useLocale();
 
   // Track if user has manually chosen a currency this session.
@@ -300,6 +348,8 @@ export function PostAdStep2DetailsScreen() {
 
   const [currencyPickerVisible, setCurrencyPickerVisible] = useState(false);
   const [currencySearch, setCurrencySearch] = useState("");
+  const [eventDatePickerVisible, setEventDatePickerVisible] = useState(false);
+  const [eventTimePickerVisible, setEventTimePickerVisible] = useState(false);
 
   const pf = useAppSelector((s) => s.postForm);
   const [deleting, setDeleting] = useState(false);
@@ -310,7 +360,7 @@ export function PostAdStep2DetailsScreen() {
     processor, ram, storage, capacity, energyRating, megapixels, lensType,
     variant, year, kmDriven, mileageUnit, fuelType, transmission, ownership, color, engineCC,
     cycleType, gearCount, frameSize, compatibleVehicle, partCategory,
-    companyName, companyEmail, applyLink, experience, education,
+    companyName, companyWebsite, companyEmail, companyLogoUri, uploadedCompanyLogoUrl, applyLink, experience, education,
     employmentType, workMode, salaryMin, salaryMax, salaryType, industry, positions,
     availability, age, languages, certifications,
     eventDate, eventTime, organizer, venue, ticketsAvailable, ageRestriction, dressCode,
@@ -346,6 +396,52 @@ export function PostAdStep2DetailsScreen() {
   const isElectronics = category === "electronics";
   const isVehicle = category === "vehicles";
   const isJob = category === "jobs";
+
+  useEffect(() => {
+    if (!isJob || isEditMode) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const profile = await fetchMyEmployerCompanyProfile();
+        if (!profile || cancelled) return;
+
+        if (!companyName && profile.companyName) {
+          dispatch(setCompanyName(profile.companyName));
+        }
+        if (!companyEmail && profile.companyEmail) {
+          dispatch(setCompanyEmail(profile.companyEmail));
+        }
+        if (!companyWebsite && profile.companyWebsite) {
+          dispatch(setCompanyWebsite(profile.companyWebsite));
+        }
+        if (!industry && profile.industry) {
+          dispatch(setIndustry(profile.industry));
+        }
+        if (profile.companyLogo && !companyLogoUri && !uploadedCompanyLogoUrl) {
+          dispatch(setUploadedCompanyLogoUrl(profile.companyLogo));
+          dispatch(setCompanyLogoUri(profile.companyLogo));
+        }
+      } catch {
+        // Profile is optional for first-time posters.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isJob,
+    isEditMode,
+    dispatch,
+    companyName,
+    companyEmail,
+    companyWebsite,
+    industry,
+    companyLogoUri,
+    uploadedCompanyLogoUrl,
+  ]);
+
   const isTakeCare = category === "takecare";
   const isEvent = category === "events";
   const isMobile = category === "mobiles";
@@ -554,11 +650,11 @@ export function PostAdStep2DetailsScreen() {
             style={({ pressed }) => ({ opacity: pressed || deleting ? 0.5 : 1 })}
           >
             {deleting ? (
-              <ActivityIndicator size="small" color="#BA1A1A" />
+              <ActivityIndicator size="small" color={colors.danger} />
             ) : (
               <>
-                <MaterialIcons name="delete" size={20} color="#BA1A1A" />
-                <Text className="text-[12px] font-medium text-[#BA1A1A]">Delete</Text>
+                <MaterialIcons name="delete" size={20} color={colors.danger} />
+                <Text className="text-[12px] font-medium" style={{ color: colors.danger }}>Delete</Text>
               </>
             )}
           </Pressable>
@@ -574,14 +670,14 @@ export function PostAdStep2DetailsScreen() {
           {isProperty && (
             <View className="mb-6">
               <Label text="Listing Type" required />
-              <View className="rounded-xl bg-[#F3F4F6] p-1 flex-row">
+              <View className="rounded-xl p-1 flex-row" style={{ backgroundColor: colors.surfaceMuted }}>
                 {["Properties", "Rentals"].map((t) => (
                   <Pressable
                     key={t}
                     onPress={() => dispatch(setListingType(t))}
                     className="flex-1 rounded-lg py-2.5"
                     style={{
-                      backgroundColor: listingType === t ? "#FFFFFF" : "transparent",
+                      backgroundColor: listingType === t ? colors.surfaceElevated : "transparent",
                       shadowColor: listingType === t ? "#000" : "transparent",
                       shadowOffset: { width: 0, height: 1 },
                       shadowOpacity: listingType === t ? 0.08 : 0,
@@ -589,7 +685,7 @@ export function PostAdStep2DetailsScreen() {
                       elevation: listingType === t ? 1 : 0,
                     }}
                   >
-                    <Text className="text-center text-[14px] font-semibold" style={{ color: listingType === t ? "#1A1A1A" : "#6B7280" }}>
+                    <Text className="text-center text-[14px] font-semibold" style={{ color: listingType === t ? colors.textPrimary : colors.textSecondary }}>
                       {t === "Properties" ? "For Sale" : "For Rent"}
                     </Text>
                   </Pressable>
@@ -602,16 +698,27 @@ export function PostAdStep2DetailsScreen() {
           <View className="mb-6">
             <View className="mb-2 flex-row items-end justify-between">
               <Label text="Ad Title" required />
-              <Text className="text-[10px] font-medium text-[#6C7A74]">{title.length}/70</Text>
+              <Text style={{ fontSize: 10, fontFamily: ListifyFonts.medium, color: colors.textTertiary }}>
+                {title.length}/70
+              </Text>
             </View>
             <TextInput
               value={title}
               onChangeText={(v) => dispatch(setTitle(v))}
               maxLength={70}
               placeholder={adPlaceholders.title}
-              placeholderTextColor="#94A3B8"
-              className="h-12 rounded-lg border border-slate-200 bg-white px-4 text-[14px] text-[#161D1A]"
-              style={{ paddingVertical: 0 }}
+              placeholderTextColor={colors.inputPlaceholder}
+              style={{
+                height: 48,
+                borderRadius: 8,
+                borderWidth: 1,
+                paddingHorizontal: 16,
+                fontSize: 14,
+                paddingVertical: 0,
+                borderColor: colors.border,
+                backgroundColor: colors.inputBackground,
+                color: colors.textPrimary,
+              }}
             />
           </View>
 
@@ -622,13 +729,22 @@ export function PostAdStep2DetailsScreen() {
               value={description}
               onChangeText={(v) => dispatch(setDescription(v))}
               placeholder={adPlaceholders.description}
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={colors.inputPlaceholder}
               multiline
               numberOfLines={4}
               textAlignVertical="top"
-              className="min-h-30 rounded-lg border border-slate-200 bg-white p-4 text-[14px] text-[#161D1A]"
+              style={{
+                minHeight: 120,
+                borderRadius: 8,
+                borderWidth: 1,
+                padding: 16,
+                fontSize: 14,
+                borderColor: colors.border,
+                backgroundColor: colors.inputBackground,
+                color: colors.textPrimary,
+              }}
             />
-            <Text className="mt-1 px-1 text-[11px] text-[#6C7A74]">
+            <Text style={{ marginTop: 4, paddingHorizontal: 4, fontSize: 11, color: colors.textTertiary }}>
               {adPlaceholders.hint ?? "Mention key selling points like brand, age, and condition details."}
             </Text>
           </View>
@@ -637,8 +753,12 @@ export function PostAdStep2DetailsScreen() {
             <View className="mb-6">
               <Label text="Price" required />
               <View
-                className="h-12 flex-row items-center rounded-lg bg-white overflow-hidden"
-                style={{ borderWidth: 1, borderColor: priceError ? "#BA1A1A" : "#E2E8F0" }}
+                className="h-12 flex-row items-center rounded-lg overflow-hidden"
+                style={{
+                  borderWidth: 1,
+                  borderColor: priceError ? colors.danger : colors.border,
+                  backgroundColor: colors.inputBackground,
+                }}
               >
                 {/* Tappable currency badge */}
                 <Pressable
@@ -650,28 +770,28 @@ export function PostAdStep2DetailsScreen() {
                     paddingHorizontal: 10,
                     height: "100%",
                     borderRightWidth: 1,
-                    borderRightColor: "#E5E7EB",
-                    backgroundColor: pressed ? "#F3F4F6" : "transparent",
+                    borderRightColor: colors.border,
+                    backgroundColor: pressed ? colors.surfaceMuted : "transparent",
                   })}
                   accessibilityLabel="Select currency"
                 >
-                  <Text style={{ fontSize: 15, fontFamily: ListifyFonts.semiBold, color: "#161D1A" }}>
+                  <Text style={{ fontSize: 15, fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}>
                     {displayCurrency}
                   </Text>
-                  <MaterialIcons name="arrow-drop-down" size={16} color="#6B7280" />
+                  <MaterialIcons name="arrow-drop-down" size={16} color={colors.textSecondary} />
                 </Pressable>
                 <TextInput
                   value={price}
                   onChangeText={(v) => dispatch(setPrice(v))}
                   keyboardType="numeric"
                   className="flex-1 text-[16px] font-bold px-3"
-                  style={{ paddingVertical: 0, color: priceError ? "#BA1A1A" : "#161D1A" }}
+                  style={{ paddingVertical: 0, color: priceError ? colors.danger : colors.textPrimary }}
                 />
               </View>
               {priceError && (
                 <View className="mt-1 flex-row items-center gap-1 px-1">
-                  <MaterialIcons name="error" size={14} color="#BA1A1A" />
-                  <Text className="text-[11px] text-[#BA1A1A]">Price must be greater than {displayCurrency}100</Text>
+                  <MaterialIcons name="error" size={14} color={colors.danger} />
+                  <Text className="text-[11px]" style={{ color: colors.danger }}>Price must be greater than {displayCurrency}100</Text>
                 </View>
               )}
             </View>
@@ -752,9 +872,19 @@ export function PostAdStep2DetailsScreen() {
                         key={String(val)}
                         onPress={() => dispatch(setPetFriendly(val))}
                         className="rounded-full px-6 py-2.5"
-                        style={{ backgroundColor: isActive ? "#1A1A1A" : "#FFFFFF", borderWidth: 1, borderColor: isActive ? "#1A1A1A" : "#E5E7EB" }}
+                        style={{
+                          backgroundColor: isActive ? colors.textPrimary : colors.inputBackground,
+                          borderWidth: 1,
+                          borderColor: isActive ? colors.textPrimary : colors.border,
+                        }}
                       >
-                        <Text className="text-[12px] font-medium" style={{ color: isActive ? "#FFFFFF" : "#161D1A" }}>
+                        <Text
+              style={{
+                fontSize: 12,
+                fontFamily: isActive ? ListifyFonts.semiBold : ListifyFonts.medium,
+                color: isActive ? colors.background : colors.textPrimary,
+              }}
+            >
                           {val ? "Yes" : "No"}
                         </Text>
                       </Pressable>
@@ -970,9 +1100,23 @@ export function PostAdStep2DetailsScreen() {
              ═══════════════════════════════════════════════════════════════ */}
           {isJob && (
             <>
+              <CompanyLogoPicker
+                companyName={companyName}
+                logoUri={companyLogoUri}
+                uploadedLogoUrl={uploadedCompanyLogoUrl}
+                onPick={(uri) => {
+                  dispatch(setCompanyLogoUri(uri));
+                  dispatch(setUploadedCompanyLogoUrl(""));
+                }}
+                onRemove={() => dispatch(clearCompanyLogo())}
+              />
               <View className="mb-6">
                 <Label text="Company Name" required />
-                <IconField icon="business" value={companyName} onChangeText={(v) => dispatch(setCompanyName(v))} placeholder="e.g. Infosys" />
+                <IconField icon="business" value={companyName} onChangeText={(v) => dispatch(setCompanyName(v))} placeholder="e.g. Amazon, Infosys" />
+              </View>
+              <View className="mb-6">
+                <Label text="Company Website" />
+                <IconField icon="language" value={companyWebsite} onChangeText={(v) => dispatch(setCompanyWebsite(v))} placeholder="e.g. amazon.com" />
               </View>
               <View className="mb-6">
                 <Label text="Company Email" />
@@ -1065,25 +1209,25 @@ export function PostAdStep2DetailsScreen() {
               <View className="mb-6 flex-row gap-4">
                 <View className="flex-1">
                   <Label text="Event Date" required />
-                  <IconField icon="event" value={eventDate} onChangeText={(v) => dispatch(setEventDate(v))} placeholder={eventDatePlaceholder} />
+                  <PickerField
+                    icon="event"
+                    value={eventDate}
+                    placeholder={eventDatePlaceholder}
+                    onPress={() => setEventDatePickerVisible(true)}
+                  />
                 </View>
                 <View className="flex-1">
                   <Label text="Event Time" required />
-                  <IconField
+                  <PickerField
                     icon="access-time"
                     value={eventTime}
-                    onChangeText={(v) => dispatch(setEventTime(v))}
-                    onBlur={() => {
-                      if (eventTime.trim()) {
-                        dispatch(setEventTime(normalizeEventTime(eventTime)));
-                      }
-                    }}
                     placeholder="e.g. 7:00 PM"
+                    onPress={() => setEventTimePickerVisible(true)}
                   />
                 </View>
               </View>
-              <Text className="mb-6 px-1 text-[11px] text-[#6C7A74]">
-                Event date must be today or later. Use formats like {eventDatePlaceholder.replace("e.g. ", "")} or 25/12/2026. Time: 7:00 PM or 19:00.
+              <Text className="mb-6 px-1 text-[11px]" style={{ color: colors.textTertiary }}>
+                Event date must be today or later. Tap the fields above to pick date and time.
               </Text>
               <View className="mb-6">
                 <IconField icon="person" value={organizer} onChangeText={(v) => dispatch(setOrganizer(v))} placeholder="e.g. EventBrite Inc." />
@@ -1622,7 +1766,7 @@ export function PostAdStep2DetailsScreen() {
           fontFamily: ListifyFonts.regular,
           fontSize: 13,
           lineHeight: 20,
-          color: "#6B7280",
+          color: colors.textSecondary,
         }}
       >
         Clear titles and fair pricing help buyers find your listing faster.
@@ -1637,14 +1781,14 @@ export function PostAdStep2DetailsScreen() {
       onRequestClose={() => setCurrencyPickerVisible(false)}
     >
       <Pressable
-        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.35)" }}
+        style={{ flex: 1, backgroundColor: colors.scrim }}
         onPress={() => setCurrencyPickerVisible(false)}
       />
       <View
         style={{
           position: "absolute",
           bottom: 0, left: 0, right: 0,
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surfaceElevated,
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
           maxHeight: "75%",
@@ -1652,13 +1796,13 @@ export function PostAdStep2DetailsScreen() {
       >
         {/* Handle */}
         <View style={{ alignItems: "center", paddingVertical: 10 }}>
-          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: "#D1D5DB" }} />
+          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong }} />
         </View>
         {/* Title */}
         <Text
           style={{
             textAlign: "center", fontSize: 17,
-            fontFamily: ListifyFonts.bold, color: "#111827",
+            fontFamily: ListifyFonts.bold, color: colors.textPrimary,
             marginBottom: 12, paddingHorizontal: 16,
           }}
         >
@@ -1671,21 +1815,21 @@ export function PostAdStep2DetailsScreen() {
             marginHorizontal: 16, marginBottom: 8,
             paddingHorizontal: 12, height: 44,
             borderRadius: 10, borderWidth: 1,
-            borderColor: "#E5E7EB", backgroundColor: "#F9FAFB", gap: 8,
+            borderColor: colors.border, backgroundColor: colors.inputBackground, gap: 8,
           }}
         >
-          <MaterialIcons name="search" size={18} color="#9CA3AF" />
+          <MaterialIcons name="search" size={18} color={colors.iconMuted} />
           <TextInput
             value={currencySearch}
             onChangeText={setCurrencySearch}
             placeholder="Search currency…"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.inputPlaceholder}
             returnKeyType="search"
-            style={{ flex: 1, fontSize: 14, fontFamily: ListifyFonts.regular, color: "#111827", paddingVertical: 0 }}
+            style={{ flex: 1, fontSize: 14, fontFamily: ListifyFonts.regular, color: colors.textPrimary, paddingVertical: 0 }}
           />
           {currencySearch.length > 0 && (
             <Pressable onPress={() => setCurrencySearch("")} hitSlop={8}>
-              <MaterialIcons name="close" size={16} color="#9CA3AF" />
+              <MaterialIcons name="close" size={16} color={colors.iconMuted} />
             </Pressable>
           )}
         </View>
@@ -1709,37 +1853,50 @@ export function PostAdStep2DetailsScreen() {
                 style={({ pressed }) => ({
                   flexDirection: "row", alignItems: "center",
                   paddingHorizontal: 16, paddingVertical: 14, gap: 12,
-                  backgroundColor: pressed ? "#F3F4F6" : isSelected ? "#F0FBF8" : "#FFFFFF",
-                  borderBottomWidth: 1, borderBottomColor: "#F3F4F6",
+                  backgroundColor: pressed ? colors.surfaceMuted : isSelected ? colors.primarySoft : colors.surfaceElevated,
+                  borderBottomWidth: 1, borderBottomColor: colors.border,
                 })}
               >
                 <Text
                   style={{
                     fontSize: 18, fontFamily: ListifyFonts.semiBold,
-                    color: isSelected ? "#1D9477" : "#111827",
+                    color: isSelected ? colors.primaryDeep : colors.textPrimary,
                     width: 36, textAlign: "center",
                   }}
                 >
                   {item.symbol}
                 </Text>
-                <Text style={{ flex: 1, fontSize: 15, fontFamily: ListifyFonts.regular, color: "#111827" }} numberOfLines={1}>
+                <Text style={{ flex: 1, fontSize: 15, fontFamily: ListifyFonts.regular, color: colors.textPrimary }} numberOfLines={1}>
                   {item.name}
                 </Text>
                 <Text
                   style={{
                     fontSize: 13, fontFamily: ListifyFonts.medium,
-                    color: isSelected ? "#1D9477" : "#9CA3AF",
+                    color: isSelected ? colors.primaryDeep : colors.textTertiary,
                   }}
                 >
                   {item.code}
                 </Text>
-                {isSelected && <MaterialIcons name="check-circle" size={18} color="#1D9477" />}
+                {isSelected && <MaterialIcons name="check-circle" size={18} color={colors.primaryDeep} />}
               </Pressable>
             );
           }}
         />
       </View>
     </Modal>
+
+    <EventDatePickerModal
+      visible={eventDatePickerVisible}
+      value={eventDate}
+      onClose={() => setEventDatePickerVisible(false)}
+      onSelect={(formattedDate) => dispatch(setEventDate(formattedDate))}
+    />
+    <EventTimePickerModal
+      visible={eventTimePickerVisible}
+      value={eventTime}
+      onClose={() => setEventTimePickerVisible(false)}
+      onSelect={(formattedTime) => dispatch(setEventTime(normalizeEventTime(formattedTime)))}
+    />
     </>
   );
 }

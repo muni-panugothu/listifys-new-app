@@ -204,7 +204,18 @@ export function SellFlowLayout({
               }}
             >
               {primaryLoading ? (
-                <ActivityIndicator color={colors.background} />
+                <>
+                  <ActivityIndicator color={colors.background} />
+                  <Text
+                    style={{
+                      fontFamily: ListifyFonts.semiBold,
+                      fontSize: 16,
+                      color: colors.background,
+                    }}
+                  >
+                    {primaryLabel}
+                  </Text>
+                </>
               ) : (
                 <>
                   <Text

@@ -8,6 +8,7 @@ import { Image } from "@/lib/nativewind-interop";
 import { resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
 import type { ProductThread, ChatParticipant } from "@/features/messaging/services/chat-api";
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 import { Text, View, Pressable } from "react-native";
 
 const BRAND  = "#27BB97";
@@ -25,11 +26,6 @@ type Props = {
   onPress?:     () => void;
 };
 
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-}
-
 function participantIdOf(p: ChatParticipant | string | null | undefined): string {
   if (!p) return "";
   if (typeof p === "string") return p;
@@ -41,7 +37,9 @@ function sellerNameOf(seller: ChatParticipant | string | null | undefined): stri
   return seller.name || "the seller";
 }
 
-export function ProductThreadSection({ thread, currentUserId, isExpanded = true, onToggle, onPress }: Props) {
+export function ProductThreadSection({ thread, currentUserId, onPress }: Props) {
+  const { colors, resolvedMode } = useTheme();
+  const isDark = resolvedMode === "dark";
   const product    = thread.product;
   const isSold     = thread.status === "sold" || thread.status === "closed";
   const statusColor = isSold ? SOLD : ACTIVE;
@@ -49,9 +47,6 @@ export function ProductThreadSection({ thread, currentUserId, isExpanded = true,
     ? (thread.closedReason === "sold" ? "SOLD" : "CLOSED")
     : "ACTIVE";
 
-  // "Posted by me" if the current user is the seller of this thread, otherwise
-  // "Posted by <seller name>". Falls back to a generic label when we can't
-  // identify either side (e.g. signed-out preview).
   const sellerId = participantIdOf(thread.seller);
   const postedByMe = !!currentUserId && sellerId === currentUserId;
   const postedByLabel = postedByMe
@@ -62,30 +57,35 @@ export function ProductThreadSection({ thread, currentUserId, isExpanded = true,
     ? resolveAbsoluteMediaUrl(product.image) ?? undefined
     : undefined;
 
+  const bannerBg = isDark ? colors.surfaceElevated : colors.surfaceMuted;
+  const bannerPressed = isDark ? colors.surfaceMuted : "#F0FDF9";
+  const borderColor = isSold
+    ? (isDark ? "rgba(239,68,68,0.35)" : "#FECACA")
+    : (isDark ? "rgba(16,185,129,0.35)" : "#D1FAE5");
+
   return (
     <Pressable
-      onPress={onPress ?? onToggle}
+      onPress={onPress}
       style={({ pressed }) => ({
         flexDirection:    "row",
         alignItems:       "center",
-        backgroundColor:  pressed ? "#F0FDF9" : "#F9FAFB",
+        backgroundColor:  pressed ? bannerPressed : bannerBg,
         borderRadius:     12,
         marginHorizontal: 12,
         marginVertical:   6,
         padding:          10,
         borderWidth:      1,
-        borderColor:      isSold ? "#FECACA" : "#D1FAE5",
+        borderColor,
         gap:              10,
       })}
     >
-      {/* Product image */}
       <View
         style={{
           width:        52,
           height:       52,
           borderRadius: 8,
           overflow:     "hidden",
-          backgroundColor: "#E5E7EB",
+          backgroundColor: colors.skeleton,
         }}
       >
         {imageUrl ? (
@@ -106,12 +106,10 @@ export function ProductThreadSection({ thread, currentUserId, isExpanded = true,
         )}
       </View>
 
-      {/* Info */}
       <View style={{ flex: 1 }}>
-        {/* Title row */}
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <Text
-            style={{ fontFamily: ListifyFonts.semiBold, fontSize: 14, color: "#111827", flexShrink: 1 }}
+            style={{ fontFamily: ListifyFonts.semiBold, fontSize: 14, color: colors.textPrimary, flexShrink: 1 }}
             numberOfLines={1}
           >
             {product.title || "Product"}
@@ -132,10 +130,9 @@ export function ProductThreadSection({ thread, currentUserId, isExpanded = true,
           </View>
         </View>
 
-        {/* Price + posted-by */}
         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2, gap: 8, flexWrap: "wrap" }}>
           {product.price != null && (
-            <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 13, color: "#374151" }}>
+            <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 13, color: colors.textPrimary }}>
               {product.currency}{product.price.toLocaleString("en-IN")}
             </Text>
           )}
@@ -143,7 +140,7 @@ export function ProductThreadSection({ thread, currentUserId, isExpanded = true,
             style={{
               fontFamily: ListifyFonts.regular,
               fontSize: 11,
-              color: postedByMe ? BRAND : "#6B7280",
+              color: postedByMe ? BRAND : colors.textSecondary,
             }}
             numberOfLines={1}
           >
@@ -152,8 +149,7 @@ export function ProductThreadSection({ thread, currentUserId, isExpanded = true,
         </View>
       </View>
 
-      {/* Open indicator */}
-      <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
+      <MaterialIcons name="chevron-right" size={20} color={colors.iconMuted} />
     </Pressable>
   );
 }

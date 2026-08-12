@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require("../utils/slugify");
 
 const propertySchema = new mongoose.Schema(
@@ -150,6 +151,7 @@ propertySchema.index({ seller: 1, status: 1 });
 propertySchema.index({ price: 1 });
 propertySchema.index({ savedBy: 1 });
 
+attachListingVideosField(propertySchema);
 attachSlugPlugin(propertySchema);
 
 module.exports = mongoose.model("Property", propertySchema);

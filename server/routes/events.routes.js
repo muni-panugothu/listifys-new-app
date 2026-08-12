@@ -18,6 +18,7 @@ const {
   toggleSave,
   getEventCalendarSummary,
   getUpcomingEvents,
+  getSimilarEvents,
 } = require("../controllers/events.controller.js");
 
 router.get("/calendar/summary", searchLimiter, getEventCalendarSummary);
@@ -39,6 +40,10 @@ router.post(
   uploadImages
 );
 
+
+const { registerListingVideoUpload } = require("../utils/register-listing-video-upload.js");
+registerListingVideoUpload(router, "events");
+router.get("/:id/similar", searchLimiter, cacheResponseTracked("events", 120, "similar"), getSimilarEvents);
 router.get("/:id", searchLimiter, cacheResponseTracked("events", 300, "detail"), getEventById);
 router.put("/:id", protect, postingLimiter, validateListingInput, invalidateAfter("events"), updateEvent);
 router.delete("/:id", protect, invalidateAfter("events"), deleteEvent);

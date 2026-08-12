@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const s3Service = require("../services/s3.service.js");
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require("../utils/slugify");
 
 const furnitureSchema = new mongoose.Schema(
@@ -157,6 +158,7 @@ furnitureSchema.index({ savedBy: 1 });
 furnitureSchema.index({ title: "text", description: "text", material: "text", color: "text" });
 furnitureSchema.index({ coordinates: "2dsphere" });
 
+attachListingVideosField(furnitureSchema);
 attachSlugPlugin(furnitureSchema);
 
 module.exports = mongoose.model("Furniture", furnitureSchema);

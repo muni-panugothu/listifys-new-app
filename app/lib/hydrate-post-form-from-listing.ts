@@ -1,5 +1,6 @@
 import type { CategorySlug } from "@/constants/categories";
 import type { ListingItem } from "@/features/listing/services/listing-api";
+import { mapListingToPostMediaItems, normalizeListingVideos } from "@/lib/listing-media";
 import { parseListingCoordinates } from "@/lib/listing-coordinates";
 import type { PostFormState } from "@/store/slices/post-form-slice";
 
@@ -81,7 +82,9 @@ export function mapListingToPostForm(
     locationLat: coords?.lat ?? null,
     locationLng: coords?.lng ?? null,
     imageUris: listing.images || [],
+    mediaItems: mapListingToPostMediaItems(listing),
     uploadedImageUrls: listing.images || [],
+    uploadedVideos: normalizeListingVideos(listing.videos),
     phone: str(listing.phone),
     currency: str(listing.currency),
     bedrooms: str(listing.bedrooms),
@@ -121,7 +124,10 @@ export function mapListingToPostForm(
     compatibleVehicle: str(record.compatibleVehicle),
     partCategory: str(record.partCategory),
     companyName: str(record.companyName),
+    companyWebsite: str(record.companyWebsite),
     companyEmail: str(record.companyEmail),
+    companyLogoUri: str(record.companyLogo),
+    uploadedCompanyLogoUrl: str(record.companyLogo),
     applyLink: str(record.applyLink),
     jobType: str(record.jobType ?? record.employmentType),
     experience: str(record.experience),

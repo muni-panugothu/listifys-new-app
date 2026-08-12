@@ -31,6 +31,9 @@ router.post("/", protect, postingLimiter, validateListingInput, invalidateAfter(
 // Upload — rate limited (20 uploads/5 min) + auto-optimised images
 router.post("/upload-images", protect, uploadLimiter, upload.array("images", 6), optimiseImages, uploadImages);
 
+
+const { registerListingVideoUpload } = require("../utils/register-listing-video-upload.js");
+registerListingVideoUpload(router, "vehicles");
 // ── Routes with :id parameter ──
 router.get("/:id", searchLimiter, cacheResponseTracked("vehicles", 300, "detail"), getVehicleById);
 router.put("/:id", protect, postingLimiter, validateListingInput, invalidateAfter("vehicles"), updateVehicle);

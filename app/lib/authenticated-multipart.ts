@@ -48,11 +48,14 @@ async function ensureTokenFresh(): Promise<boolean> {
 export async function authenticatedMultipartPost(
   url: string,
   buildFormData: () => FormData,
+  options?: { timeoutMs?: number },
 ): Promise<Response> {
   const ready = await ensureTokenFresh();
   if (!ready) {
     throw new AuthApiError("Your session expired. Please sign in again.", 401);
   }
+
+  const timeoutMs = options?.timeoutMs ?? 120_000;
 
   const doPost = async () => {
     const token = getAccessToken();
@@ -60,12 +63,29 @@ export async function authenticatedMultipartPost(
       token ? { Authorization: `Bearer ${token}` } : {},
     );
     delete (headers as Record<string, string>)["Content-Type"];
-    return fetch(url, {
-      method: "POST",
-      credentials: Platform.OS === "web" ? "include" : "omit",
-      headers,
-      body: buildFormData(),
-    });
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(url, {
+        method: "POST",
+        credentials: Platform.OS === "web" ? "include" : "omit",
+        headers,
+        body: buildFormData(),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new AuthApiError(
+          "Upload timed out. Check your connection and try again, or use a smaller video.",
+          0,
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
 
   let response = await doPost();

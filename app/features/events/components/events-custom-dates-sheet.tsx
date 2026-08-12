@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ListifyFonts } from "@/constants/typography";
 import { dateKey, isSameDay } from "@/lib/event-dates";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -76,6 +77,7 @@ function EventsCustomDatesSheetImpl({
 }: EventsCustomDatesSheetProps) {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const et = useEventsTheme();
   const [mounted, setMounted] = useState(visible);
   const [rangeStart, setRangeStart] = useState<Date | null>(initialStart ?? null);
   const [rangeEnd, setRangeEnd] = useState<Date | null>(initialEnd ?? null);
@@ -159,8 +161,8 @@ function EventsCustomDatesSheetImpl({
 
   if (!mounted) return null;
 
-  const sheetBg = isDark ? "#141416" : colors.surface;
-  const mutedDay = isDark ? "rgba(255,255,255,0.28)" : colors.textTertiary;
+  const sheetBg = et.surface;
+  const mutedDay = et.textMuted;
 
   return (
     <Modal
@@ -179,7 +181,7 @@ function EventsCustomDatesSheetImpl({
               left: 0,
               right: 0,
               bottom: 0,
-              backgroundColor: "#000",
+              backgroundColor: colors.scrim,
             },
             backdropStyle,
           ]}
@@ -278,7 +280,7 @@ function EventsCustomDatesSheetImpl({
           <View
             style={{
               height: 1,
-              backgroundColor: isDark ? "rgba(255,255,255,0.08)" : colors.border,
+              backgroundColor: et.divider,
               marginHorizontal: 18,
               marginBottom: 8,
             }}
@@ -343,10 +345,10 @@ function EventsCustomDatesSheetImpl({
                               justifyContent: "center",
                               borderRadius: 22,
                               backgroundColor: selected
-                                ? "#FFFFFF"
+                                ? (isDark ? "#FFFFFF" : colors.textPrimary)
                                 : inRange
                                   ? isDark
-                                    ? "rgba(255,255,255,0.12)"
+                                    ? et.chipActiveBg
                                     : colors.primarySoft
                                   : "transparent",
                             }}
@@ -356,7 +358,7 @@ function EventsCustomDatesSheetImpl({
                                 fontFamily: ListifyFonts.medium,
                                 fontSize: 16,
                                 color: selected
-                                  ? "#000000"
+                                  ? (isDark ? "#000000" : colors.background)
                                   : isPast
                                     ? mutedDay
                                     : colors.textPrimary,
@@ -392,11 +394,11 @@ function EventsCustomDatesSheetImpl({
                 height: 52,
                 borderRadius: 999,
                 borderWidth: 1.5,
-                borderColor: isDark ? "rgba(255,255,255,0.55)" : colors.borderStrong,
+                borderColor: et.emptyButtonBorder,
                 alignItems: "center",
                 justifyContent: "center",
                 opacity: pressed ? 0.8 : 1,
-                backgroundColor: isDark ? "#000" : colors.surface,
+                backgroundColor: et.chipBg,
               })}
             >
               <Text
@@ -422,9 +424,9 @@ function EventsCustomDatesSheetImpl({
                 flexDirection: "row",
                 gap: 4,
                 backgroundColor: rangeStart
-                  ? "#FFFFFF"
+                  ? (isDark ? "#FFFFFF" : colors.textPrimary)
                   : isDark
-                    ? "rgba(255,255,255,0.25)"
+                    ? et.chipActiveBg
                     : colors.surfaceMuted,
                 opacity: pressed ? 0.85 : 1,
               })}
@@ -433,7 +435,9 @@ function EventsCustomDatesSheetImpl({
                 style={{
                   fontFamily: ListifyFonts.bold,
                   fontSize: 17,
-                  color: rangeStart ? "#000000" : colors.textTertiary,
+                  color: rangeStart
+                    ? (isDark ? "#000000" : colors.background)
+                    : colors.textTertiary,
                 }}
               >
                 Apply
@@ -441,7 +445,11 @@ function EventsCustomDatesSheetImpl({
               <MaterialIcons
                 name="chevron-right"
                 size={22}
-                color={rangeStart ? "#000000" : colors.textTertiary}
+                color={
+                  rangeStart
+                    ? (isDark ? "#000000" : colors.background)
+                    : colors.textTertiary
+                }
               />
             </Pressable>
           </View>

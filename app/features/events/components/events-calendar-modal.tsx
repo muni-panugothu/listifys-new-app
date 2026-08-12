@@ -4,6 +4,7 @@ import { Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ListifyFonts } from "@/constants/typography";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 import {
   buildCalendarGrid,
   buildWeekStrip,
@@ -31,6 +32,8 @@ export function EventsCalendarModal({
   onSelectDate,
 }: EventsCalendarModalProps) {
   const insets = useSafeAreaInsets();
+  const et = useEventsTheme();
+  const { colors } = et;
   const [viewMode, setViewMode] = useState<CalendarViewMode>("month");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(selectedDate));
 
@@ -56,12 +59,12 @@ export function EventsCalendarModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable
-        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
+        style={{ flex: 1, backgroundColor: colors.scrim }}
         onPress={onClose}
       />
       <View
         style={{
-          backgroundColor: "#FFFFFF",
+          backgroundColor: et.surface,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
           paddingHorizontal: 20,
@@ -75,7 +78,14 @@ export function EventsCalendarModal({
         }}
       >
         <View style={{ alignItems: "center", marginBottom: 16 }}>
-          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: "#D1D5DB" }} />
+          <View
+            style={{
+              width: 40,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: et.divider,
+            }}
+          />
         </View>
 
         <View style={{ flexDirection: "row", marginBottom: 16, gap: 8 }}>
@@ -89,7 +99,7 @@ export function EventsCalendarModal({
                   flex: 1,
                   paddingVertical: 8,
                   borderRadius: 8,
-                  backgroundColor: active ? "rgba(39,187,151,0.12)" : "#F3F4F6",
+                  backgroundColor: active ? colors.primarySoft : et.surfaceSecondary,
                   alignItems: "center",
                 }}
               >
@@ -97,7 +107,7 @@ export function EventsCalendarModal({
                   style={{
                     fontFamily: ListifyFonts.semiBold,
                     fontSize: 13,
-                    color: active ? "#27BB97" : "#6C7A74",
+                    color: active ? colors.primary : et.textSecondary,
                     textTransform: "capitalize",
                   }}
                 >
@@ -119,20 +129,35 @@ export function EventsCalendarModal({
               }}
             >
               <Pressable onPress={() => navigateMonth(-1)} hitSlop={12} style={{ padding: 4 }}>
-                <MaterialIcons name="chevron-left" size={28} color="#161D1A" />
+                <MaterialIcons name="chevron-left" size={28} color={et.icon} />
               </Pressable>
-              <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 18, color: "#161D1A" }}>
-                {calendarMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+              <Text
+                style={{
+                  fontFamily: ListifyFonts.bold,
+                  fontSize: 18,
+                  color: et.textPrimary,
+                }}
+              >
+                {calendarMonth.toLocaleDateString("en-US", {
+                  month: "long",
+                  year: "numeric",
+                })}
               </Text>
               <Pressable onPress={() => navigateMonth(1)} hitSlop={12} style={{ padding: 4 }}>
-                <MaterialIcons name="chevron-right" size={28} color="#161D1A" />
+                <MaterialIcons name="chevron-right" size={28} color={et.icon} />
               </Pressable>
             </View>
 
             <View style={{ flexDirection: "row", marginBottom: 8 }}>
               {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
                 <View key={i} style={{ flex: 1, alignItems: "center" }}>
-                  <Text style={{ fontFamily: ListifyFonts.medium, fontSize: 12, color: "#6C7A74" }}>
+                  <Text
+                    style={{
+                      fontFamily: ListifyFonts.medium,
+                      fontSize: 12,
+                      color: et.textSecondary,
+                    }}
+                  >
                     {d}
                   </Text>
                 </View>
@@ -164,9 +189,9 @@ export function EventsCalendarModal({
                           minHeight: 40,
                           borderRadius: 18,
                           backgroundColor: isPicked
-                            ? "#27BB97"
+                            ? colors.primary
                             : isToday
-                              ? "rgba(39,187,151,0.12)"
+                              ? colors.primarySoft
                               : "transparent",
                           alignItems: "center",
                           justifyContent: "center",
@@ -177,7 +202,11 @@ export function EventsCalendarModal({
                           style={{
                             fontFamily: ListifyFonts.medium,
                             fontSize: 14,
-                            color: isPicked ? "#FFFFFF" : isToday ? "#27BB97" : "#161D1A",
+                            color: isPicked
+                              ? colors.textOnPrimary
+                              : isToday
+                                ? colors.primary
+                                : et.textPrimary,
                           }}
                         >
                           {day.getDate()}
@@ -188,7 +217,9 @@ export function EventsCalendarModal({
                               width: 5,
                               height: 5,
                               borderRadius: 3,
-                              backgroundColor: isPicked ? "#FFFFFF" : "#27BB97",
+                              backgroundColor: isPicked
+                                ? colors.textOnPrimary
+                                : colors.primary,
                               marginTop: 2,
                             }}
                           />
@@ -206,12 +237,15 @@ export function EventsCalendarModal({
               style={{
                 fontFamily: ListifyFonts.bold,
                 fontSize: 16,
-                color: "#161D1A",
+                color: et.textPrimary,
                 marginBottom: 12,
                 textAlign: "center",
               }}
             >
-              {selectedDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+              {selectedDate.toLocaleDateString("en-US", {
+                month: "long",
+                year: "numeric",
+              })}
             </Text>
             <View style={{ flexDirection: "row", gap: 6, marginBottom: 8 }}>
               {weekStrip.map((day) => {
@@ -228,16 +262,19 @@ export function EventsCalendarModal({
                       alignItems: "center",
                       paddingVertical: 10,
                       borderRadius: 12,
-                      backgroundColor: isPicked ? "#27BB97" : "#F9FAFB",
+                      backgroundColor: isPicked ? colors.primary : et.chipBg,
                       borderWidth: 1,
-                      borderColor: isToday && !isPicked ? "#27BB97" : "#E5E7EB",
+                      borderColor:
+                        isToday && !isPicked ? colors.primary : et.chipBorder,
                     }}
                   >
                     <Text
                       style={{
                         fontFamily: ListifyFonts.medium,
                         fontSize: 10,
-                        color: isPicked ? "rgba(255,255,255,0.85)" : "#6C7A74",
+                        color: isPicked
+                          ? "rgba(255,255,255,0.85)"
+                          : et.textSecondary,
                       }}
                     >
                       {formatStripMonth(day)}
@@ -246,7 +283,7 @@ export function EventsCalendarModal({
                       style={{
                         fontFamily: ListifyFonts.bold,
                         fontSize: 18,
-                        color: isPicked ? "#FFFFFF" : "#161D1A",
+                        color: isPicked ? colors.textOnPrimary : et.textPrimary,
                       }}
                     >
                       {formatStripDay(day)}
@@ -256,7 +293,7 @@ export function EventsCalendarModal({
                         style={{
                           fontFamily: ListifyFonts.medium,
                           fontSize: 9,
-                          color: isPicked ? "#FFFFFF" : "#27BB97",
+                          color: isPicked ? colors.textOnPrimary : colors.primary,
                           marginTop: 2,
                         }}
                       >
@@ -276,11 +313,17 @@ export function EventsCalendarModal({
             marginTop: 16,
             paddingVertical: 12,
             borderRadius: 10,
-            backgroundColor: "rgba(39,187,151,0.1)",
+            backgroundColor: colors.primarySoft,
             alignItems: "center",
           }}
         >
-          <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 14, color: "#27BB97" }}>
+          <Text
+            style={{
+              fontFamily: ListifyFonts.semiBold,
+              fontSize: 14,
+              color: colors.primary,
+            }}
+          >
             Jump to Today
           </Text>
         </Pressable>

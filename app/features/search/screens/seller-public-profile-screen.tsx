@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ListingItemsGridCard } from "@/components/listing-items-grid-card";
+import { OnlinePresenceDot } from "@/components/online-presence-dot";
 import { ProfileHeaderArt } from "@/components/profile-header-art";
 import { ListifyFonts } from "@/constants/typography";
 import {
@@ -23,6 +24,7 @@ import {
 } from "@/features/auth/services/auth-api";
 import { SellerReviewModal } from "@/components/seller-review-modal";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useOnlinePresence } from "@/hooks/use-online-presence";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { Image } from "@/lib/nativewind-interop";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -260,6 +262,8 @@ export function SellerPublicProfileScreen() {
 
   const sellerId = params.sellerId ?? params.userId ?? "";
   const paramSellerName = params.sellerName?.trim() ?? "";
+  const { isUserOnline } = useOnlinePresence();
+  const sellerIsOnline = isUserOnline(sellerId);
   const [seller, setSeller] = useState<SellerProfile | null>(null);
   const [listings, setListings] = useState<SellerListing[]>([]);
   const [reviews, setReviews] = useState<SellerReview[]>([]);
@@ -537,29 +541,37 @@ export function SellerPublicProfileScreen() {
                 className="self-start"
                 style={{ marginTop: -AVATAR_OVERLAP, marginBottom: 12 }}
               >
-                <View
-                  className="overflow-hidden rounded-full border-[4px] border-white bg-white"
-                  style={{
-                    width: AVATAR_SIZE,
-                    height: AVATAR_SIZE,
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.14,
-                    shadowRadius: 10,
-                    elevation: 8,
-                  }}
-                >
-                  {avatarUri ? (
-                    <Image
-                      source={avatarUri}
-                      contentFit="cover"
-                      className="h-full w-full"
-                    />
-                  ) : (
-                    <View className="h-full w-full items-center justify-center bg-[#E5E7EB]">
-                      <MaterialIcons name="person" size={48} color="#9CA3AF" />
-                    </View>
-                  )}
+                <View className="relative">
+                  <View
+                    className="overflow-hidden rounded-full border-[4px] border-white bg-white"
+                    style={{
+                      width: AVATAR_SIZE,
+                      height: AVATAR_SIZE,
+                      shadowColor: "#000",
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.14,
+                      shadowRadius: 10,
+                      elevation: 8,
+                    }}
+                  >
+                    {avatarUri ? (
+                      <Image
+                        source={avatarUri}
+                        contentFit="cover"
+                        className="h-full w-full"
+                      />
+                    ) : (
+                      <View className="h-full w-full items-center justify-center bg-[#E5E7EB]">
+                        <MaterialIcons name="person" size={48} color="#9CA3AF" />
+                      </View>
+                    )}
+                  </View>
+                  <OnlinePresenceDot
+                    visible={sellerIsOnline}
+                    size={16}
+                    borderColor="#FFFFFF"
+                    borderWidth={3}
+                  />
                 </View>
               </View>
 

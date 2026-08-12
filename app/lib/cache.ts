@@ -204,6 +204,8 @@ export const cacheKeys = {
   threadMessages: (threadId: string) => `messages:${threadId}`,
   eventsCalendar: (queryKey: string) => `events:calendar:${queryKey}`,
   eventsUpcoming: (queryKey: string) => `events:upcoming:${queryKey}`,
+  eventsSimilar: (eventId: string, queryKey: string) =>
+    `events:similar:${eventId}:${queryKey}`,
 };
 
 // ── Cross-screen seed bridge ──────────────────────────────────────────────────
@@ -214,7 +216,7 @@ export const cacheKeys = {
 // We accept a structurally-typed listing (must have `_id`) to avoid circular
 // imports with the listing-api types.
 
-export function seedListingDetail<L extends { _id: string }>(
+export function seedListingDetail<L extends { _id: string; phone?: string | null }>(
   categorySlug: string,
   id: string,
   listing: L,
@@ -223,7 +225,9 @@ export function seedListingDetail<L extends { _id: string }>(
   const key = cacheKeys.listingDetail(categorySlug, id);
   const existing = getCachedStale<{ listing?: L }>(key);
   if (existing && !existing.isStale) return;
-  setCache(key, { success: true, listing }, ttlMs);
+  // Home feed seeds omit phone — treat as stale immediately so detail revalidates.
+  const effectiveTtl = listing.phone ? ttlMs : 1;
+  setCache(key, { success: true, listing }, effectiveTtl);
 }
 
 export function seedListingsBatch<L extends { _id: string }>(

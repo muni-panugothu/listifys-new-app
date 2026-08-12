@@ -22,10 +22,12 @@ import {
   getFollowList,
   toggleFollowUser,
 } from "@/features/auth/services/auth-api";
+import { ListifyFonts } from "@/constants/typography";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { Image } from "@/lib/nativewind-interop";
 import { showErrorToast } from "@/lib/toast";
-import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useFloatingNavPress } from "@/hooks/use-floating-nav-press";
+import { useTheme } from "@/providers/theme-provider";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchProfile, invalidateSession } from "@/store/slices/auth-slice";
 import { FloatingBottomNav } from "@/components/floating-bottom-nav";
@@ -62,13 +64,16 @@ export function FollowersFollowingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string | string[] }>();
   const insets = useSafeAreaInsets();
+  const { colors, resolvedMode } = useTheme();
   const topBarHeight = useMemo(() => insets.top + 64, [insets.top]);
   const bottomNavPadding = Math.max(insets.bottom, 8);
   const dispatch = useAppDispatch();
   const currentUser = useAppSelector((s) => s.auth.user);
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const network = useAppSelector((s) => s.network);
-  const isOffline = !network.isConnected || network.isInternetReachable === false;
+  const isOffline =
+    !network.isConnected ||
+    (network.actualInternetReachable === false && network.backendReachable === false);
   const pagerRef = useRef<ScrollView>(null);
   const [activeTab, setActiveTab] = useState<FollowTab>(getTabParam(params.tab));
   const [searchQuery, setSearchQuery] = useState("");
@@ -162,7 +167,7 @@ export function FollowersFollowingScreen() {
   const visibleFollowers = useMemo(() => filterUsers(followers), [filterUsers, followers]);
   const visibleFollowing = useMemo(() => filterUsers(followingUsers), [filterUsers, followingUsers]);
 
-  const handleBottomTabPress = useTabNavigation();
+  const handleBottomTabPress = useFloatingNavPress();
 
   const openTab = (tab: FollowTab) => {
     setActiveTab(tab);
@@ -236,20 +241,37 @@ export function FollowersFollowingScreen() {
     if (isLoading) {
       return (
         <View className="items-center py-16">
-          <ActivityIndicator size="large" color="#27BB97" />
-          <Text className="mt-3 text-[14px] text-slate-500">Loading...</Text>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text
+            className="mt-3 text-[14px]"
+            style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
+          >
+            Loading...
+          </Text>
         </View>
       );
     }
 
     if (users.length === 0) {
       return (
-        <View className="items-center rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-10">
-          <MaterialIcons name="group-off" size={30} color="#94A3B8" />
-          <Text className="mt-3 text-[16px] font-semibold text-[#161D1A]">
+        <View
+          className="items-center rounded-2xl border border-dashed px-6 py-10"
+          style={{
+            borderColor: colors.borderStrong,
+            backgroundColor: colors.surface,
+          }}
+        >
+          <MaterialIcons name="group-off" size={30} color={colors.iconMuted} />
+          <Text
+            className="mt-3 text-[16px]"
+            style={{ fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
+          >
             {tab === "followers" ? "No followers yet" : "Not following anyone yet"}
           </Text>
-          <Text className="mt-1 text-center text-[13px] leading-5 text-slate-500">
+          <Text
+            className="mt-1 text-center text-[13px] leading-5"
+            style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
+          >
             {searchQuery.trim()
               ? "Try a different name search."
               : tab === "followers"
@@ -273,25 +295,42 @@ export function FollowersFollowingScreen() {
       return (
         <View
           key={user.id}
-          className="flex-row items-center justify-between rounded-xl border border-transparent px-3 py-3"
-          style={{ backgroundColor: "transparent" }}
+          className="flex-row items-center justify-between rounded-xl px-3 py-3"
+          style={{ backgroundColor: colors.surface }}
         >
           <Pressable
             onPress={() => router.push({ pathname: "/seller-public-profile", params: { userId: user.id } })}
             className="flex-1 flex-row items-center gap-3"
             style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
           >
-            <View className="h-12 w-12 overflow-hidden rounded-full border border-slate-100 bg-slate-200">
+            <View
+              className="h-12 w-12 overflow-hidden rounded-full"
+              style={{
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surfaceMuted,
+              }}
+            >
               <Image source={user.profileImageUrl || defaultAvatar} contentFit="cover" className="h-full w-full" />
             </View>
             <View>
               <View className="flex-row items-center gap-1">
-                <Text className="text-[18px] font-semibold text-[#161D1A]">{user.name}</Text>
+                <Text
+                  className="text-[18px]"
+                  style={{ fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
+                >
+                  {user.name}
+                </Text>
                 {user.provider === "google" ? (
-                  <MaterialIcons name="verified" size={18} color="#27BB97" />
+                  <MaterialIcons name="verified" size={18} color={colors.primary} />
                 ) : null}
               </View>
-              <Text className="text-[12px] font-medium text-slate-500">{formatFollowMeta(user)}</Text>
+              <Text
+                className="text-[12px]"
+                style={{ fontFamily: ListifyFonts.medium, color: colors.textSecondary }}
+              >
+                {formatFollowMeta(user)}
+              </Text>
             </View>
           </Pressable>
 
@@ -300,16 +339,25 @@ export function FollowersFollowingScreen() {
             disabled={isPending}
             className="min-w-[96px] items-center justify-center rounded-full px-5 py-2"
             style={({ pressed }) => ({
-              backgroundColor: isFollowing ? "#FFFFFF" : "#27BB97",
+              backgroundColor: isFollowing ? colors.surface : colors.primary,
               borderWidth: isFollowing ? 1 : 0,
-              borderColor: isFollowing ? "#E2E8F0" : "transparent",
+              borderColor: isFollowing ? colors.borderStrong : "transparent",
               opacity: pressed || isPending ? 0.75 : 1,
             })}
           >
             {isPending ? (
-              <ActivityIndicator size="small" color={isFollowing ? "#475569" : "#FFFFFF"} />
+              <ActivityIndicator
+                size="small"
+                color={isFollowing ? colors.textSecondary : colors.textOnPrimary}
+              />
             ) : (
-              <Text className="text-[12px] font-semibold" style={{ color: isFollowing ? "#475569" : "#FFFFFF" }}>
+              <Text
+                className="text-[12px]"
+                style={{
+                  fontFamily: ListifyFonts.semiBold,
+                  color: isFollowing ? colors.textSecondary : colors.textOnPrimary,
+                }}
+              >
                 {buttonLabel}
               </Text>
             )}
@@ -320,31 +368,43 @@ export function FollowersFollowingScreen() {
   };
 
   return (
-    <View className="flex-1 bg-[#F6F7F8]">
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       <View
-        className="absolute inset-x-0 top-0 z-50 flex-row items-center justify-between border-b border-slate-100 bg-white/90 px-4"
+        className="absolute inset-x-0 top-0 z-50 flex-row items-center justify-between px-4"
         style={{
           paddingTop: insets.top,
           height: topBarHeight,
+          backgroundColor: colors.surface,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.05,
+          shadowOpacity: resolvedMode === "dark" ? 0.25 : 0.05,
           shadowRadius: 2,
           elevation: 2,
         }}
       >
         <View className="flex-row items-center gap-4">
           <Pressable onPress={handleBack} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-            <MaterialIcons name="arrow-back" size={24} color="#161D1A" />
+            <MaterialIcons name="arrow-back" size={24} color={colors.icon} />
           </Pressable>
-          <Text className="text-[20px] font-semibold tracking-tight text-[#161D1A]">
+          <Text
+            className="text-[20px] tracking-tight"
+            style={{ fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
+          >
             {currentUser?.name || "Followers"}
           </Text>
         </View>
       </View>
 
       <View className="flex-1" style={{ paddingTop: topBarHeight, paddingBottom: 84 + bottomNavPadding }}>
-        <View className="border-b border-slate-100 bg-white">
+        <View
+          style={{
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+            backgroundColor: colors.surface,
+          }}
+        >
           <View className="flex-row">
             {[
               { key: "followers" as const, count: String(followersCount), label: "Followers" },
@@ -356,12 +416,24 @@ export function FollowersFollowingScreen() {
                   key={tab.key}
                   onPress={() => openTab(tab.key)}
                   className="flex-1 items-center border-b-2 py-4"
-                  style={{ borderBottomColor: isActive ? "#27BB97" : "transparent" }}
+                  style={{ borderBottomColor: isActive ? colors.primary : "transparent" }}
                 >
-                  <Text className="text-[18px] font-semibold" style={{ color: isActive ? "#27BB97" : "#161D1A" }}>
+                  <Text
+                    className="text-[18px]"
+                    style={{
+                      fontFamily: ListifyFonts.semiBold,
+                      color: isActive ? colors.primary : colors.textPrimary,
+                    }}
+                  >
                     {tab.count}
                   </Text>
-                  <Text className="text-[11px] font-medium uppercase tracking-wider" style={{ color: isActive ? "#27BB97" : "#64748B" }}>
+                  <Text
+                    className="text-[11px] uppercase tracking-wider"
+                    style={{
+                      fontFamily: ListifyFonts.medium,
+                      color: isActive ? colors.primary : colors.textSecondary,
+                    }}
+                  >
                     {tab.label}
                   </Text>
                 </Pressable>
@@ -371,15 +443,22 @@ export function FollowersFollowingScreen() {
         </View>
 
         <View className="px-4 py-4">
-          <View className="h-12 flex-row items-center rounded-xl bg-[#F3F4F6] px-4">
-            <MaterialIcons name="search" size={20} color="#94A3B8" />
+          <View
+            className="h-12 flex-row items-center rounded-xl px-4"
+            style={{ backgroundColor: colors.surfaceMuted }}
+          >
+            <MaterialIcons name="search" size={20} color={colors.iconMuted} />
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder={activeTab === "followers" ? "Search followers..." : "Search following..."}
-              placeholderTextColor="#94A3B8"
-              className="ml-3 flex-1 text-[14px] text-[#161D1A]"
-              style={{ paddingVertical: 0 }}
+              placeholderTextColor={colors.inputPlaceholder}
+              className="ml-3 flex-1 text-[14px]"
+              style={{
+                paddingVertical: 0,
+                fontFamily: ListifyFonts.regular,
+                color: colors.textPrimary,
+              }}
             />
           </View>
         </View>
@@ -408,8 +487,8 @@ export function FollowersFollowingScreen() {
                   <RefreshControl
                     refreshing={refreshing}
                     onRefresh={onRefresh}
-                    colors={["#27BB97"]}
-                    tintColor="#27BB97"
+                    colors={[colors.primary]}
+                    tintColor={colors.primary}
                   />
                 }
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16, gap: 8 }}

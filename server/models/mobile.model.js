@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const s3Service = require("../services/s3.service.js");
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require("../utils/slugify");
 
 const mobileSchema = new mongoose.Schema(
@@ -155,6 +156,7 @@ mobileSchema.index({ savedBy: 1 });
 mobileSchema.index({ title: "text", description: "text", brand: "text", model: "text" });
 mobileSchema.index({ coordinates: "2dsphere" });
 
+attachListingVideosField(mobileSchema);
 attachSlugPlugin(mobileSchema);
 
 module.exports = mongoose.model("Mobile", mobileSchema);

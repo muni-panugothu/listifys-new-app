@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PortfolioGalleryModal } from "@/components/portfolio-gallery-modal";
+import { ListingSellerContactCard } from "@/components/listing-seller-contact-card";
 import { ProfileAvatarImage } from "@/components/profile-avatar-image";
 import { ServiceReviewModal } from "@/components/service-review-modal";
 import { ListifyColors } from "@/constants/listify-theme";
@@ -25,6 +26,12 @@ import { useSwrListing } from "@/lib/use-swr-listing";
 import { formatPrice } from "@/lib/currency";
 import { formatServiceExperienceLabel } from "@/lib/format-service-experience";
 import { buildListingChatHref } from "@/lib/listing-chat";
+import {
+  getListingContactSectionTitle,
+  getListingModelForCategory,
+  openListingPhoneDialer,
+  resolveListingContactPhone,
+} from "@/lib/listing-contact-phone";
 import { getListingSellerId, isOwnListing } from "@/lib/is-own-listing";
 import { Image } from "@/lib/nativewind-interop";
 import { showErrorToast } from "@/lib/toast";
@@ -356,6 +363,28 @@ export function ServiceDetailScreen() {
     );
   }, [basePrice, currency, listing, professionalBadge, professionalName, router, sellerId, user]);
 
+  const sellerContact = useMemo(
+    () => (listing ? resolveListingContactPhone(listing) : null),
+    [listing],
+  );
+
+  const handleCallProvider = useCallback(async () => {
+    if (!listing || !sellerContact) {
+      showErrorToast("No Number", "Provider has not provided a contact number.");
+      return;
+    }
+    if (!sellerId) {
+      showErrorToast("Unavailable", "Provider information is missing for this listing.");
+      return;
+    }
+    await openListingPhoneDialer({
+      contact: sellerContact,
+      listingId: listing._id,
+      sellerId,
+      listingModel: getListingModelForCategory("services"),
+    });
+  }, [listing, sellerContact, sellerId]);
+
   const portfolioItems: PortfolioItem[] = listingImages.length
     ? buildPortfolioItems(listingImages)
     : staticPortfolioItems;
@@ -550,6 +579,26 @@ export function ServiceDetailScreen() {
             {aboutText}
           </Text>
         </View>
+
+        {listing ? (
+          <View className="px-4">
+            <ListingSellerContactCard
+              title={getListingContactSectionTitle("services")}
+              name={professionalName}
+              subtitle={professionalBadge}
+              avatarUser={
+                typeof (listing as { userId?: unknown }).userId === "object"
+                  ? ((listing as { userId?: Record<string, unknown> }).userId ?? null)
+                  : null
+              }
+              avatarUri={profileImage}
+              isVerified
+              contactPhone={sellerContact}
+              onMessagePress={handleMessageSeller}
+              onCallPress={() => void handleCallProvider()}
+            />
+          </View>
+        ) : null}
 
         <View className="mt-6 px-4">
           <Text className="mb-2 text-[20px] font-semibold text-[#161D1A]">

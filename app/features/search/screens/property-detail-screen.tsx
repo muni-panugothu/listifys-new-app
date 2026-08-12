@@ -7,7 +7,6 @@ import {
   Animated,
   Dimensions,
   Keyboard,
-  Linking,
   Modal,
   Pressable,
   RefreshControl,
@@ -20,7 +19,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AUTH_API_BASE_URL, getAuthErrorMessage } from "@/features/auth/services/auth-api";
+import { fetchSellerReviews, getAuthErrorMessage } from "@/features/auth/services/auth-api";
 import { buildListingChatHref, sendListingOffer } from "@/lib/listing-chat";
 import { AuthGateBottomSheet } from "@/features/auth/components/auth-gate-bottom-sheet";
 import {
@@ -43,18 +42,73 @@ import {
 import type { CategorySlug } from "@/constants/categories";
 import { formatPrice, getCurrencySymbol } from "@/lib/currency";
 import { getListingSellerId, isOwnListing } from "@/lib/is-own-listing";
+import {
+  openListingPhoneDialer,
+  resolveListingContactPhone,
+} from "@/lib/listing-contact-phone";
 import { showErrorToast } from "@/lib/toast";
+import { ProfileAvatarImage } from "@/components/profile-avatar-image";
+import { useTheme } from "@/providers/theme-provider";
+
+type SellerPopulated = {
+  name?: string;
+  username?: string;
+  profileImage?: string;
+  profileImageUrl?: string;
+  googleProfileImage?: string;
+  avatar?: string;
+  joinedDate?: string;
+  createdAt?: string;
+  location?: string;
+  isVerified?: boolean;
+};
+
+function SellerStars({ rating }: { rating: number }) {
+  const full = Math.floor(rating);
+  const half = rating - full >= 0.5;
+
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 1 }}>
+      {Array.from({ length: 5 }).map((_, i) => {
+        const name =
+          i < full ? "star" : i === full && half ? "star-half" : "star-border";
+        return <MaterialIcons key={i} name={name} size={14} color="#F59E0B" />;
+      })}
+      <Text
+        style={{
+          marginLeft: 4,
+          fontFamily: ListifyFonts.medium,
+          fontSize: 12,
+          color: "#6B7280",
+        }}
+      >
+        {rating.toFixed(1)}
+      </Text>
+    </View>
+  );
+}
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const HERO_HEIGHT = Math.round(SCREEN_WIDTH * 0.78);
-const THUMB = 52;
-const THUMB_GAP = 8;
-const BRAND = "#27BB97";
-const MUTED = "#808080";
+const HERO_HEIGHT = Math.round(SCREEN_WIDTH * 0.68);
+const GALLERY_SIDE = 20;
+const GALLERY_INNER_PAD = 10;
+const GALLERY_GAP = 8;
+const GALLERY_SLOTS = 5;
+const THUMB_SIZE = Math.floor(
+  (SCREEN_WIDTH -
+    GALLERY_SIDE * 2 -
+    GALLERY_INNER_PAD * 2 -
+    GALLERY_GAP * (GALLERY_SLOTS - 1)) /
+    GALLERY_SLOTS,
+);
+const THUMB_OVERLAP = Math.round(THUMB_SIZE / 2) + 6;
+const DESCRIPTION_FALLBACK =
+  "Experience refined living in this thoughtfully designed property. Spacious interiors, modern finishes, and a prime location come together to create a comfortable home you'll love returning to every day.";
 
 export function PropertyDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
   const params = useLocalSearchParams<{ id?: string; category?: string }>();
   const user = useAppSelector((s) => s.auth.user);
   const userCoords = useAppSelector(selectLocationCoords);
@@ -70,17 +124,12 @@ export function PropertyDetailScreen() {
     isLoading: swrLoading,
     refresh: refreshListing,
   } = useSwrListing(categorySlug, listingId);
-  const [listing, setListing] = useState<ListingItem | null>(swrListing ?? null);
+  const listing = swrListing ?? null;
   const loading = !listing && swrLoading;
   const [isSaved, setIsSaved] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [sellerRating, setSellerRating] = useState(0);
   const heroScrollRef = useRef<ScrollView>(null);
-
-  useEffect(() => {
-    if (swrListing && swrListing !== listing) {
-      setListing(swrListing);
-    }
-  }, [swrListing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!listing) return;
@@ -89,6 +138,20 @@ export function PropertyDetailScreen() {
       setIsSaved(true);
     }
   }, [listing, locationLabel, isoCountryCode, user?.id]);
+
+  useEffect(() => {
+    if (!listing) return;
+    const sid = getListingSellerId(listing);
+    if (!sid) return;
+
+    fetchSellerReviews(sid)
+      .then((res) => {
+        setSellerRating(res.averageRating ?? 0);
+      })
+      .catch(() => {
+        setSellerRating(0);
+      });
+  }, [listing?._id]);
 
   const loadListing = useCallback(async () => {
     if (!listingId) return;
@@ -131,18 +194,34 @@ export function PropertyDetailScreen() {
   const bedrooms = listing?.bedrooms ?? 0;
   const bathrooms = listing?.bathrooms ?? 0;
   const squareFeet = (listing as any)?.squareFeet ?? 0;
-  const features: string[] = (listing as any)?.features ?? [];
 
-  const sellerName = listing?.seller?.name ?? listing?.sellerName ?? "Seller";
-  const sellerProfileImage = listing?.seller?.profileImage
-    ? listing.seller.profileImage.startsWith("http")
-      ? listing.seller.profileImage
-      : `${AUTH_API_BASE_URL}${listing.seller.profileImage}`
+  const sellerPopulated = listing?.seller as SellerPopulated | undefined;
+  const sellerName =
+    sellerPopulated?.name ??
+    (typeof listing?.userId === "object"
+      ? (listing.userId as SellerPopulated).name
+      : undefined) ??
+    listing?.sellerName ??
+    "Seller";
+  const sellerProfileUser: SellerPopulated | null = listing
+    ? typeof listing.userId === "object" && listing.userId
+      ? (listing.userId as SellerPopulated)
+      : sellerPopulated ?? { name: sellerName }
     : null;
-  const sellerJoined = listing?.seller?.createdAt
-    ? `Member since ${new Date(listing.seller.createdAt).getFullYear()}`
-    : "";
+  const isSellerVerified = Boolean(sellerPopulated?.isVerified);
   const sellerId = listing ? getListingSellerId(listing) : null;
+
+  const openSellerProfile = useCallback(() => {
+    if (!sellerId) return;
+    router.push({
+      pathname: "/seller-public-profile",
+      params: {
+        sellerId,
+        sellerName,
+        sellerRating: String(sellerRating),
+      },
+    } as Href);
+  }, [router, sellerId, sellerName, sellerRating]);
 
   const footerBottomPadding = Math.max(insets.bottom, 10);
   const isOwn = isOwnListing(listing, user?.id);
@@ -272,19 +351,42 @@ export function PropertyDetailScreen() {
 
   if (!listing && swrLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-white">
-        <ActivityIndicator color={BRAND} size="large" />
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: colors.background,
+        }}
+      >
+        <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
   }
 
   if (!listing) {
     return (
-      <View className="flex-1 items-center justify-center bg-white">
-        <MaterialIcons name="error-outline" size={48} color="#CBD5E1" />
-        <Text className="mt-2 text-[14px] text-[#808080]">Property not found</Text>
-        <Pressable onPress={() => router.back()} className="mt-4">
-          <Text style={{ fontFamily: ListifyFonts.semiBold, color: BRAND }}>Go Back</Text>
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: colors.background,
+        }}
+      >
+        <MaterialIcons name="error-outline" size={48} color={colors.iconMuted} />
+        <Text
+          style={{
+            marginTop: 8,
+            fontSize: 14,
+            fontFamily: ListifyFonts.regular,
+            color: colors.textSecondary,
+          }}
+        >
+          Property not found
+        </Text>
+        <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
+          <Text style={{ fontFamily: ListifyFonts.semiBold, color: colors.primary }}>Go Back</Text>
         </Pressable>
       </View>
     );
@@ -297,15 +399,43 @@ export function PropertyDetailScreen() {
     (listing.subcategory ?? "").toLowerCase().includes("paying guest");
   const locationText = listing.location?.trim() || "Location not set";
   const hasGallery = images.length > 0;
-  const showThumbStrip = images.length > 1;
-  // Up to 5 thumb slots; last slot becomes "N+" when there are more than 5 images.
-  const thumbSlots = images.slice(0, Math.min(5, images.length));
-  const overflowCount = images.length > 5 ? images.length - 4 : 0;
+  const showThumbStrip = hasGallery;
+  const galleryThumbs = (() => {
+    if (!images.length) return [];
+    if (images.length <= GALLERY_SLOTS) {
+      return images.map((uri, index) => ({ uri, index, overflowLabel: null as string | null }));
+    }
+    const remaining = images.length - 4;
+    const overflowLabel = remaining >= 10 ? "10+" : `${remaining}+`;
+    return [
+      ...images.slice(0, 4).map((uri, index) => ({ uri, index, overflowLabel: null as string | null })),
+      { uri: images[4], index: 4, overflowLabel },
+    ];
+  })();
+  const descriptionBody = description.trim() || DESCRIPTION_FALLBACK;
   const descPreview =
-    description.length > 140 && !descExpanded
-      ? `${description.slice(0, 140).trim()}… `
-      : description;
-  const sellerPhone = listing.phone?.trim() || "";
+    descriptionBody.length > 180 && !descExpanded
+      ? `${descriptionBody.slice(0, 180).trim()}… `
+      : descriptionBody;
+  const showReadMore = descriptionBody.length > 180;
+  const brokerContact = resolveListingContactPhone(listing);
+
+  const handleCallBroker = async () => {
+    if (!brokerContact) {
+      showErrorToast("No Number", "Broker has not provided a contact number.");
+      return;
+    }
+    if (!sellerId) {
+      showErrorToast("Unavailable", "Seller information is missing for this listing.");
+      return;
+    }
+    await openListingPhoneDialer({
+      contact: brokerContact,
+      listingId: listing._id,
+      sellerId,
+      listingModel: "Property",
+    });
+  };
 
   const scrollHeroTo = (index: number) => {
     const safe = Math.max(0, Math.min(index, images.length - 1));
@@ -314,33 +444,43 @@ export function PropertyDetailScreen() {
   };
 
   const circleBtn = {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: isDark ? "rgba(30,35,42,0.88)" : "rgba(255,255,255,0.94)",
     alignItems: "center" as const,
     justifyContent: "center" as const,
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.06)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: isDark ? 0.35 : 0.12,
+    shadowRadius: 6,
+    elevation: 4,
   };
 
+  const brokerActionBtn = {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  };
+
+  const cardSurface = isDark ? colors.surfaceElevated : colors.card;
+  const specsSurface = isDark ? colors.surfaceElevated : colors.surface;
+
   return (
-    <View className="flex-1 bg-white">
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
-        removeClippedSubviews
+        removeClippedSubviews={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[BRAND]}
-            tintColor={BRAND}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
         contentContainerStyle={{
@@ -348,14 +488,20 @@ export function PropertyDetailScreen() {
         }}
       >
         {/* Hero + floating thumbnail strip (matches reference) */}
-        <View style={{ marginBottom: showThumbStrip ? THUMB / 2 + 12 : 0 }}>
+        <View
+          style={{
+            marginBottom: showThumbStrip ? THUMB_OVERLAP : 0,
+            overflow: "visible",
+            zIndex: 2,
+          }}
+        >
           <View
             style={{
               height: HERO_HEIGHT,
               width: SCREEN_WIDTH,
-              backgroundColor: "#E5E7EB",
-              borderBottomLeftRadius: 28,
-              borderBottomRightRadius: 28,
+              backgroundColor: colors.surfaceMuted,
+              borderBottomLeftRadius: 24,
+              borderBottomRightRadius: 24,
               overflow: "hidden",
             }}
           >
@@ -383,7 +529,7 @@ export function PropertyDetailScreen() {
               </ScrollView>
             ) : (
               <View className="h-full w-full items-center justify-center">
-                <MaterialIcons name="apartment" size={48} color="#CBD5E1" />
+                <MaterialIcons name="apartment" size={48} color={colors.iconMuted} />
               </View>
             )}
 
@@ -403,7 +549,7 @@ export function PropertyDetailScreen() {
                 onPress={() => router.back()}
                 style={({ pressed }) => [{ ...circleBtn, opacity: pressed ? 0.85 : 1 }]}
               >
-                <MaterialIcons name="chevron-left" size={26} color="#111111" />
+                <MaterialIcons name="arrow-back-ios" size={18} color={colors.icon} style={{ marginLeft: 4 }} />
               </Pressable>
               <View style={{ flexDirection: "row", gap: 10 }}>
                 <Pressable
@@ -415,7 +561,7 @@ export function PropertyDetailScreen() {
                   }}
                   style={({ pressed }) => [{ ...circleBtn, opacity: pressed ? 0.85 : 1 }]}
                 >
-                  <MaterialIcons name="share" size={18} color="#111111" />
+                  <MaterialIcons name="share" size={20} color={colors.icon} />
                 </Pressable>
                 <Pressable
                   onPress={() => requireAuth("save", () => void handleToggleSave())}
@@ -423,8 +569,8 @@ export function PropertyDetailScreen() {
                 >
                   <MaterialIcons
                     name={isSaved ? "favorite" : "favorite-border"}
-                    size={18}
-                    color={isSaved ? BRAND : "#111111"}
+                    size={20}
+                    color={isSaved ? colors.primary : colors.icon}
                   />
                 </Pressable>
               </View>
@@ -433,76 +579,78 @@ export function PropertyDetailScreen() {
 
           {showThumbStrip ? (
             <View
+              pointerEvents="box-none"
               style={{
                 position: "absolute",
-                left: 0,
-                right: 0,
-                bottom: -(THUMB / 2 + 6),
-                alignItems: "center",
-                zIndex: 5,
+                left: GALLERY_SIDE,
+                right: GALLERY_SIDE,
+                bottom: -THUMB_OVERLAP,
+                zIndex: 10,
+                elevation: 10,
               }}
             >
               <View
                 style={{
                   flexDirection: "row",
                   alignItems: "center",
-                  gap: THUMB_GAP,
-                  backgroundColor: "#FFFFFF",
-                  borderRadius: 18,
-                  paddingHorizontal: 10,
+                  justifyContent: "space-between",
+                  gap: GALLERY_GAP,
+                  backgroundColor: cardSurface,
+                  borderRadius: 16,
+                  paddingHorizontal: GALLERY_INNER_PAD,
                   paddingVertical: 8,
                   shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.12,
-                  shadowRadius: 12,
-                  elevation: 6,
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: isDark ? 0.35 : 0.16,
+                  shadowRadius: 18,
+                  elevation: 10,
+                  borderWidth: isDark ? 1 : 0,
+                  borderColor: colors.border,
                 }}
               >
-                {thumbSlots.map((img, idx) => {
-                  const isOverflowSlot = idx === 4 && overflowCount > 0;
-                  const active = isOverflowSlot
+                {galleryThumbs.map((slot) => {
+                  const active = slot.overflowLabel
                     ? activeImageIndex >= 4
-                    : activeImageIndex === idx;
+                    : activeImageIndex === slot.index;
 
                   return (
                     <Pressable
-                      key={`${img}-thumb-${idx}`}
-                      onPress={() => scrollHeroTo(isOverflowSlot ? 4 : idx)}
+                      key={`${slot.uri}-thumb-${slot.index}`}
+                      onPress={() => scrollHeroTo(slot.overflowLabel ? 4 : slot.index)}
                       style={{
-                        width: THUMB + 6,
-                        height: THUMB + 6,
-                        borderRadius: 14,
-                        padding: 3,
-                        backgroundColor: active ? "#FFFFFF" : "transparent",
-                        // Soft shadow only when selected so the white frame reads clearly
+                        width: THUMB_SIZE + (active ? 4 : 0),
+                        height: THUMB_SIZE + (active ? 4 : 0),
+                        borderRadius: 12,
+                        padding: active ? 2 : 0,
+                        backgroundColor: active ? cardSurface : "transparent",
                         shadowColor: "#000",
-                        shadowOffset: { width: 0, height: 0 },
-                        shadowOpacity: active ? 0.22 : 0,
-                        shadowRadius: active ? 2 : 0,
-                        elevation: active ? 2 : 0,
+                        shadowOffset: { width: 0, height: active ? 2 : 0 },
+                        shadowOpacity: active ? 0.2 : 0,
+                        shadowRadius: active ? 4 : 0,
+                        elevation: active ? 4 : 0,
                       }}
                     >
                       <View
                         style={{
-                          width: THUMB,
-                          height: THUMB,
-                          borderRadius: 12,
+                          width: THUMB_SIZE,
+                          height: THUMB_SIZE,
+                          borderRadius: 10,
                           overflow: "hidden",
-                          backgroundColor: "#F3F4F6",
+                          backgroundColor: colors.surfaceMuted,
                         }}
                       >
                         <Image
-                          source={img}
+                          source={slot.uri}
                           contentFit="cover"
                           cachePolicy="memory-disk"
-                          style={{ width: THUMB, height: THUMB }}
+                          style={{ width: THUMB_SIZE, height: THUMB_SIZE }}
                         />
-                        {isOverflowSlot ? (
+                        {slot.overflowLabel ? (
                           <View
                             style={[
                               StyleSheet.absoluteFillObject,
                               {
-                                backgroundColor: "rgba(0,0,0,0.55)",
+                                backgroundColor: "rgba(0,0,0,0.58)",
                                 alignItems: "center",
                                 justifyContent: "center",
                               },
@@ -511,11 +659,11 @@ export function PropertyDetailScreen() {
                             <Text
                               style={{
                                 fontFamily: ListifyFonts.bold,
-                                color: "#FFFFFF",
-                                fontSize: 13,
+                                color: colors.textOnPrimary,
+                                fontSize: 14,
                               }}
                             >
-                              {overflowCount}+
+                              {slot.overflowLabel}
                             </Text>
                           </View>
                         ) : null}
@@ -530,28 +678,28 @@ export function PropertyDetailScreen() {
 
         <View
           style={{
-            paddingHorizontal: 20,
-            paddingTop: showThumbStrip ? THUMB / 2 + 20 : 20,
+            paddingHorizontal: GALLERY_SIDE,
+            paddingTop: showThumbStrip ? THUMB_OVERLAP + 14 : 20,
+            backgroundColor: colors.background,
           }}
         >
           {/* Category + Price */}
-          <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <Text
               style={{
                 fontFamily: ListifyFonts.regular,
-                fontSize: 13,
-                color: MUTED,
-                marginTop: 4,
+                fontSize: 14,
+                color: colors.textSecondary,
               }}
             >
               {badgeLabel}
             </Text>
-            <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
-              <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 22, color: "#111111" }}>
+            <View style={{ flexDirection: "row", alignItems: "baseline" }}>
+              <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 20, color: colors.textPrimary }}>
                 {price || "On request"}
               </Text>
               {price && isRental ? (
-                <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 13, color: MUTED }}>
+                <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: colors.textSecondary }}>
                   /Month
                 </Text>
               ) : null}
@@ -560,25 +708,25 @@ export function PropertyDetailScreen() {
 
           <Text
             style={{
-              marginTop: 6,
+              marginTop: 8,
               fontFamily: ListifyFonts.bold,
-              fontSize: 24,
-              lineHeight: 30,
-              color: "#111111",
+              fontSize: 22,
+              lineHeight: 28,
+              color: colors.textPrimary,
             }}
           >
             {title}
           </Text>
 
-          <View style={{ marginTop: 8, flexDirection: "row", alignItems: "flex-start", gap: 6 }}>
-            <MaterialIcons name="location-on" size={16} color={MUTED} style={{ marginTop: 1 }} />
+          <View style={{ marginTop: 10, flexDirection: "row", alignItems: "flex-start", gap: 4 }}>
+            <MaterialIcons name="location-on" size={15} color={colors.textSecondary} style={{ marginTop: 2 }} />
             <Text
               style={{
                 flex: 1,
                 fontFamily: ListifyFonts.regular,
                 fontSize: 13,
                 lineHeight: 18,
-                color: MUTED,
+                color: colors.textSecondary,
               }}
             >
               {locationText}
@@ -589,17 +737,18 @@ export function PropertyDetailScreen() {
           {/* Specs */}
           <View
             style={{
-              marginTop: 20,
+              marginTop: 22,
               borderWidth: 1,
-              borderColor: "#E8E8E8",
-              borderRadius: 16,
-              paddingVertical: 14,
-              paddingHorizontal: 8,
+              borderColor: colors.border,
+              borderRadius: 18,
+              paddingVertical: 16,
+              paddingHorizontal: 4,
               flexDirection: "row",
+              backgroundColor: specsSurface,
             }}
           >
             {[
-              { icon: "bed" as const, label: `${bedrooms || 0} Bed` },
+              { icon: "king-bed" as const, label: `${bedrooms || 0} Bed` },
               { icon: "bathtub" as const, label: `${bathrooms || 0} Bath` },
               {
                 icon: "square-foot" as const,
@@ -615,217 +764,198 @@ export function PropertyDetailScreen() {
                   flexDirection: "row",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: 6,
+                  gap: 8,
                   borderRightWidth: i < 2 ? 1 : 0,
-                  borderRightColor: "#EEEEEE",
+                  borderRightColor: colors.border,
                 }}
               >
-                <MaterialIcons name={spec.icon} size={18} color="#111111" />
-                <Text style={{ fontFamily: ListifyFonts.medium, fontSize: 13, color: "#111111" }}>
+                <MaterialIcons name={spec.icon} size={20} color={colors.icon} />
+                <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 13, color: colors.textPrimary }}>
                   {spec.label}
                 </Text>
               </View>
             ))}
           </View>
 
-          {/* Description */}
-          {description ? (
-            <View style={{ marginTop: 24 }}>
-              <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 18, color: "#111111" }}>
-                Description
-              </Text>
-              <Text
-                style={{
-                  marginTop: 8,
-                  fontFamily: ListifyFonts.regular,
-                  fontSize: 14,
-                  lineHeight: 22,
-                  color: MUTED,
-                }}
-              >
-                {descPreview}
-                {description.length > 140 ? (
-                  <Text
-                    onPress={() => setDescExpanded((v) => !v)}
-                    style={{ fontFamily: ListifyFonts.bold, color: "#111111" }}
-                  >
-                    {descExpanded ? " Read Less" : "Read More..."}
-                  </Text>
-                ) : null}
-              </Text>
-            </View>
-          ) : null}
-
-          {/* Amenities */}
-          {features.length > 0 ? (
-            <View style={{ marginTop: 24 }}>
-              <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 18, color: "#111111" }}>
-                Amenities
-              </Text>
-              <View
-                style={{
-                  marginTop: 12,
-                  flexDirection: "row",
-                  flexWrap: "wrap",
-                  gap: 8,
-                }}
-              >
-                {features.map((feat) => (
-                  <View
-                    key={feat}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 6,
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 12,
-                      backgroundColor: "#F5F5F5",
-                    }}
-                  >
-                    <MaterialIcons name="check-circle" size={16} color={BRAND} />
-                    <Text style={{ fontFamily: ListifyFonts.medium, fontSize: 13, color: "#111111" }}>
-                      {feat}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          ) : null}
+          {/* Description — always visible like reference */}
+          <View style={{ marginTop: 26 }}>
+            <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 17, color: colors.textPrimary }}>
+              Description
+            </Text>
+            <Text
+              style={{
+                marginTop: 10,
+                fontFamily: ListifyFonts.regular,
+                fontSize: 14,
+                lineHeight: 23,
+                color: colors.textSecondary,
+              }}
+            >
+              {descPreview}
+              {showReadMore ? (
+                <Text
+                  onPress={() => setDescExpanded((v) => !v)}
+                  style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
+                >
+                  {descExpanded ? " Read Less" : "Read More..."}
+                </Text>
+              ) : null}
+            </Text>
+          </View>
 
           {/* Listing Broker */}
-          <View style={{ marginTop: 28 }}>
-            <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 18, color: "#111111" }}>
+          <View style={{ marginTop: 26, marginBottom: 8 }}>
+            <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 17, color: colors.textPrimary }}>
               Listing Broker
             </Text>
             <View
               style={{
-                marginTop: 14,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 12,
+                marginTop: 16,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: cardSurface,
+                padding: 14,
               }}
             >
-              <Pressable
-                onPress={() => {
-                  if (sellerId) router.push(`/seller-public-profile?userId=${sellerId}` as Href);
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 12,
                 }}
-                style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
               >
-                {sellerProfileImage ? (
-                  <Image
-                    source={sellerProfileImage}
-                    contentFit="cover"
-                    style={{ width: 52, height: 52, borderRadius: 26 }}
-                  />
-                ) : (
-                  <View
-                    style={{
-                      width: 52,
-                      height: 52,
-                      borderRadius: 26,
-                      backgroundColor: "#F3F4F6",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <MaterialIcons name="person" size={26} color="#9CA3AF" />
+                <Pressable
+                  onPress={openSellerProfile}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}
+                >
+                  <View style={{ position: "relative" }}>
+                    <View
+                      style={{
+                        width: 52,
+                        height: 52,
+                        borderRadius: 26,
+                        overflow: "hidden",
+                        backgroundColor: colors.surfaceMuted,
+                      }}
+                    >
+                      <ProfileAvatarImage
+                        user={sellerProfileUser}
+                        fallbackName={sellerName}
+                        style={{ width: 52, height: 52 }}
+                        iconSize={26}
+                      />
+                    </View>
+                    {isSellerVerified ? (
+                      <View
+                        style={{
+                          position: "absolute",
+                          bottom: -1,
+                          right: -1,
+                          width: 18,
+                          height: 18,
+                          borderRadius: 9,
+                          borderWidth: 2,
+                          borderColor: cardSurface,
+                          backgroundColor: colors.primary,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <MaterialIcons name="verified" size={11} color={colors.textOnPrimary} />
+                      </View>
+                    ) : null}
                   </View>
-                )}
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text
-                    numberOfLines={1}
-                    style={{ fontFamily: ListifyFonts.bold, fontSize: 15, color: "#111111" }}
-                  >
-                    {sellerName}
-                  </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={{
-                      marginTop: 2,
-                      fontFamily: ListifyFonts.regular,
-                      fontSize: 12,
-                      color: MUTED,
-                    }}
-                  >
-                    {sellerPhone || sellerId || sellerJoined || "Seller"}
-                  </Text>
-                </View>
-              </Pressable>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      <Text
+                        numberOfLines={1}
+                        style={{
+                          flexShrink: 1,
+                          fontFamily: ListifyFonts.bold,
+                          fontSize: 15,
+                          color: colors.textPrimary,
+                        }}
+                      >
+                        {sellerName}
+                      </Text>
+                      {isSellerVerified ? (
+                        <MaterialIcons name="verified" size={16} color={colors.primary} />
+                      ) : null}
+                    </View>
+                    {sellerRating > 0 ? (
+                      <View style={{ marginTop: 4 }}>
+                        <SellerStars rating={sellerRating} />
+                      </View>
+                    ) : null}
+                    {brokerContact ? (
+                      <Pressable onPress={() => void handleCallBroker()} hitSlop={6}>
+                        <Text
+                          style={{
+                            marginTop: 4,
+                            fontFamily: ListifyFonts.semiBold,
+                            fontSize: 14,
+                            color: colors.primary,
+                          }}
+                        >
+                          {brokerContact.display}
+                        </Text>
+                      </Pressable>
+                    ) : (
+                      <Text
+                        style={{
+                          marginTop: 4,
+                          fontFamily: ListifyFonts.regular,
+                          fontSize: 13,
+                          color: colors.textSecondary,
+                        }}
+                      >
+                        Contact number not available
+                      </Text>
+                    )}
+                  </View>
+                </Pressable>
 
-              <Pressable
-                onPress={() => {
-                  if (!sellerId) {
-                    showErrorToast("Unavailable", "Seller information is missing for this listing.");
-                    return;
-                  }
-                  requireAuth("message", () => {
-                    router.push(
-                      buildListingChatHref({
-                        recipientId: sellerId,
-                        sellerId,
-                        name: sellerName,
-                        productId: listing._id,
-                        productType: categorySlug,
-                        productTitle: title,
-                        productPrice: listing.price,
-                        productImage: listing.images?.[0] ?? null,
-                        currency: listing.currency ?? "₹",
-                      }),
-                    );
-                  });
-                }}
-                style={({ pressed }) => [{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  backgroundColor: BRAND,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  opacity: pressed ? 0.85 : 1,
-                }]}
-              >
-                <MaterialIcons name="chat-bubble" size={18} color="#FFFFFF" />
-              </Pressable>
+                <Pressable
+                  onPress={() => {
+                    if (!sellerId) {
+                      showErrorToast("Unavailable", "Seller information is missing for this listing.");
+                      return;
+                    }
+                    requireAuth("message", () => {
+                      router.push(
+                        buildListingChatHref({
+                          recipientId: sellerId,
+                          sellerId,
+                          name: sellerName,
+                          productId: listing._id,
+                          productType: categorySlug,
+                          productTitle: title,
+                          productPrice: listing.price,
+                          productImage: listing.images?.[0] ?? null,
+                          currency: listing.currency ?? "₹",
+                        }),
+                      );
+                    });
+                  }}
+                  style={({ pressed }) => [{
+                    ...brokerActionBtn,
+                    opacity: pressed ? 0.85 : 1,
+                  }]}
+                >
+                  <MaterialIcons name="chat-bubble-outline" size={20} color={colors.textOnPrimary} />
+                </Pressable>
 
-              <Pressable
-                onPress={() => {
-                  if (sellerPhone) {
-                    void Linking.openURL(`tel:${sellerPhone}`);
-                    return;
-                  }
-                  if (!sellerId) {
-                    showErrorToast("Unavailable", "Seller information is missing for this listing.");
-                    return;
-                  }
-                  requireAuth("message", () => {
-                    router.push(
-                      buildListingChatHref({
-                        recipientId: sellerId,
-                        sellerId,
-                        name: sellerName,
-                        productId: listing._id,
-                        productType: categorySlug,
-                        productTitle: title,
-                        productPrice: listing.price,
-                        productImage: listing.images?.[0] ?? null,
-                        currency: listing.currency ?? "₹",
-                      }),
-                    );
-                  });
-                }}
-                style={({ pressed }) => [{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  backgroundColor: BRAND,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  opacity: pressed ? 0.85 : 1,
-                }]}
-              >
-                <MaterialIcons name="phone" size={18} color="#FFFFFF" />
-              </Pressable>
+                <Pressable
+                  onPress={() => void handleCallBroker()}
+                  style={({ pressed }) => [{
+                    ...brokerActionBtn,
+                    opacity: pressed ? 0.85 : 1,
+                  }]}
+                >
+                  <MaterialIcons name="phone" size={20} color={colors.textOnPrimary} />
+                </Pressable>
+              </View>
             </View>
           </View>
         </View>
@@ -839,9 +969,11 @@ export function PropertyDetailScreen() {
             right: 0,
             bottom: 0,
             paddingHorizontal: 20,
-            paddingTop: 12,
+            paddingTop: 10,
             paddingBottom: footerBottomPadding,
-            backgroundColor: "#FFFFFF",
+            backgroundColor: colors.background,
+            borderTopWidth: isDark ? 1 : 0,
+            borderTopColor: colors.border,
           }}
         >
           <Pressable
@@ -853,15 +985,15 @@ export function PropertyDetailScreen() {
               requireAuth("offer", openOfferSheet);
             }}
             style={({ pressed }) => ({
-              height: 54,
+              height: 56,
               borderRadius: 999,
-              backgroundColor: BRAND,
+              backgroundColor: colors.primary,
               alignItems: "center",
               justifyContent: "center",
-              opacity: pressed ? 0.9 : 1,
+              opacity: pressed ? 0.92 : 1,
             })}
           >
-            <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 16, color: "#FFFFFF" }}>
+            <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 16, color: colors.textOnPrimary }}>
               Book Now
             </Text>
           </Pressable>
@@ -890,69 +1022,179 @@ export function PropertyDetailScreen() {
           }}
         >
           <View
-            className="rounded-t-3xl border-t border-slate-100 bg-white"
             style={{
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              borderTopWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surface,
               paddingBottom: Math.max(insets.bottom, 16),
               shadowColor: "#000",
               shadowOffset: { width: 0, height: -12 },
-              shadowOpacity: 0.15,
+              shadowOpacity: isDark ? 0.4 : 0.15,
               shadowRadius: 40,
               elevation: 24,
             }}
           >
-            <View className="items-center py-3">
-              <View className="h-1.5 w-12 rounded-full bg-slate-200" />
+            <View style={{ alignItems: "center", paddingVertical: 12 }}>
+              <View
+                style={{
+                  height: 6,
+                  width: 48,
+                  borderRadius: 999,
+                  backgroundColor: colors.borderStrong,
+                }}
+              />
             </View>
 
-            <View className="px-4 pb-4">
+            <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
               {offerSent ? (
-                <View className="items-center py-8">
-                  <View className="mb-4 h-16 w-16 items-center justify-center rounded-full bg-[#27BB97]/15">
-                    <MaterialIcons name="check-circle" size={40} color="#27BB97" />
+                <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                  <View
+                    style={{
+                      marginBottom: 16,
+                      height: 64,
+                      width: 64,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 32,
+                      backgroundColor: colors.primarySoft,
+                    }}
+                  >
+                    <MaterialIcons name="check-circle" size={40} color={colors.primary} />
                   </View>
-                  <Text className="text-[20px] font-bold text-[#161D1A]">Offer Sent!</Text>
-                  <Text className="mt-1 text-center text-[14px] text-[#6C7A74]">
+                  <Text
+                    style={{
+                      fontFamily: ListifyFonts.bold,
+                      fontSize: 20,
+                      color: colors.textPrimary,
+                    }}
+                  >
+                    Offer Sent!
+                  </Text>
+                  <Text
+                    style={{
+                      marginTop: 4,
+                      textAlign: "center",
+                      fontFamily: ListifyFonts.regular,
+                      fontSize: 14,
+                      color: colors.textSecondary,
+                    }}
+                  >
                     The seller will be notified and can accept or counter.
                   </Text>
                 </View>
               ) : (
                 <>
-                  <View className="mb-5 flex-row items-center justify-between">
-                    <Text className="text-[24px] font-bold tracking-tight text-[#161D1A]">
+                  <View
+                    style={{
+                      marginBottom: 20,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: ListifyFonts.bold,
+                        fontSize: 24,
+                        color: colors.textPrimary,
+                      }}
+                    >
                       Make an Offer
                     </Text>
                     <Pressable
                       onPress={closeOfferSheet}
-                      className="rounded-full p-2"
-                      style={({ pressed }) => ({ backgroundColor: pressed ? "#F1F5F9" : "transparent" })}
+                      style={({ pressed }) => ({
+                        borderRadius: 999,
+                        padding: 8,
+                        backgroundColor: pressed ? colors.surfaceMuted : "transparent",
+                      })}
                     >
-                      <MaterialIcons name="close" size={24} color="#94A3B8" />
+                      <MaterialIcons name="close" size={24} color={colors.iconMuted} />
                     </Pressable>
                   </View>
 
-                  <View className="mb-5 flex-row items-center gap-3 rounded-xl bg-[#F3F4F6] p-3">
+                  <View
+                    style={{
+                      marginBottom: 20,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 12,
+                      borderRadius: 12,
+                      backgroundColor: colors.surfaceMuted,
+                      padding: 12,
+                    }}
+                  >
                     {images[0] ? (
-                      <Image source={images[0]} contentFit="cover" className="h-14 w-14 rounded-lg" />
+                      <Image
+                        source={images[0]}
+                        contentFit="cover"
+                        style={{ height: 56, width: 56, borderRadius: 8 }}
+                      />
                     ) : (
-                      <View className="h-14 w-14 items-center justify-center rounded-lg bg-slate-200">
-                        <MaterialIcons name="image" size={24} color="#CBD5E1" />
+                      <View
+                        style={{
+                          height: 56,
+                          width: 56,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          borderRadius: 8,
+                          backgroundColor: colors.border,
+                        }}
+                      >
+                        <MaterialIcons name="image" size={24} color={colors.iconMuted} />
                       </View>
                     )}
-                    <View className="flex-1">
-                      <Text className="text-[13px] font-medium text-[#161D1A]" numberOfLines={1}>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        numberOfLines={1}
+                        style={{
+                          fontFamily: ListifyFonts.medium,
+                          fontSize: 13,
+                          color: colors.textPrimary,
+                        }}
+                      >
                         {title}
                       </Text>
-                      <Text className="mt-0.5 text-[12px] font-medium uppercase text-[#6C7A74]">Listed Price</Text>
-                      <Text className="text-[16px] font-bold text-[#161D1A]">{price}</Text>
+                      <Text
+                        style={{
+                          marginTop: 2,
+                          fontFamily: ListifyFonts.medium,
+                          fontSize: 12,
+                          textTransform: "uppercase",
+                          color: colors.textSecondary,
+                        }}
+                      >
+                        Listed Price
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: ListifyFonts.bold,
+                          fontSize: 16,
+                          color: colors.textPrimary,
+                        }}
+                      >
+                        {price}
+                      </Text>
                     </View>
                   </View>
 
                   {recommendedOffers.length > 0 && (
-                    <View className="mb-6">
-                      <Text className="mb-3 text-[12px] font-medium uppercase tracking-wide text-[#6C7A74]">
+                    <View style={{ marginBottom: 24 }}>
+                      <Text
+                        style={{
+                          marginBottom: 12,
+                          fontFamily: ListifyFonts.medium,
+                          fontSize: 12,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.5,
+                          color: colors.textSecondary,
+                        }}
+                      >
                         Recommended Offers
                       </Text>
-                      <View className="flex-row flex-wrap gap-2">
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                         {recommendedOffers.map((amt) => {
                           const label = formatPrice(amt, listing?.currency, listing?.countryCode ?? isoCountryCode);
                           const isSelected = selectedChip === String(amt);
@@ -963,16 +1205,21 @@ export function PropertyDetailScreen() {
                                 setSelectedChip(String(amt));
                                 setOfferAmount(String(amt));
                               }}
-                              className="rounded-full px-4 py-2.5"
                               style={{
+                                borderRadius: 999,
+                                paddingHorizontal: 16,
+                                paddingVertical: 10,
                                 borderWidth: 1.5,
-                                borderColor: isSelected ? BRAND : "#E2E8F0",
-                                backgroundColor: isSelected ? "rgba(39,187,151,0.1)" : "#FFFFFF",
+                                borderColor: isSelected ? colors.primary : colors.border,
+                                backgroundColor: isSelected ? colors.primarySoft : colors.surface,
                               }}
                             >
                               <Text
-                                className="text-[14px] font-medium"
-                                style={{ color: isSelected ? BRAND : "#161D1A" }}
+                                style={{
+                                  fontFamily: ListifyFonts.medium,
+                                  fontSize: 14,
+                                  color: isSelected ? colors.primary : colors.textPrimary,
+                                }}
                               >
                                 {label}
                               </Text>
@@ -983,10 +1230,38 @@ export function PropertyDetailScreen() {
                     </View>
                   )}
 
-                  <View className="mb-6">
-                    <Text className="mb-2 text-[12px] font-medium uppercase tracking-wide text-[#161D1A]">Your Offer</Text>
-                    <View className="h-14 flex-row items-center rounded-xl border-2 border-slate-100 bg-slate-50 px-4">
-                      <Text className="text-[20px] font-bold text-slate-400">
+                  <View style={{ marginBottom: 24 }}>
+                    <Text
+                      style={{
+                        marginBottom: 8,
+                        fontFamily: ListifyFonts.medium,
+                        fontSize: 12,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                        color: colors.textPrimary,
+                      }}
+                    >
+                      Your Offer
+                    </Text>
+                    <View
+                      style={{
+                        height: 56,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        borderRadius: 12,
+                        borderWidth: 2,
+                        borderColor: colors.border,
+                        backgroundColor: colors.inputBackground,
+                        paddingHorizontal: 16,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: ListifyFonts.bold,
+                          fontSize: 20,
+                          color: colors.textTertiary,
+                        }}
+                      >
                         {getCurrencySymbol(listing?.currency)}
                       </Text>
                       <TextInput
@@ -997,28 +1272,43 @@ export function PropertyDetailScreen() {
                         }}
                         keyboardType="numeric"
                         placeholder="Enter amount"
-                        placeholderTextColor="#CBD5E1"
-                        className="ml-2 flex-1 text-[20px] font-bold text-[#161D1A]"
-                        style={{ paddingVertical: 0 }}
+                        placeholderTextColor={colors.inputPlaceholder}
+                        style={{
+                          marginLeft: 8,
+                          flex: 1,
+                          fontFamily: ListifyFonts.bold,
+                          fontSize: 20,
+                          color: colors.textPrimary,
+                          paddingVertical: 0,
+                        }}
                       />
                     </View>
-                    <View className="mt-2 flex-row items-center gap-1">
-                      <MaterialIcons name="info-outline" size={14} color="#6C7A74" />
-                      <Text className="text-[12px] text-[#6C7A74]">Offers are usually 5-15% below listed price</Text>
+                    <View style={{ marginTop: 8, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      <MaterialIcons name="info-outline" size={14} color={colors.textSecondary} />
+                      <Text
+                        style={{
+                          fontFamily: ListifyFonts.regular,
+                          fontSize: 12,
+                          color: colors.textSecondary,
+                        }}
+                      >
+                        Offers are usually 5-15% below listed price
+                      </Text>
                     </View>
                   </View>
 
                   <Pressable
                     onPress={handleSendOffer}
                     disabled={sendingOffer || !offerAmount}
-                    className="overflow-hidden rounded-xl"
                     style={({ pressed }) => ({
+                      overflow: "hidden",
+                      borderRadius: 12,
                       transform: [{ scale: pressed ? 0.98 : 1 }],
                       opacity: !offerAmount ? 0.5 : 1,
                     })}
                   >
                     <LinearGradient
-                      colors={[BRAND, "#1FA882"]}
+                      colors={[colors.primary, colors.primaryDeep]}
                       start={{ x: 0, y: 0.5 }}
                       end={{ x: 1, y: 0.5 }}
                       style={{
@@ -1030,11 +1320,19 @@ export function PropertyDetailScreen() {
                       }}
                     >
                       {sendingOffer ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
+                        <ActivityIndicator size="small" color={colors.textOnPrimary} />
                       ) : (
                         <>
-                          <Text className="text-[18px] font-semibold text-white">Send Offer</Text>
-                          <MaterialIcons name="send" size={20} color="#FFFFFF" />
+                          <Text
+                            style={{
+                              fontFamily: ListifyFonts.semiBold,
+                              fontSize: 18,
+                              color: colors.textOnPrimary,
+                            }}
+                          >
+                            Send Offer
+                          </Text>
+                          <MaterialIcons name="send" size={20} color={colors.textOnPrimary} />
                         </>
                       )}
                     </LinearGradient>

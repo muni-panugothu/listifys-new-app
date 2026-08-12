@@ -284,3 +284,30 @@ export function requestUnreadCount() {
 export function requestLastSeen(targetUserId: string) {
   socket?.emit("user:lastSeen", { targetUserId });
 }
+
+/** Request the list of currently online user IDs. */
+export function requestOnlineUsers(): Promise<string[]> {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve([]);
+      return;
+    }
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve([]);
+    }, 5000);
+
+    const onList = (ids: string[]) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      socket?.off("users:online", onList);
+      resolve(Array.isArray(ids) ? ids.map(String) : []);
+    };
+
+    socket.on("users:online", onList);
+    socket.emit("users:online");
+  });
+}

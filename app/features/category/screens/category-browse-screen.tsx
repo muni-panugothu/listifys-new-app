@@ -16,13 +16,15 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { CategoryGridTile } from "@/components/category-grid-tile";
+import { ListingItemsGridCard } from "@/components/listing-items-grid-card";
 import { PropertyNearbyCard } from "@/features/category/components/property-nearby-card";
 import { VoiceSearchModal } from "@/components/voice-search-modal";
 import type { CategorySlug } from "@/constants/categories";
 import { ListifyFonts, ListifyTypography } from "@/constants/typography";
 import { EventListingCard } from "@/features/category/components/event-listing-card";
 import { JobListingCard } from "@/features/category/components/job-listing-card";
+import { JOBS_APPLY_TEAL, JOBS_PAGE_BG } from "@/features/jobs/data/jobs-discovery";
+import type { JobListingExtras } from "@/features/jobs/utils/jobs-formatters";
 import {
   fetchCategoryListings,
   toggleSaveListing,
@@ -167,6 +169,13 @@ export function CategoryBrowseScreen({
   );
   const [activeSort, setActiveSort] = useState<string>("relevance");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [sortMenuAnchor, setSortMenuAnchor] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const sortAnchorRef = useRef<View>(null);
   const [listings, setListings] = useState<ListingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
@@ -357,8 +366,8 @@ export function CategoryBrowseScreen({
       if (layout === "jobs") {
         return (
           <JobListingCard
-            job={item}
-            salaryText={formatSalary(item, isoCountryCode)}
+            job={item as JobListingExtras}
+            isoCountryCode={isoCountryCode}
             isSaved={savedIds.has(item._id)}
             onPress={() => openDetail(item)}
             onToggleSave={() => handleToggleSave(item._id)}
@@ -416,17 +425,6 @@ export function CategoryBrowseScreen({
           />
         );
       }
-      // Grid layout
-      const descriptionSnippet = item.description
-        ?.replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 60);
-      const subtitle =
-        [item.condition, item.subcategory]
-          .filter((part) => Boolean(part && String(part).trim()))
-          .join(" · ") ||
-        descriptionSnippet ||
-        undefined;
       const distanceLabel = hasLocationCoords
         ? getListingDistanceLabel(
             {
@@ -442,15 +440,16 @@ export function CategoryBrowseScreen({
           )
         : undefined;
       return (
-        <CategoryGridTile
+        <ListingItemsGridCard
           title={item.title}
-          subtitle={subtitle}
-          distanceLabel={distanceLabel}
+          subtitle={item.condition || item.subcategory}
           price={item.price ?? null}
           currency={item.currency}
           isoCountryCode={item.countryCode ?? isoCountryCode}
           image={item.images?.[0]}
+          createdAt={item.createdAt}
           width={CARD_WIDTH}
+          distanceLabel={distanceLabel}
           isSaved={savedIds.has(item._id)}
           onPress={() => openDetail(item)}
           onToggleSave={() => handleToggleSave(item._id)}
@@ -494,8 +493,23 @@ export function CategoryBrowseScreen({
     );
   }, [colors.iconMuted, colors.textPrimary, colors.textSecondary, loading, locationLabel, refreshing]);
 
+  const jobsAccent = layout === "jobs" ? JOBS_APPLY_TEAL : BRAND;
+
+  const toggleSortMenu = useCallback(() => {
+    if (sortMenuOpen) {
+      setSortMenuOpen(false);
+      return;
+    }
+
+    sortAnchorRef.current?.measureInWindow((x, y, width, height) => {
+      setSortMenuAnchor({ x, y, width, height });
+      setSortMenuOpen(true);
+    });
+  }, [sortMenuOpen]);
+
   const listHeaderComponent = useMemo(() => {
     if (layout === "events") return null;
+
     return (
       <View
         className="mb-4 flex-row items-center justify-between px-4"
@@ -503,24 +517,27 @@ export function CategoryBrowseScreen({
       >
         <Text
           style={{
-            fontFamily: ListifyFonts.medium,
-            fontSize: 14,
-            color: colors.textSecondary,
+            fontFamily: layout === "jobs" ? ListifyFonts.bold : ListifyFonts.medium,
+            fontSize: layout === "jobs" ? 18 : 14,
+            color: layout === "jobs" ? colors.textPrimary : colors.textSecondary,
           }}
         >
-          {displayListings.length}{" "}
-          {layout === "properties"
-            ? displayListings.length === 1
-              ? "Property"
-              : "Properties"
-            : displayListings.length === 1
-              ? "Product"
-              : "Products"}
+          {layout === "jobs"
+            ? `${displayListings.length} Jobs Found`
+            : `${displayListings.length} ${
+                layout === "properties"
+                  ? displayListings.length === 1
+                    ? "Property"
+                    : "Properties"
+                  : displayListings.length === 1
+                    ? "Product"
+                    : "Products"
+              }`}
         </Text>
 
-        <View>
+        <View ref={sortAnchorRef} collapsable={false}>
           <Pressable
-            onPress={() => setSortMenuOpen((open) => !open)}
+            onPress={toggleSortMenu}
             hitSlop={8}
             style={({ pressed }) => ({
               flexDirection: "row",
@@ -533,7 +550,10 @@ export function CategoryBrowseScreen({
               style={{
                 fontFamily: ListifyFonts.bold,
                 fontSize: 14,
-                color: layout === "properties" ? BRAND : colors.textPrimary,
+                color:
+                  layout === "properties" || layout === "jobs"
+                    ? jobsAccent
+                    : colors.textPrimary,
               }}
             >
               {SORT_OPTIONS.find((o) => o.key === activeSort)?.label ?? "Popular"}
@@ -541,59 +561,13 @@ export function CategoryBrowseScreen({
             <MaterialIcons
               name={sortMenuOpen ? "keyboard-arrow-up" : "keyboard-arrow-down"}
               size={20}
-              color={layout === "properties" ? BRAND : colors.textPrimary}
+              color={
+                layout === "properties" || layout === "jobs"
+                  ? jobsAccent
+                  : colors.textPrimary
+              }
             />
           </Pressable>
-
-          {sortMenuOpen ? (
-            <View
-              style={{
-                position: "absolute",
-                top: 28,
-                right: 0,
-                minWidth: 148,
-                backgroundColor: colors.surfaceElevated,
-                borderRadius: 12,
-                paddingVertical: 6,
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: isDark ? 0.35 : 0.12,
-                shadowRadius: 12,
-                elevation: 6,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
-              {SORT_OPTIONS.map((opt) => {
-                const isActive = opt.key === activeSort;
-                return (
-                  <Pressable
-                    key={opt.key}
-                    onPress={() => {
-                      setActiveSort(opt.key);
-                      setSortMenuOpen(false);
-                    }}
-                    style={({ pressed }) => ({
-                      paddingHorizontal: 14,
-                      paddingVertical: 10,
-                      backgroundColor:
-                        pressed || isActive ? colors.surfaceMuted : "transparent",
-                    })}
-                  >
-                    <Text
-                      style={{
-                        fontFamily: isActive ? ListifyFonts.semiBold : ListifyFonts.regular,
-                        fontSize: 13,
-                        color: isActive ? BRAND : colors.textSecondary,
-                      }}
-                    >
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : null}
         </View>
       </View>
     );
@@ -606,17 +580,22 @@ export function CategoryBrowseScreen({
     colors.textSecondary,
     displayListings.length,
     isDark,
+    jobsAccent,
     layout,
     sortMenuOpen,
+    toggleSortMenu,
   ]);
 
   const itemSeparator = useCallback(
-    () => <View style={{ height: isGridLayout ? GRID_GUTTER : 12 }} />,
-    [isGridLayout],
+    () => <View style={{ height: layout === "jobs" ? 16 : isGridLayout ? GRID_GUTTER : 12 }} />,
+    [isGridLayout, layout],
   );
 
+  const pageBackground =
+    layout === "jobs" && !isDark ? JOBS_PAGE_BG : colors.background;
+
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.background }}>
+    <View className="flex-1" style={{ backgroundColor: pageBackground }}>
       <VoiceSearchModal
         visible={voiceVisible}
         onResult={handleVoiceResult}
@@ -627,7 +606,7 @@ export function CategoryBrowseScreen({
         style={{
           paddingTop: insets.top + 8,
           height: headerHeight,
-          backgroundColor: colors.background,
+          backgroundColor: pageBackground,
         }}
       >
         <View className="h-11 flex-row items-center gap-3">
@@ -793,7 +772,7 @@ export function CategoryBrowseScreen({
         style={{
           top: headerHeight + eventsTitleHeight + datePickerHeight,
           height: categoryTabsHeight,
-          backgroundColor: colors.background,
+          backgroundColor: pageBackground,
         }}
       >
         <ScrollView
@@ -809,7 +788,7 @@ export function CategoryBrowseScreen({
           {subcategories.map((chip) => {
             const isActive = selectedSubcategory === chip;
             const activeColor =
-              layout === "properties" ? BRAND : colors.textPrimary;
+              layout === "properties" || layout === "jobs" ? jobsAccent : colors.textPrimary;
             return (
               <Pressable
                 key={chip}
@@ -851,8 +830,8 @@ export function CategoryBrowseScreen({
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[BRAND]}
-            tintColor={BRAND}
+            colors={[jobsAccent]}
+            tintColor={jobsAccent}
             progressViewOffset={stickyOffset}
           />
         }
@@ -867,6 +846,69 @@ export function CategoryBrowseScreen({
         ListHeaderComponent={listHeaderComponent}
         ListEmptyComponent={listEmptyComponent}
       />
+
+      <Modal
+        visible={sortMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSortMenuOpen(false)}
+      >
+        <View style={{ flex: 1 }}>
+          <Pressable
+            style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
+            onPress={() => setSortMenuOpen(false)}
+          />
+          {sortMenuAnchor ? (
+            <View
+              style={{
+                position: "absolute",
+                top: sortMenuAnchor.y + sortMenuAnchor.height + 4,
+                right: SCREEN_WIDTH - sortMenuAnchor.x - sortMenuAnchor.width,
+                minWidth: 148,
+                backgroundColor: colors.surfaceElevated,
+                borderRadius: 12,
+                paddingVertical: 6,
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: isDark ? 0.35 : 0.12,
+                shadowRadius: 12,
+                elevation: 24,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              {SORT_OPTIONS.map((opt) => {
+                const isActive = opt.key === activeSort;
+                return (
+                  <Pressable
+                    key={opt.key}
+                    onPress={() => {
+                      setActiveSort(opt.key);
+                      setSortMenuOpen(false);
+                    }}
+                    style={({ pressed }) => ({
+                      paddingHorizontal: 14,
+                      paddingVertical: 10,
+                      backgroundColor:
+                        pressed || isActive ? colors.surfaceMuted : "transparent",
+                    })}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: isActive ? ListifyFonts.semiBold : ListifyFonts.regular,
+                        fontSize: 13,
+                        color: isActive ? jobsAccent : colors.textSecondary,
+                      }}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+      </Modal>
 
       {/* Calendar Month Picker Modal */}
       <Modal

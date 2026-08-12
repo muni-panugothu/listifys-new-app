@@ -1,4 +1,4 @@
-﻿import { Platform } from "react-native";
+import { Platform } from "react-native";
 import { requestJson, getAuthApiBaseUrl, getAccessToken, refreshAccessToken } from "@/features/auth/services/auth-api";
 import { devWarn } from "@/lib/dev-log";
 
@@ -105,7 +105,8 @@ export type Conversation = {
     sender: string;
     attachments?: Array<{ type: string }>;
     productThread?: string | null;
-    messageType?: string;
+    messageType?: ChatMessage["messageType"];
+    status?: ChatMessage["status"];
     createdAt: string;
   } | null;
   unreadCount?: number;

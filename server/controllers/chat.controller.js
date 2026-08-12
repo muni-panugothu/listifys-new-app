@@ -134,7 +134,7 @@ exports.getConversations = async (req, res) => {
     const [conversations, total] = await Promise.all([
       Conversation.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(limit)
         .populate('participants', 'name profileImage googleProfileImage avatar provider')
-        .populate({ path: 'lastMessage', select: 'content attachments sender createdAt productThread messageType' }),
+        .populate({ path: 'lastMessage', select: 'content attachments sender createdAt productThread messageType status' }),
       Conversation.countDocuments(filter),
     ]);
     const formatted = conversations.map((c) => chatService.formatConversation(c, userId));
@@ -155,7 +155,7 @@ exports.getConversation = async (req, res) => {
     }
     const conversation = await Conversation.findOne({ _id: conversationId, participants: userId })
       .populate('participants', 'name profileImage googleProfileImage avatar provider')
-      .populate({ path: 'lastMessage', select: 'content attachments sender createdAt productThread messageType' });
+      .populate({ path: 'lastMessage', select: 'content attachments sender createdAt productThread messageType status' });
     if (!conversation) {
       return res.status(404).json({ success: false, message: 'Conversation not found' });
     }

@@ -71,7 +71,7 @@ exports.getOrCreateConversation = async (userId, recipientId) => {
   const participantFilter = { participants: { $all: [p1, p2], $size: 2 } };
   const populateOpts = [
     { path: 'participants', select: 'name profileImage googleProfileImage avatar provider' },
-    { path: 'lastMessage', select: 'content attachments sender createdAt productThread' },
+    { path: 'lastMessage', select: 'content attachments sender createdAt productThread status messageType' },
   ];
 
   const loadConversation = (query) =>
@@ -105,6 +105,25 @@ exports.getOrCreateConversation = async (userId, recipientId) => {
 /**
  * Format a conversation document for API response.
  */
+function resolveUnreadCount(conv, viewerUserId) {
+  const uid = String(viewerUserId);
+  const counts = conv.unreadCounts;
+  if (!counts) return 0;
+
+  if (typeof counts.get === 'function') {
+    return Number(counts.get(uid) ?? counts.get(viewerUserId) ?? 0);
+  }
+
+  if (typeof counts === 'object') {
+    if (counts[uid] != null) return Number(counts[uid]) || 0;
+    for (const [key, value] of Object.entries(counts)) {
+      if (String(key) === uid) return Number(value) || 0;
+    }
+  }
+
+  return 0;
+}
+
 exports.formatConversation = (conv, viewerUserId) => {
   const lastMsg = conv.lastMessage;
   return {
@@ -119,11 +138,11 @@ exports.formatConversation = (conv, viewerUserId) => {
       sender:      String(lastMsg.sender),
       attachments: lastMsg.attachments || [],
       productThread: lastMsg.productThread || null,
+      messageType: lastMsg.messageType || 'text',
+      status:      lastMsg.status || 'sent',
       createdAt:   lastMsg.createdAt,
     } : null,
-    unreadCount:  conv.unreadCounts?.get
-      ? (conv.unreadCounts.get(viewerUserId) || 0)
-      : (conv.unreadCounts?.[viewerUserId] || 0),
+    unreadCount: resolveUnreadCount(conv, viewerUserId),
     updatedAt: conv.updatedAt,
     createdAt: conv.createdAt,
   };

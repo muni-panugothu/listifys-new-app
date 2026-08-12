@@ -58,6 +58,9 @@ router.post(
   uploadImages
 );
 
+
+const { registerListingVideoUpload } = require("../utils/register-listing-video-upload.js");
+registerListingVideoUpload(router, "forsale");
 // ── Routes with :id parameter ──
 router.get(
   "/:id",

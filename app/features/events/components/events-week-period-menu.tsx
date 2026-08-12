@@ -10,6 +10,7 @@ import {
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
 import { ListifyFonts } from "@/constants/typography";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 
 export type WeekPeriodId = "today" | "tomorrow" | "weekend" | "custom" | "week";
@@ -39,9 +40,10 @@ function EventsWeekPeriodMenuImpl({
   onClose,
 }: EventsWeekPeriodMenuProps) {
   const { colors, isDark } = useTheme();
+  const et = useEventsTheme();
 
-  const menuBg = isDark ? "#1C1C1E" : colors.surfaceElevated;
-  const divider = isDark ? "rgba(255,255,255,0.08)" : colors.border;
+  const menuBg = colors.surfaceElevated;
+  const divider = et.divider;
 
   return (
     <Modal
@@ -69,7 +71,7 @@ function EventsWeekPeriodMenuImpl({
             shadowRadius: 20,
             elevation: 12,
             borderWidth: isDark ? 1 : 0,
-            borderColor: "rgba(255,255,255,0.06)",
+            borderColor: et.border,
           }}
         >
           {options.map((opt, index) => {

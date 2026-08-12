@@ -65,7 +65,8 @@ export function useSwrListing(
 
   const fetcher = useCallback(async () => {
     if (!id) throw new Error("missing-id");
-    return fetchListingById(categorySlug, id);
+    // Stale-while-revalidate: show feed-seeded cache instantly, refresh in background.
+    return fetchListingById(categorySlug, id, { fresh: false });
   }, [categorySlug, id]);
 
   const refresh = useCallback(async () => {

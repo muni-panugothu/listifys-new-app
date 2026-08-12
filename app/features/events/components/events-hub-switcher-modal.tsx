@@ -3,6 +3,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   Text,
   View,
 } from "react-native";
@@ -10,18 +11,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ListifyFonts } from "@/constants/typography";
 import {
-  EVENTS_HUB_TABS,
-  type EventsHubTab,
-  type EventsHubTabId,
-} from "@/features/events/data/events-hub-discovery";
+  MARKETPLACE_HUB_TABS,
+  type MarketplaceHubTab,
+  type MarketplaceHubTabId,
+} from "@/features/home/data/home-hub-tabs";
 import { Image } from "@/lib/nativewind-interop";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 
 type EventsHubSwitcherModalProps = {
   visible: boolean;
-  activeTab: EventsHubTabId;
+  activeTab: MarketplaceHubTabId;
   onClose: () => void;
-  onSelect: (tab: EventsHubTab) => void;
+  onSelect: (tab: MarketplaceHubTab) => void;
 };
 
 function EventsHubSwitcherModalImpl({
@@ -32,13 +34,15 @@ function EventsHubSwitcherModalImpl({
 }: EventsHubSwitcherModalProps) {
   const insets = useSafeAreaInsets();
   const { isDark } = useTheme();
+  const et = useEventsTheme();
+  const { colors } = et;
 
-  const sheetBg = isDark ? "#1C1C1F" : "#F4F4F5";
-  const labelColor = isDark ? "#F3F4F6" : "#111827";
-  const selectedWell = isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)";
-  const idleWell = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.95)";
-  const wellBorder = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
-  const handleColor = isDark ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.16)";
+  const sheetBg = et.surfaceSecondary;
+  const labelColor = et.textPrimary;
+  const selectedWell = et.chipActiveBg;
+  const idleWell = et.chipBg;
+  const wellBorder = et.border;
+  const handleColor = et.divider;
 
   return (
     <Modal
@@ -56,7 +60,7 @@ function EventsHubSwitcherModalImpl({
               ios: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
               default: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
             }),
-            backgroundColor: isDark ? "rgba(0,0,0,0.62)" : "rgba(15,15,18,0.45)",
+            backgroundColor: colors.scrim,
           }}
         />
 
@@ -69,7 +73,7 @@ function EventsHubSwitcherModalImpl({
             paddingTop: 10,
             paddingBottom: Math.max(insets.bottom, 14) + 10,
             borderTopWidth: isDark ? 1 : 0,
-            borderColor: "rgba(255,255,255,0.08)",
+            borderColor: et.border,
             shadowColor: "#000",
             shadowOffset: { width: 0, height: -8 },
             shadowOpacity: isDark ? 0.4 : 0.14,
@@ -88,14 +92,17 @@ function EventsHubSwitcherModalImpl({
             }}
           />
 
-          <View
-            style={{
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            style={{ maxHeight: 420 }}
+            contentContainerStyle={{
               flexDirection: "row",
               flexWrap: "wrap",
               justifyContent: "flex-start",
+              paddingBottom: 4,
             }}
           >
-            {EVENTS_HUB_TABS.map((tab) => {
+            {MARKETPLACE_HUB_TABS.map((tab) => {
               const selected = tab.id === activeTab;
               return (
                 <Pressable
@@ -117,11 +124,7 @@ function EventsHubSwitcherModalImpl({
                       justifyContent: "center",
                       backgroundColor: selected ? selectedWell : idleWell,
                       borderWidth: 1,
-                      borderColor: selected
-                        ? isDark
-                          ? "rgba(255,255,255,0.16)"
-                          : "rgba(0,0,0,0.1)"
-                        : wellBorder,
+                      borderColor: selected ? et.chipActiveBorder : wellBorder,
                       shadowColor: "#000",
                       shadowOffset: { width: 0, height: 2 },
                       shadowOpacity: isDark ? 0.25 : 0.06,
@@ -158,7 +161,7 @@ function EventsHubSwitcherModalImpl({
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>

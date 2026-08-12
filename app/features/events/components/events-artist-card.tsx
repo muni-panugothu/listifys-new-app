@@ -5,6 +5,7 @@ import { Platform, Pressable, Text, View } from "react-native";
 import { ListifyFonts } from "@/constants/typography";
 import type { EventsArtistItem } from "@/features/events/data/events-discovery";
 import { Image } from "@/lib/nativewind-interop";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 
 const AVATAR_SIZE = 88;
@@ -24,8 +25,9 @@ function EventsArtistCardImpl({
   onPress,
   onToggleSave,
 }: EventsArtistCardProps) {
-  const { colors, isDark } = useTheme();
-  const cardBg = isDark ? "#1C1C1E" : colors.surfaceMuted;
+  const { colors } = useTheme();
+  const { surface, bookmarkBg } = useEventsTheme();
+  const cardBg = surface;
 
   return (
     <Pressable
@@ -41,7 +43,7 @@ function EventsArtistCardImpl({
           paddingHorizontal: 14,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: isDark ? 0.35 : 0.08,
+          shadowOpacity: 0.12,
           shadowRadius: 10,
           elevation: 4,
         }}
@@ -86,7 +88,7 @@ function EventsArtistCardImpl({
             borderRadius: 16,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: isDark ? "rgba(0,0,0,0.55)" : colors.surface,
+            backgroundColor: bookmarkBg,
           }}
         >
           <MaterialIcons

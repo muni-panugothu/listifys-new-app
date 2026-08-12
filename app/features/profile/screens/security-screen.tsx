@@ -20,6 +20,7 @@ import { ListifyFonts } from "@/constants/typography";
 import { Image } from "@/lib/nativewind-interop";
 import { showErrorToast } from "@/lib/toast";
 import { useProtectedNavigation } from "@/lib/use-protected-navigation";
+import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
 
 const googleLogo =
@@ -28,6 +29,7 @@ const BIOMETRIC_STORAGE_KEY = "@listify/biometric_login_enabled";
 
 export function SecurityScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const { navigateProtected } = useProtectedNavigation();
   const [preferences, setPreferences] = useState<SettingsPreferences | null>(null);
   const [biometric, setBiometric] = useState(true);
@@ -147,8 +149,8 @@ export function SecurityScreen() {
                   color={item.ok ? "#27BB97" : "#F59E0B"}
                 />
                 <Text
-                  className="text-[15px] text-[#1A1A1A]"
-                  style={{ fontFamily: ListifyFonts.medium }}
+                  className="text-[15px]"
+                  style={{ fontFamily: ListifyFonts.medium, color: colors.textPrimary }}
                 >
                   {item.label}
                 </Text>
@@ -164,7 +166,7 @@ export function SecurityScreen() {
               </Text>
             </View>
             {index < checklist.length - 1 ? (
-              <View className="mx-4 h-px bg-[#F0F0F0]" />
+              <View className="mx-4 h-px" style={{ backgroundColor: colors.border }} />
             ) : null}
           </View>
         ))}
@@ -189,12 +191,15 @@ export function SecurityScreen() {
       <ProfileSectionCard title="Connected accounts">
         <View className="flex-row items-center justify-between px-4 py-3.5">
           <View className="flex-row items-center gap-3">
-            <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-[#F6F7F8]">
+            <View
+              className="h-10 w-10 items-center justify-center overflow-hidden rounded-full"
+              style={{ backgroundColor: colors.surfaceMuted }}
+            >
               <Image source={googleLogo} contentFit="contain" className="h-5 w-5" />
             </View>
             <Text
-              className="text-[15px] text-[#1A1A1A]"
-              style={{ fontFamily: ListifyFonts.medium }}
+              className="text-[15px]"
+              style={{ fontFamily: ListifyFonts.medium, color: colors.textPrimary }}
             >
               Google
             </Text>
@@ -203,7 +208,7 @@ export function SecurityScreen() {
             className="text-[12px]"
             style={{
               fontFamily: ListifyFonts.semiBold,
-              color: isGoogleLinked ? "#27BB97" : "#9CA3AF",
+              color: isGoogleLinked ? "#27BB97" : colors.textTertiary,
             }}
           >
             {isGoogleLinked ? "Linked" : "Not linked"}

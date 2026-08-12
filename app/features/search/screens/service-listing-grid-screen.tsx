@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { Image } from "@/lib/nativewind-interop";
-import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useFloatingNavPress } from "@/hooks/use-floating-nav-press";
 import { FloatingBottomNav } from "@/components/floating-bottom-nav";
 import { useTheme } from "@/providers/theme-provider";
 
@@ -132,7 +132,7 @@ export function ServiceListingGridScreen() {
     return (screenWidth - CONTAINER_PADDING * 2 - totalGap) / columns;
   }, [columns, screenWidth]);
 
-  const handleBottomTabPress = useTabNavigation();
+  const handleBottomTabPress = useFloatingNavPress();
 
   const cardBackground = isDark ? colors.surfaceElevated : colors.card;
 
@@ -238,9 +238,9 @@ export function ServiceListingGridScreen() {
                 onPress={() => setActiveFilterId(chip.id)}
                 className="rounded-full px-4 py-2"
                 style={({ pressed }) => ({
-                  backgroundColor: isActive ? "#27BB97" : "#FFFFFF",
+                  backgroundColor: isActive ? "#27BB97" : colors.surface,
                   borderWidth: isActive ? 0 : 1,
-                  borderColor: isActive ? "transparent" : "#BBCAC3",
+                  borderColor: isActive ? "transparent" : colors.border,
                   transform: [{ scale: pressed ? 0.95 : 1 }],
                   shadowColor: isActive ? "#27BB97" : "transparent",
                   shadowOffset: { width: 0, height: 4 },
@@ -251,7 +251,7 @@ export function ServiceListingGridScreen() {
               >
                 <Text
                   className="text-[12px] font-medium"
-                  style={{ color: isActive ? "#FF0000" : "#3C4A44" }}
+                  style={{ color: isActive ? colors.textOnPrimary : colors.textSecondary }}
                 >
                   {chip.label}
                 </Text>
@@ -277,8 +277,12 @@ export function ServiceListingGridScreen() {
                   },
                 })
               }
-              className="overflow-hidden rounded-xl border border-slate-100 bg-white"
-              style={{ width: cardWidth }}
+              className="overflow-hidden rounded-xl border"
+              style={{
+                width: cardWidth,
+                backgroundColor: cardBackground,
+                borderColor: colors.border,
+              }}
             >
               <View
                 className="relative w-full overflow-hidden"
@@ -321,24 +325,25 @@ export function ServiceListingGridScreen() {
               </View>
 
               <View className="gap-1 p-3">
-                <Text className="text-[10px] font-medium uppercase tracking-[0.8px] text-[#27BB97]">
+                <Text className="text-[10px] font-medium uppercase tracking-[0.8px]" style={{ color: colors.primary }}>
                   {card.badge}
                 </Text>
                 <Text
                   numberOfLines={1}
-                  className="text-[18px] font-semibold leading-6 text-[#161D1A]"
+                  className="text-[18px] font-semibold leading-6"
+                  style={{ color: colors.textPrimary }}
                 >
                   {card.name}
                 </Text>
-                <Text className="text-[11px] text-slate-400">
+                <Text className="text-[11px]" style={{ color: colors.textTertiary }}>
                   {card.reviews}
                 </Text>
 
                 <View className="mt-2 flex-row items-end gap-1">
-                  <Text className="text-[16px] font-bold text-[#161D1A]">
+                  <Text className="text-[16px] font-bold" style={{ color: colors.textPrimary }}>
                     {card.price}
                   </Text>
-                  <Text className="text-[10px] text-slate-400">/visit</Text>
+                  <Text className="text-[10px]" style={{ color: colors.textTertiary }}>/visit</Text>
                 </View>
               </View>
             </Pressable>

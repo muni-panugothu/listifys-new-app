@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const s3Service = require("../services/s3.service.js");
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require("../utils/slugify");
 
 const jobSchema = new mongoose.Schema(
@@ -270,6 +271,12 @@ const jobSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+    appliedBy: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   {
     timestamps: true,
@@ -315,6 +322,7 @@ jobSchema.index({ savedBy: 1 });
 jobSchema.index({ title: "text", description: "text", companyName: "text", skills: "text" });
 jobSchema.index({ coordinates: "2dsphere" });
 
+attachListingVideosField(jobSchema);
 attachSlugPlugin(jobSchema);
 
 module.exports = mongoose.model("Job", jobSchema);

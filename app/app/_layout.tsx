@@ -38,6 +38,7 @@ import { hydrateAppLocation } from "@/store/slices/location-slice";
 import { store } from "@/store";
 import { NotificationProvider } from "@/providers/notification-provider";
 import { NotificationNavigationHost } from "@/components/notification-navigation-host";
+import { MarketplaceHubHost } from "@/components/marketplace-hub-host";
 import { connectSocket, getSocket, disconnectSocket } from "@/features/messaging/services/socket-service";
 import { attachCallListeners } from "@/features/calling/services/call-socket-service";
 import { syncFcmTokenWithServer } from "@/lib/notifications/sync-fcm-token";
@@ -85,6 +86,7 @@ const SKIP_LOADER_PATHS = new Set([
   '/listing-success',
   '/listing-draft-saved',
   '/location-picker',
+  '/events-category-story',
   '/change-password',
   '/search-results-entity-tabs',
   '/my-listings-active',
@@ -350,6 +352,10 @@ function AppLayout() {
             options={{ headerShown: false }}
           />
           <Stack.Screen
+            name="events-category-story"
+            options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }}
+          />
+          <Stack.Screen
             name="service-listing-grid"
             options={{ headerShown: false }}
           />
@@ -471,6 +477,7 @@ function AppLayout() {
           />
         </Stack>
         <NotificationNavigationHost />
+        <MarketplaceHubHost />
         <AuthGateBottomSheet
           visible={visible}
           onClose={handleCloseAuthGate}

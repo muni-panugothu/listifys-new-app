@@ -123,6 +123,7 @@ exports.createElectronics = async (req, res) => {
       countryCode,
       features: features || [],
       images: images || [],
+      videos: videos || [],
       // Product-specific (stored only when provided)
       ...(brand && { brand }),
       ...(model && { model }),

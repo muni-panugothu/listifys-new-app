@@ -53,6 +53,9 @@ router.post(
   uploadImages,
 );
 
+
+const { registerListingVideoUpload } = require("../utils/register-listing-video-upload.js");
+registerListingVideoUpload(router, "furniture");
 router.get("/:id", searchLimiter, validateFurnitureParams, cacheResponseTracked("furniture", 300, "detail"), getFurnitureById);
 router.put(
   "/:id",

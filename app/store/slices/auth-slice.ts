@@ -32,6 +32,8 @@ import {
   verifyForgotPasswordOtp,
   verifyRegistrationOtp,
 } from "@/features/auth/services/auth-api";
+import type { ProfileCompletion } from "@/features/profile/types/profile-completion";
+import { buildProfileCompletionFromUser } from "@/lib/profile-completion-client";
 
 const USER_STORAGE_KEY = "@listify/auth_user";
 const FLOW_STATE_KEY = "@listify/auth_flow_state";
@@ -40,6 +42,7 @@ export type AuthStatus = "idle" | "loading" | "succeeded" | "failed";
 
 type AuthState = {
   user: AuthUser | null;
+  profileCompletion: ProfileCompletion | null;
   isAuthenticated: boolean;
   sessionHydrated: boolean;
   status: AuthStatus;
@@ -55,6 +58,7 @@ type AuthState = {
 
 const initialState: AuthState = {
   user: null,
+  profileCompletion: null,
   isAuthenticated: false,
   sessionHydrated: false,
   status: "idle",
@@ -207,11 +211,25 @@ export const verifyPhoneOtp = createAsyncThunk(
       if (!response.accessToken) {
         return rejectWithValue("Verification succeeded but no session token was returned.");
       }
-      if (response.user) {
-        await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.user));
-      }
       await setTokens(response.accessToken, response.refreshToken);
-      return response;
+
+      let user = response.user ?? null;
+      let profileCompletion: ProfileCompletion | null = null;
+      try {
+        const profile = await getProfile();
+        if (profile.user) {
+          user = profile.user;
+        }
+        profileCompletion = profile.profileCompletion ?? null;
+      } catch {
+        // Keep verify-otp user payload when profile fetch is unavailable.
+      }
+
+      if (user) {
+        await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+      }
+
+      return { ...response, user: user ?? undefined, profileCompletion: profileCompletion ?? buildProfileCompletionFromUser(user) };
     } catch (error) {
       return rejectWithValue(getAuthErrorMessage(error));
     }
@@ -334,37 +352,60 @@ export const restoreSession = createAsyncThunk(
       const profile = await getProfile();
       if (profile.user) {
         await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(profile.user));
-        return profile.user;
       }
-      return null;
+      return profile;
     };
 
     try {
-      const liveUser = await loadProfile();
-      if (liveUser) {
-        return { user: liveUser, flow, isAuthenticated: true };
+      const profile = await loadProfile();
+      if (profile.user) {
+        return {
+          user: profile.user,
+          profileCompletion:
+            profile.profileCompletion ??
+            buildProfileCompletionFromUser(profile.user),
+          flow,
+          isAuthenticated: true,
+        };
       }
     } catch (profileError) {
       if (isTransientSessionError(profileError)) {
         if (cachedUser) {
-          return { user: cachedUser, flow, isAuthenticated: true };
+          return {
+            user: cachedUser,
+            profileCompletion: buildProfileCompletionFromUser(cachedUser),
+            flow,
+            isAuthenticated: true,
+          };
         }
-        return { user: null, flow, isAuthenticated: true };
+        return { user: null, profileCompletion: null, flow, isAuthenticated: true };
       }
 
       const refreshed = await refreshAccessToken();
       if (refreshed) {
         try {
-          const liveUser = await loadProfile();
-          if (liveUser) {
-            return { user: liveUser, flow, isAuthenticated: true };
+          const profile = await loadProfile();
+          if (profile.user) {
+            return {
+              user: profile.user,
+              profileCompletion:
+                profile.profileCompletion ??
+                buildProfileCompletionFromUser(profile.user),
+              flow,
+              isAuthenticated: true,
+            };
           }
         } catch (retryError) {
           if (isTransientSessionError(retryError)) {
             if (cachedUser) {
-              return { user: cachedUser, flow, isAuthenticated: true };
+              return {
+                user: cachedUser,
+                profileCompletion: buildProfileCompletionFromUser(cachedUser),
+                flow,
+                isAuthenticated: true,
+              };
             }
-            return { user: null, flow, isAuthenticated: true };
+            return { user: null, profileCompletion: null, flow, isAuthenticated: true };
           }
         }
       }
@@ -572,7 +613,12 @@ const authSlice = createSlice({
       })
       .addCase(verifyPhoneOtp.fulfilled, (state, action) => {
         state.status = "succeeded";
-        state.user = action.payload.user ?? null;
+        state.user = action.payload.user
+          ? normalizeStoredUser(action.payload.user)
+          : null;
+        state.profileCompletion =
+          action.payload.profileCompletion ??
+          buildProfileCompletionFromUser(action.payload.user);
         state.isAuthenticated = true;
         state.sessionHydrated = true;
         state.registrationPhone = null;
@@ -650,7 +696,12 @@ const authSlice = createSlice({
     // Restore session
     builder
       .addCase(restoreSession.fulfilled, (state, action) => {
-        state.user = action.payload.user;
+        state.user = action.payload.user
+          ? normalizeStoredUser(action.payload.user)
+          : null;
+        state.profileCompletion =
+          action.payload.profileCompletion ??
+          buildProfileCompletionFromUser(action.payload.user);
         state.isAuthenticated = action.payload.isAuthenticated;
         state.sessionHydrated = true;
         if (action.payload.flow) {
@@ -670,8 +721,14 @@ const authSlice = createSlice({
     builder
       .addCase(fetchProfile.fulfilled, (state, action) => {
         if (action.payload.user) {
-          state.user = { ...(state.user ?? {}), ...action.payload.user };
+          state.user = normalizeStoredUser({
+            ...(state.user ?? {}),
+            ...action.payload.user,
+          } as AuthUser);
         }
+        state.profileCompletion =
+          action.payload.profileCompletion ??
+          buildProfileCompletionFromUser(state.user);
       });
 
     // Update profile
@@ -682,7 +739,9 @@ const authSlice = createSlice({
       })
       .addCase(updateUserProfile.fulfilled, (state, action) => {
         state.status = "succeeded";
-        state.user = action.payload.user ?? state.user;
+        if (action.payload.user) {
+          state.user = { ...(state.user ?? {}), ...action.payload.user };
+        }
         state.error = null;
       })
       .addCase(updateUserProfile.rejected, (state, action) => {
@@ -705,6 +764,7 @@ const authSlice = createSlice({
       })
       .addCase(logout.fulfilled, (state) => {
         state.user = null;
+        state.profileCompletion = null;
         state.isAuthenticated = false;
         state.sessionHydrated = true;
         state.status = "idle";

@@ -48,6 +48,8 @@ const {
   maskOtp,
 } = require("../utils/tokenUtils");
 
+const { buildProfileCompletion } = require("../services/profile-completion.service");
+
 const PROFILE_CACHE_TTL_SECONDS = 300;
 const DEVICES_CACHE_TTL_SECONDS = 180;
 const ACTIVITY_CACHE_TTL_SECONDS = 180;
@@ -1683,9 +1685,12 @@ exports.getProfile = async (req, res) => {
 
     // Fast path: both caches warm — skip all DB queries
     if (cachedMeta && cachedCounts) {
+      const userPayload = { ...cachedMeta, ...cachedCounts };
+      const profileCompletion = buildProfileCompletion(userPayload);
       return res.status(200).json({
         success: true,
-        user: { ...cachedMeta, ...cachedCounts },
+        user: userPayload,
+        profileCompletion,
       });
     }
 
@@ -1725,6 +1730,7 @@ exports.getProfile = async (req, res) => {
         profileImageKey: user.profileImageKey,
         googleProfileImage: user.googleProfileImage,
         isVerified: user.isVerified,
+        phoneVerified: user.phoneVerified ?? false,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         phone: user.phone || null,
@@ -1759,9 +1765,16 @@ exports.getProfile = async (req, res) => {
       await writeJsonCache(countsKey, countsData, 60); // 60-second TTL
     }
 
+    const userPayload = { ...metaData, ...countsData };
+    const profileCompletion = buildProfileCompletion({
+      ...user.toObject?.() ? user.toObject() : user,
+      ...userPayload,
+    });
+
     res.status(200).json({
       success: true,
-      user: { ...metaData, ...countsData },
+      user: userPayload,
+      profileCompletion,
     });
   } catch (error) {
     res.status(500).json({
@@ -1855,29 +1868,9 @@ exports.updateProfile = async (req, res) => {
         .json({ success: false, message: "User not found" });
     }
 
-    // Log activity (non-fatal)
-    try {
-      await user.addSecurityLog(
-        "profile_updated",
-        req.ip,
-        req.get("user-agent"),
-        { updatedFields: Object.keys(updateData) },
-      );
-    } catch (logErr) {
-      logger.warn("Could not log profile update activity:", logErr.message);
-    }
-
     const profileImageUrl = getResolvedProfileImage(user);
-    const passwordProbeUser = await User.findById(user._id).select("+password");
-    const hasPassword = !!passwordProbeUser?.password;
-
-    // Invalidate review caches so name updates reflect instantly everywhere
-    try {
-      await invalidateEntityCache("srvcReviewProv");
-      await invalidateEntityCache("srvcReviewList");
-    } catch (_) { /* bypass cache err */ }
-
-    await invalidateAccountCaches(user._id);
+    const hasPassword =
+      typeof req.user?.hasPassword === "boolean" ? req.user.hasPassword : undefined;
 
     const userResponse = {
       id: user._id,
@@ -1890,7 +1883,7 @@ exports.updateProfile = async (req, res) => {
       gender: user.gender || null,
       role: user.role,
       provider: user.provider,
-      hasPassword,
+      ...(hasPassword !== undefined ? { hasPassword } : {}),
       avatar: user.avatar,
       profileImage: s3Service.toProxyUrl(user.profileImage) || null,
       profileImageKey: user.profileImageKey || null,
@@ -1905,6 +1898,25 @@ exports.updateProfile = async (req, res) => {
       message: "Profile updated successfully",
       user: userResponse,
     });
+
+    // Non-blocking side effects — don't delay the response on slow cache/redis.
+    void user
+      .addSecurityLog(
+        "profile_updated",
+        req.ip,
+        req.get("user-agent"),
+        { updatedFields: Object.keys(updateData) },
+      )
+      .catch((logErr) => {
+        logger.warn("Could not log profile update activity:", logErr.message);
+      });
+
+    void Promise.all([
+      invalidateEntityCache("srvcReviewProv"),
+      invalidateEntityCache("srvcReviewList"),
+      invalidateAccountCaches(user._id),
+    ]).catch(() => {});
+    return;
   } catch (error) {
     logger.error("❌ Update profile error:", error);
 
@@ -3836,6 +3848,12 @@ exports.phoneSendOTP = async (req, res) => {
  * If user exists with this phone → login.
  * If user does NOT exist → register new account with phone provider.
  */
+const defaultNameFromPhone = (phone) => {
+  const digits = String(phone || "").replace(/\D/g, "");
+  const last4 = digits.slice(-4);
+  return last4 ? `User ${last4}` : "Listify User";
+};
+
 exports.phoneVerifyOTP = async (req, res) => {
   try {
     const { phone, otp, name } = req.body;
@@ -3880,26 +3898,45 @@ exports.phoneVerifyOTP = async (req, res) => {
     let isNew = false;
 
     if (!user) {
-      // Register new user with phone
+      // Register new user with phone — omit email so sparse unique index allows many phone-only users
       isNew = true;
       user = new User({
-        name: name || "",
+        name: (name && String(name).trim()) || defaultNameFromPhone(normalizedPhone),
         phone: normalizedPhone,
         phoneVerified: true,
         provider: "phone",
         isVerified: true,
         status: "active",
       });
-      await user.save();
+      user.set("email", undefined);
 
-      logger.info("New phone user registered", { userId: user._id, phone: normalizedPhone.slice(0, 5) + "****" });
+      try {
+        await user.save();
+      } catch (saveErr) {
+        if (saveErr.code === 11000) {
+          user = await User.findOne({ phone: normalizedPhone }).select("+password +devices +loginHistory");
+          if (user) {
+            isNew = false;
+          } else {
+            throw saveErr;
+          }
+        } else {
+          throw saveErr;
+        }
+      }
 
-      // Reload with selected fields
-      user = await User.findById(user._id).select("+devices +loginHistory");
+      if (isNew) {
+        logger.info("New phone user registered", { userId: user._id, phone: normalizedPhone.slice(0, 5) + "****" });
+        user = await User.findById(user._id).select("+devices +loginHistory");
+      }
     } else {
       // Existing user — mark phone as verified
       if (!user.phoneVerified) {
         user.phoneVerified = true;
+        await user.save();
+      }
+      if (!user.name?.trim()) {
+        user.name = defaultNameFromPhone(normalizedPhone);
         await user.save();
       }
     }
@@ -3988,6 +4025,9 @@ exports.phoneVerifyOTP = async (req, res) => {
       message,
       user: userResponse,
       isNew,
+      // Native clients cannot read HttpOnly cookies — include tokens in body.
+      accessToken,
+      refreshToken,
     });
 
     // Non-blocking audit log
@@ -4005,7 +4045,16 @@ exports.phoneVerifyOTP = async (req, res) => {
     }).catch(() => {});
   } catch (error) {
     logger.error("Phone verify OTP error:", error);
-    res.status(500).json({ success: false, message: "Server error" });
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "An account with this phone already exists. Please sign in.",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Verification could not be completed. Please try again.",
+    });
   }
 };
 

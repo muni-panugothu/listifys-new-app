@@ -89,7 +89,7 @@ type SpotlightCardProps = {
   iconMuted: string;
 };
 
-function SpotlightCard({
+function SpotlightCardImpl({
   item,
   index,
   scrollX,
@@ -289,6 +289,8 @@ function SpotlightCard({
   );
 }
 
+const SpotlightCard = memo(SpotlightCardImpl);
+
 function HomeSpotlightCarouselImpl({
   items,
   onPressItem,
@@ -447,7 +449,7 @@ function HomeSpotlightCarouselImpl({
           offset: ITEM_SIZE * i,
           index: i,
         })}
-        removeClippedSubviews={false}
+        removeClippedSubviews
         initialNumToRender={3}
         maxToRenderPerBatch={3}
         windowSize={5}

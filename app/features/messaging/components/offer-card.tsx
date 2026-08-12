@@ -1,28 +1,15 @@
 /**
  * OfferCard — rendered inside a product thread when messageType === "offer".
- *
- * Looks like a regular message bubble (matching WhatsApp's "structured" message
- * style) — the body is the server's pre-formatted multi-line text:
- *
- *   📋 Offer for: Bracelet
- *
- *   💰 Listed Price: ₹600
- *   🏷️ My Offer: ₹500
- *
- *   Hi, I'm interested in this item and would like to offer ₹500. Please …
- *
- * The seller sees Accept / Decline buttons appended below when the offer is
- * still pending and the thread is active.
  */
 import { Text, View, Pressable } from "react-native";
 import type { ChatMessage, ProductThread } from "@/features/messaging/services/chat-api";
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 
 const BRAND   = "#27BB97";
 const SOLD    = "#EF4444";
 const PENDING = "#F59E0B";
 const ACCENT  = "#3B82F6";
-const TEXT_DARK = "#1A1A1A";
 
 type Props = {
   message: ChatMessage;
@@ -40,9 +27,6 @@ const STATUS_COLORS: Record<string, string> = {
   countered: ACCENT,
 };
 
-// Legacy server messages (pre-format-update) only have a one-liner like
-// "Buyer offered ₹500". We upgrade those on the fly so the UI is consistent
-// regardless of when the message was sent.
 function buildBody(message: ChatMessage, thread: ProductThread): string {
   const raw = (message.content || "").trim();
   if (raw.includes("📋 Offer for")) return raw;
@@ -77,17 +61,20 @@ function buildBody(message: ChatMessage, thread: ProductThread): string {
 }
 
 export function OfferCard({ message, thread, isSeller, fromMe, onAccept, onDecline }: Props) {
+  const { colors, resolvedMode } = useTheme();
+  const isDark = resolvedMode === "dark";
   const status      = message.offerData?.status ?? "pending";
   const accentColor = STATUS_COLORS[status] ?? PENDING;
   const threadOfferPending = thread.offerStatus === "pending";
   const showActions = isSeller && status === "pending" && threadOfferPending && thread.status === "active";
 
   const body = buildBody(message, thread);
+  const cardBg = isDark ? colors.surfaceElevated : "#FFFBEB";
 
   return (
     <View
       style={{
-        backgroundColor: "#FFFBEB",
+        backgroundColor: cardBg,
         borderRadius: 16,
         borderBottomRightRadius: fromMe ? 4 : 16,
         borderBottomLeftRadius:  fromMe ? 16 : 4,
@@ -102,7 +89,7 @@ export function OfferCard({ message, thread, isSeller, fromMe, onAccept, onDecli
         style={{
           fontFamily: ListifyFonts.regular,
           fontSize: 14,
-          color: TEXT_DARK,
+          color: colors.textPrimary,
           lineHeight: 20,
         }}
       >
@@ -120,7 +107,9 @@ export function OfferCard({ message, thread, isSeller, fromMe, onAccept, onDecli
               borderRadius: 10,
               borderWidth: 1,
               borderColor: SOLD,
-              backgroundColor: pressed ? "#FEE2E2" : "#FFF5F5",
+              backgroundColor: pressed
+                ? (isDark ? "rgba(239,68,68,0.25)" : "#FEE2E2")
+                : (isDark ? "rgba(239,68,68,0.12)" : "#FFF5F5"),
             })}
           >
             <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 13, color: SOLD }}>

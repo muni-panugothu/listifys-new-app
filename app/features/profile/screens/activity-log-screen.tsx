@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ListifyFonts } from "@/constants/typography";
 import { type ActivityLogEntry, getActivityLog } from "@/features/auth/services/auth-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { useTheme } from "@/providers/theme-provider";
 
 // ── Icon mapping ─────────────────────────────────────────────────────────────
 
@@ -24,33 +25,37 @@ type ActivityIconInfo = {
   tint: string;
 };
 
-function getActivityIcon(action: string): ActivityIconInfo {
+function getActivityIcon(action: string, isDark: boolean): ActivityIconInfo {
   const a = action.toLowerCase();
+  const pair = (lightBg: string, tint: string) => ({
+    bg: isDark ? `${tint}22` : lightBg,
+    tint,
+  });
   if (a.includes("login") || a.includes("sign_in") || a.includes("signin")) {
-    return { icon: "login", bg: "#EFF6FF", tint: "#3B82F6" };
+    return { icon: "login", ...pair("#EFF6FF", "#3B82F6") };
   }
   if (a.includes("logout") || a.includes("sign_out") || a.includes("signout")) {
-    return { icon: "logout", bg: "#FFF7ED", tint: "#FB923C" };
+    return { icon: "logout", ...pair("#FFF7ED", "#FB923C") };
   }
   if (a.includes("password") || a.includes("reset")) {
-    return { icon: "lock-reset", bg: "#FEF2F2", tint: "#EF4444" };
+    return { icon: "lock-reset", ...pair("#FEF2F2", "#EF4444") };
   }
   if (a.includes("profile") || a.includes("avatar") || a.includes("picture") || a.includes("update")) {
-    return { icon: "manage-accounts", bg: "#F0FDF4", tint: "#22C55E" };
+    return { icon: "manage-accounts", ...pair("#F0FDF4", "#22C55E") };
   }
   if (a.includes("register") || a.includes("signup") || a.includes("sign_up")) {
-    return { icon: "person-add", bg: "#FAF5FF", tint: "#A855F7" };
+    return { icon: "person-add", ...pair("#FAF5FF", "#A855F7") };
   }
   if (a.includes("list") || a.includes("post") || a.includes("publish")) {
-    return { icon: "inventory-2", bg: "#F0FDFA", tint: "#27BB97" };
+    return { icon: "inventory-2", ...pair("#F0FDFA", "#27BB97") };
   }
   if (a.includes("device") || a.includes("session")) {
-    return { icon: "devices", bg: "#EFF6FF", tint: "#1D4ED8" };
+    return { icon: "devices", ...pair("#EFF6FF", "#1D4ED8") };
   }
   if (a.includes("follow")) {
-    return { icon: "person-add-alt-1", bg: "#FFF0F6", tint: "#EC4899" };
+    return { icon: "person-add-alt-1", ...pair("#FFF0F6", "#EC4899") };
   }
-  return { icon: "history", bg: "#F1F5F9", tint: "#64748B" };
+  return { icon: "history", ...pair("#F1F5F9", "#64748B") };
 }
 
 function isSameDay(a: Date, b: Date) {
@@ -95,6 +100,8 @@ function groupByDate(
 export function ActivityLogScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors, resolvedMode } = useTheme();
+  const isDark = resolvedMode === "dark";
   const topBarHeight = useMemo(() => insets.top + 64, [insets.top]);
 
   const [activities, setActivities] = useState<ActivityLogEntry[]>([]);
@@ -143,7 +150,7 @@ export function ActivityLogScreen() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F6F7F8" }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* ── Top Bar ── */}
       <View
         style={{
@@ -155,15 +162,15 @@ export function ActivityLogScreen() {
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          backgroundColor: "rgba(255,255,255,0.97)",
+          backgroundColor: colors.surface,
           borderBottomWidth: 1,
-          borderBottomColor: "#F1F5F9",
+          borderBottomColor: colors.border,
           paddingHorizontal: 16,
           paddingTop: insets.top,
           height: topBarHeight,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.06,
+          shadowOpacity: isDark ? 0.2 : 0.06,
           shadowRadius: 4,
           elevation: 3,
         }}
@@ -175,14 +182,14 @@ export function ActivityLogScreen() {
               width: 36,
               height: 36,
               borderRadius: 18,
-              backgroundColor: pressed ? "#F1F5F9" : "transparent",
+              backgroundColor: pressed ? colors.surfaceMuted : "transparent",
               alignItems: "center",
               justifyContent: "center",
             })}
           >
             <MaterialIcons name="arrow-back" size={22} color="#27BB97" />
           </Pressable>
-          <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 17, color: "#161D1A" }}>
+          <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 17, color: colors.textPrimary }}>
             Activity Log
           </Text>
         </View>
@@ -196,12 +203,12 @@ export function ActivityLogScreen() {
               width: 36,
               height: 36,
               borderRadius: 18,
-              backgroundColor: pressed ? "#F1F5F9" : "transparent",
+              backgroundColor: pressed ? colors.surfaceMuted : "transparent",
               alignItems: "center",
               justifyContent: "center",
             })}
           >
-            <MaterialIcons name="refresh" size={22} color="#64748B" />
+            <MaterialIcons name="refresh" size={22} color={colors.iconMuted} />
           </Pressable>
         )}
       </View>
@@ -231,34 +238,34 @@ export function ActivityLogScreen() {
               value: String(activities.length),
               icon: "history" as const,
               tint: "#27BB97",
-              bg: "#F0FDFA",
+              bg: isDark ? "rgba(39,187,151,0.18)" : "#F0FDFA",
             },
             {
               label: "Logins",
               value: String(loginCount),
               icon: "login" as const,
               tint: "#3B82F6",
-              bg: "#EFF6FF",
+              bg: isDark ? "rgba(59,130,246,0.18)" : "#EFF6FF",
             },
             {
               label: "Security",
               value: String(securityCount),
               icon: "security" as const,
               tint: "#EF4444",
-              bg: "#FEF2F2",
+              bg: isDark ? "rgba(239,68,68,0.18)" : "#FEF2F2",
             },
           ] as const).map((s) => (
             <View
               key={s.label}
               style={{
                 flex: 1,
-                backgroundColor: "#FFFFFF",
+                backgroundColor: colors.card,
                 borderRadius: 16,
                 padding: 14,
                 alignItems: "center",
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.06,
+                shadowOpacity: isDark ? 0.2 : 0.06,
                 shadowRadius: 4,
                 elevation: 2,
               }}
@@ -280,7 +287,7 @@ export function ActivityLogScreen() {
                 style={{
                   fontFamily: ListifyFonts.bold,
                   fontSize: 20,
-                  color: "#161D1A",
+                  color: colors.textPrimary,
                 }}
               >
                 {s.value}
@@ -289,7 +296,7 @@ export function ActivityLogScreen() {
                 style={{
                   fontFamily: ListifyFonts.regular,
                   fontSize: 11,
-                  color: "#94A3B8",
+                  color: colors.textTertiary,
                   marginTop: 2,
                   textAlign: "center",
                 }}
@@ -308,7 +315,7 @@ export function ActivityLogScreen() {
               style={{
                 fontFamily: ListifyFonts.regular,
                 fontSize: 14,
-                color: "#94A3B8",
+                color: colors.textTertiary,
                 marginTop: 12,
               }}
             >
@@ -321,16 +328,16 @@ export function ActivityLogScreen() {
               alignItems: "center",
               paddingVertical: 40,
               paddingHorizontal: 24,
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.card,
               borderRadius: 16,
             }}
           >
-            <MaterialIcons name="wifi-off" size={40} color="#CBD5E1" />
+            <MaterialIcons name="wifi-off" size={40} color={colors.iconMuted} />
             <Text
               style={{
                 fontFamily: ListifyFonts.semiBold,
                 fontSize: 16,
-                color: "#161D1A",
+                color: colors.textPrimary,
                 marginTop: 12,
               }}
             >
@@ -340,7 +347,7 @@ export function ActivityLogScreen() {
               style={{
                 fontFamily: ListifyFonts.regular,
                 fontSize: 13,
-                color: "#94A3B8",
+                color: colors.textTertiary,
                 marginTop: 4,
                 textAlign: "center",
               }}
@@ -369,7 +376,7 @@ export function ActivityLogScreen() {
             style={{
               alignItems: "center",
               paddingVertical: 48,
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.card,
               borderRadius: 16,
             }}
           >
@@ -378,7 +385,7 @@ export function ActivityLogScreen() {
                 width: 64,
                 height: 64,
                 borderRadius: 32,
-                backgroundColor: "#F0FDFA",
+                backgroundColor: isDark ? "rgba(39,187,151,0.18)" : "#F0FDFA",
                 alignItems: "center",
                 justifyContent: "center",
                 marginBottom: 16,
@@ -387,7 +394,7 @@ export function ActivityLogScreen() {
               <MaterialIcons name="history" size={32} color="#27BB97" />
             </View>
             <Text
-              style={{ fontFamily: ListifyFonts.semiBold, fontSize: 16, color: "#161D1A" }}
+              style={{ fontFamily: ListifyFonts.semiBold, fontSize: 16, color: colors.textPrimary }}
             >
               No activity yet
             </Text>
@@ -395,7 +402,7 @@ export function ActivityLogScreen() {
               style={{
                 fontFamily: ListifyFonts.regular,
                 fontSize: 14,
-                color: "#94A3B8",
+                color: colors.textTertiary,
                 marginTop: 6,
                 textAlign: "center",
                 paddingHorizontal: 32,
@@ -412,7 +419,7 @@ export function ActivityLogScreen() {
                 style={{
                   fontFamily: ListifyFonts.semiBold,
                   fontSize: 11,
-                  color: "#94A3B8",
+                  color: colors.textTertiary,
                   textTransform: "uppercase",
                   letterSpacing: 1.2,
                   marginBottom: 12,
@@ -431,13 +438,13 @@ export function ActivityLogScreen() {
                     top: 18,
                     bottom: 18,
                     width: 2,
-                    backgroundColor: "#E2E8F0",
+                    backgroundColor: colors.border,
                     borderRadius: 1,
                   }}
                 />
 
                 {group.items.map((item, idx) => {
-                  const { icon, bg, tint } = getActivityIcon(item.action);
+                  const { icon, bg, tint } = getActivityIcon(item.action, isDark);
                   const d = new Date(item.createdAt);
                   const timeLabel = d.toLocaleTimeString("en-US", {
                     hour: "2-digit",
@@ -461,7 +468,7 @@ export function ActivityLogScreen() {
                           borderRadius: 18,
                           backgroundColor: bg,
                           borderWidth: 2.5,
-                          borderColor: "#FFFFFF",
+                          borderColor: colors.card,
                           alignItems: "center",
                           justifyContent: "center",
                           shadowColor: tint,
@@ -477,12 +484,12 @@ export function ActivityLogScreen() {
                       {/* Card */}
                       <View
                         style={{
-                          backgroundColor: "#FFFFFF",
+                          backgroundColor: colors.card,
                           borderRadius: 14,
                           padding: 14,
                           shadowColor: "#000",
                           shadowOffset: { width: 0, height: 1 },
-                          shadowOpacity: 0.05,
+                          shadowOpacity: isDark ? 0.15 : 0.05,
                           shadowRadius: 3,
                           elevation: 1,
                         }}
@@ -499,7 +506,7 @@ export function ActivityLogScreen() {
                             style={{
                               fontFamily: ListifyFonts.semiBold,
                               fontSize: 14,
-                              color: "#161D1A",
+                              color: colors.textPrimary,
                               flex: 1,
                               marginRight: 8,
                             }}
@@ -508,7 +515,7 @@ export function ActivityLogScreen() {
                           </Text>
                           <View
                             style={{
-                              backgroundColor: "#F8FAFC",
+                              backgroundColor: colors.surfaceMuted,
                               borderRadius: 8,
                               paddingHorizontal: 8,
                               paddingVertical: 3,
@@ -518,7 +525,7 @@ export function ActivityLogScreen() {
                               style={{
                                 fontFamily: ListifyFonts.medium,
                                 fontSize: 11,
-                                color: "#64748B",
+                                color: colors.textSecondary,
                               }}
                             >
                               {timeLabel}
@@ -531,7 +538,7 @@ export function ActivityLogScreen() {
                             style={{
                               fontFamily: ListifyFonts.regular,
                               fontSize: 13,
-                              color: "#64748B",
+                              color: colors.textSecondary,
                               lineHeight: 19,
                             }}
                           >
@@ -548,12 +555,12 @@ export function ActivityLogScreen() {
                               gap: 4,
                             }}
                           >
-                            <MaterialIcons name="location-on" size={12} color="#CBD5E1" />
+                            <MaterialIcons name="location-on" size={12} color={colors.iconMuted} />
                             <Text
                               style={{
                                 fontFamily: ListifyFonts.regular,
                                 fontSize: 11,
-                                color: "#CBD5E1",
+                                color: colors.textTertiary,
                               }}
                             >
                               {item.ipAddress}

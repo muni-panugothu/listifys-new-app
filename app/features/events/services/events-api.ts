@@ -1,5 +1,6 @@
 import { requestJson } from "@/features/auth/services/auth-api";
 import type { ListingItem } from "@/features/listing/services/listing-api";
+import { normalizeListingItem } from "@/features/listing/services/listing-api";
 import { cacheKeys, invalidateCache, withCache } from "@/lib/cache";
 
 export type EventCalendarSummary = {
@@ -82,10 +83,17 @@ export async function fetchUpcomingEvents(
 
   return withCache(
     key,
-    () =>
-      requestJson<UpcomingEventsResponse>(
+    async () => {
+      const response = await requestJson<UpcomingEventsResponse>(
         `/api/events/upcoming${qs ? `?${qs}` : ""}`,
-      ),
+      );
+      return {
+        ...response,
+        listings: (response.listings ?? []).map((item) =>
+          normalizeListingItem(item as ListingItem),
+        ),
+      };
+    },
     30_000,
   );
 }
@@ -97,4 +105,48 @@ export function prefetchUpcomingEvents(params: EventsQueryParams): void {
 
 export function invalidateEventsCaches(): void {
   invalidateCache("events:");
+}
+
+export type SimilarEventsResponse = {
+  success: boolean;
+  listings: ListingItem[];
+};
+
+export async function fetchSimilarEvents(
+  eventId: string,
+  params: Pick<EventsQueryParams, "lat" | "lng" | "radius" | "countryCode"> & {
+    limit?: number;
+  } = {},
+): Promise<SimilarEventsResponse> {
+  const query = new URLSearchParams();
+  if (params.lat != null) query.set("lat", String(params.lat));
+  if (params.lng != null) query.set("lng", String(params.lng));
+  if (params.radius != null) query.set("radius", String(params.radius));
+  if (params.countryCode) query.set("countryCode", params.countryCode);
+  if (params.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  const key = cacheKeys.eventsSimilar(eventId, qs);
+
+  return withCache(
+    key,
+    async () => {
+      const response = await requestJson<SimilarEventsResponse>(
+        `/api/events/${eventId}/similar${qs ? `?${qs}` : ""}`,
+      );
+      return {
+        ...response,
+        listings: (response.listings ?? []).map((item) =>
+          normalizeListingItem(item as ListingItem),
+        ),
+      };
+    },
+    60_000,
+  );
+}
+
+export function prefetchSimilarEvents(
+  eventId: string,
+  params: Pick<EventsQueryParams, "lat" | "lng" | "radius" | "countryCode"> = {},
+): void {
+  void fetchSimilarEvents(eventId, params).catch(() => {});
 }

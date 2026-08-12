@@ -26,6 +26,7 @@ import {
 
 import { HighlightedText } from "@/components/highlighted-text";
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 import {
   extractIsoCountryCode,
   fetchPlaceDetails,
@@ -34,8 +35,6 @@ import {
 } from "@/lib/google-places.service";
 import { usePlacesAutocomplete } from "@/hooks/usePlacesAutocomplete";
 import { showErrorToast } from "@/lib/toast";
-
-const BRAND = "#27BB97";
 
 export type PlacesSelectResult = {
   label: string;
@@ -59,6 +58,9 @@ type GooglePlacesInputProps = {
   /** Optional location bias — nudges results toward the user's area. */
   userLat?: number | null;
   userLng?: number | null;
+  /** Override input surface (e.g. white fields on dark edit-profile cards). */
+  inputBackgroundColor?: string;
+  inputTextColor?: string;
 };
 
 export function GooglePlacesInput({
@@ -68,7 +70,12 @@ export function GooglePlacesInput({
   placeholder = "Neighborhood or city...",
   userLat,
   userLng,
+  inputBackgroundColor,
+  inputTextColor,
 }: GooglePlacesInputProps) {
+  const { colors } = useTheme();
+  const resolvedInputBg = inputBackgroundColor ?? colors.inputBackground;
+  const resolvedInputText = inputTextColor ?? colors.textPrimary;
   /**
    * inputText — what is shown in the TextInput
    * searchQuery — what is sent to the Autocomplete API
@@ -171,9 +178,9 @@ export function GooglePlacesInput({
             alignItems: "center",
             paddingHorizontal: 14,
             paddingVertical: 12,
-            backgroundColor: pressed ? "#F0FDF9" : "#FFFFFF",
+            backgroundColor: pressed ? colors.primarySoft : colors.surfaceElevated,
             borderBottomWidth: isLast ? 0 : 1,
-            borderBottomColor: "#F3F4F6",
+            borderBottomColor: colors.border,
             opacity: selectingId && !isSelecting ? 0.5 : 1,
           })}
         >
@@ -183,7 +190,7 @@ export function GooglePlacesInput({
               width: 34,
               height: 34,
               borderRadius: 17,
-              backgroundColor: "#ECFDF5",
+              backgroundColor: colors.primarySoft,
               alignItems: "center",
               justifyContent: "center",
               marginRight: 11,
@@ -191,9 +198,9 @@ export function GooglePlacesInput({
             }}
           >
             {isSelecting ? (
-              <ActivityIndicator size="small" color={BRAND} />
+              <ActivityIndicator size="small" color={colors.primary} />
             ) : (
-              <MaterialIcons name="location-on" size={17} color={BRAND} />
+              <MaterialIcons name="location-on" size={17} color={colors.primary} />
             )}
           </View>
 
@@ -204,7 +211,7 @@ export function GooglePlacesInput({
               matchedSubstrings={
                 main_text_matched_substrings as MatchedSubstring[]
               }
-              style={{ fontSize: 13.5, lineHeight: 18 }}
+              style={{ fontSize: 13.5, lineHeight: 18, color: colors.textPrimary }}
               numberOfLines={1}
             />
             {secondary_text ? (
@@ -212,7 +219,7 @@ export function GooglePlacesInput({
                 numberOfLines={1}
                 style={{
                   fontSize: 11.5,
-                  color: "#6B7280",
+                  color: colors.textSecondary,
                   fontFamily: ListifyFonts.regular,
                   lineHeight: 16,
                 }}
@@ -226,13 +233,13 @@ export function GooglePlacesInput({
           <MaterialIcons
             name="north-west"
             size={14}
-            color="#C4C9D4"
+            color={colors.iconMuted}
             style={{ marginLeft: 8, flexShrink: 0 }}
           />
         </Pressable>
       );
     },
-    [predictions.length, selectingId, handleSelect],
+    [predictions.length, selectingId, handleSelect, colors],
   );
 
   const keyExtractor = useCallback(
@@ -252,8 +259,8 @@ export function GooglePlacesInput({
           alignItems: "center",
           borderRadius: 12,
           borderWidth: 1.5,
-          borderColor: "#E5E7EB",
-          backgroundColor: "#FAFAFA",
+          borderColor: colors.border,
+          backgroundColor: resolvedInputBg,
           paddingHorizontal: 12,
           gap: 8,
         }}
@@ -261,27 +268,27 @@ export function GooglePlacesInput({
         <MaterialIcons
           name="search"
           size={20}
-          color={inputText.length > 0 ? BRAND : "#9CA3AF"}
+          color={inputText.length > 0 ? colors.primary : colors.iconMuted}
         />
         <TextInput
           ref={inputRef}
           value={inputText}
           onChangeText={handleChangeText}
           placeholder={placeholder}
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={colors.inputPlaceholder}
           returnKeyType="search"
           autoCapitalize="words"
           autoCorrect={false}
           style={{
             flex: 1,
             fontSize: 14,
-            color: "#111827",
+            color: resolvedInputText,
             fontFamily: ListifyFonts.regular,
             paddingVertical: 0,
           }}
         />
         {loading && searchQuery.trim().length >= 2 ? (
-          <ActivityIndicator size="small" color={BRAND} />
+          <ActivityIndicator size="small" color={colors.primary} />
         ) : inputText.length > 0 ? (
           <Pressable onPress={handleClear} hitSlop={8}>
             <View
@@ -289,12 +296,12 @@ export function GooglePlacesInput({
                 width: 20,
                 height: 20,
                 borderRadius: 10,
-                backgroundColor: "#E5E7EB",
+                backgroundColor: colors.border,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <MaterialIcons name="close" size={13} color="#6B7280" />
+              <MaterialIcons name="close" size={13} color={colors.textSecondary} />
             </View>
           </Pressable>
         ) : null}
@@ -308,10 +315,10 @@ export function GooglePlacesInput({
             top: 52,
             left: 0,
             right: 0,
-            backgroundColor: "#FFFFFF",
+            backgroundColor: colors.surfaceElevated,
             borderRadius: 12,
             borderWidth: 1,
-            borderColor: "#E5E7EB",
+            borderColor: colors.border,
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 4 },
             shadowOpacity: 0.1,
@@ -325,7 +332,7 @@ export function GooglePlacesInput({
           {/* Loading skeleton */}
           {loading && predictions.length === 0 && !error ? (
             <View style={{ padding: 16, alignItems: "center" }}>
-              <ActivityIndicator color={BRAND} />
+              <ActivityIndicator color={colors.primary} />
             </View>
           ) : null}
 
@@ -339,11 +346,11 @@ export function GooglePlacesInput({
                 gap: 8,
               }}
             >
-              <MaterialIcons name="wifi-off" size={16} color="#EF4444" />
+              <MaterialIcons name="wifi-off" size={16} color={colors.danger} />
               <Text
                 style={{
                   fontSize: 13,
-                  color: "#6B7280",
+                  color: colors.textSecondary,
                   fontFamily: ListifyFonts.regular,
                 }}
               >
@@ -375,11 +382,11 @@ export function GooglePlacesInput({
                 gap: 8,
               }}
             >
-              <MaterialIcons name="search-off" size={16} color="#9CA3AF" />
+              <MaterialIcons name="search-off" size={16} color={colors.iconMuted} />
               <Text
                 style={{
                   fontSize: 13,
-                  color: "#9CA3AF",
+                  color: colors.textTertiary,
                   fontFamily: ListifyFonts.regular,
                 }}
               >

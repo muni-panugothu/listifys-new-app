@@ -6,6 +6,7 @@
 import type { ImageSourcePropType } from "react-native";
 
 import type { MaterialIcons } from "@expo/vector-icons";
+import type { ListingVideoEntry } from "@/lib/listing-media";
 
 export type EventsHeroSlide = {
   id: string;
@@ -272,6 +273,7 @@ export type FeaturedEventDummy = {
   id: string;
   title: string;
   image: string;
+  videos?: ListingVideoEntry[];
   venue: string;
   eventDate: string;
   eventTime: string;

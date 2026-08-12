@@ -15,6 +15,7 @@ import {
   type EventsExploreCategory,
 } from "@/features/events/data/events-discovery";
 import { Image } from "@/lib/nativewind-interop";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -139,6 +140,7 @@ function EventsExploreGridImpl({
   onSelect,
 }: EventsExploreGridProps) {
   const { colors, isDark } = useTheme();
+  const { border: borderIdle } = useEventsTheme();
   const columns = useMemo(
     () => chunkIntoColumns(EVENTS_EXPLORE_CATEGORIES),
     [],
@@ -148,11 +150,10 @@ function EventsExploreGridImpl({
     (): [string, string, string] =>
       isDark
         ? ["#2C2C30", "#1A1A1D", "#0E0E10"]
-        : ["#FFFFFF", "#F5F6F8", "#ECEEF2"],
-    [isDark],
+        : [colors.surface, colors.surfaceElevated, colors.background],
+    [colors.background, colors.surface, colors.surfaceElevated, isDark],
   );
 
-  const borderIdle = isDark ? "rgba(255,255,255,0.12)" : colors.border;
   const labelColor = colors.textPrimary;
 
   return (

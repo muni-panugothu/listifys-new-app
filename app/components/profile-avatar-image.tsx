@@ -39,7 +39,7 @@ export function ProfileAvatarImage({
     setLoadFailed(false);
   }, [uri]);
 
-  const showFallback = loadFailed || !uri;
+  const showFallback = loadFailed;
 
   if (showFallback) {
     return (
@@ -56,7 +56,7 @@ export function ProfileAvatarImage({
     <Image
       source={uri || DEFAULT_PROFILE_AVATAR_URI}
       contentFit="cover"
-      transition={120}
+      transition={200}
       cachePolicy="memory-disk"
       recyclingKey={uri || DEFAULT_PROFILE_AVATAR_URI}
       className={className}

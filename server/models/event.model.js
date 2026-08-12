@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const s3Service = require("../services/s3.service.js");
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require("../utils/slugify");
 
 const EVENT_SUBCATEGORIES = [
@@ -230,6 +231,7 @@ eventSchema.index({ status: 1, startDate: 1 });
 eventSchema.index({ title: "text", description: "text", organizer: "text", venue: "text" });
 eventSchema.index({ coordinates: "2dsphere" });
 
+attachListingVideosField(eventSchema);
 attachSlugPlugin(eventSchema);
 
 module.exports = mongoose.model("Event", eventSchema);

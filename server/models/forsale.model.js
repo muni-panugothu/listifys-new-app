@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const s3Service = require("../services/s3.service.js");
+const { attachListingVideosField } = require('./plugins/listing-videos.plugin');
 const { attachSlugPlugin } = require("../utils/slugify");
 
 const forSaleSchema = new mongoose.Schema(
@@ -293,6 +294,7 @@ forSaleSchema.index({ savedBy: 1 });
 forSaleSchema.index({ title: "text", description: "text" });
 forSaleSchema.index({ "coordinates": "2dsphere" });
 
+attachListingVideosField(forSaleSchema);
 attachSlugPlugin(forSaleSchema);
 
 module.exports = mongoose.model("ForSale", forSaleSchema);

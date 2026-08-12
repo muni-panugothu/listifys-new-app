@@ -16,8 +16,10 @@ export type CellularGeneration = "2g" | "3g" | "4g" | "5g" | null;
 type NetworkState = {
   isConnected: boolean;
   isInternetReachable: boolean | null;
-  /** Result of real probe validation (Cloudflare + Google + backend). */
+  /** Result of real probe validation — general internet works. */
   actualInternetReachable: boolean | null;
+  /** App backend /health responded on at least one candidate URL. */
+  backendReachable: boolean | null;
   isSlowConnection: boolean;
   transportIsSlow: boolean;
   requestIsSlow: boolean;
@@ -44,6 +46,7 @@ const initialState: NetworkState = {
   isConnected: true,
   isInternetReachable: null,
   actualInternetReachable: null,
+  backendReachable: null,
   isSlowConnection: false,
   transportIsSlow: false,
   requestIsSlow: false,
@@ -98,6 +101,13 @@ const networkSlice = createSlice({
     setActualInternetReachable(state, action: PayloadAction<boolean>) {
       state.actualInternetReachable = action.payload;
     },
+    setConnectivitySnapshot(
+      state,
+      action: PayloadAction<{ hasInternet: boolean; backendReachable: boolean }>,
+    ) {
+      state.actualInternetReachable = action.payload.hasInternet;
+      state.backendReachable = action.payload.backendReachable;
+    },
     setPendingQueueCount(state, action: PayloadAction<number>) {
       state.pendingQueueCount = action.payload;
     },
@@ -109,6 +119,7 @@ export const {
   reportSlowRequest,
   updateNetworkSnapshot,
   setActualInternetReachable,
+  setConnectivitySnapshot,
   setPendingQueueCount,
 } = networkSlice.actions;
 

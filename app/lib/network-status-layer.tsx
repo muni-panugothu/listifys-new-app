@@ -1,4 +1,4 @@
-﻿/**
+/**
  * NetworkStatusLayer â€” Premium connectivity banner.
  *
  * Features:
@@ -15,7 +15,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Text, View } from "react-native";
+import { AppState, Text, View } from "react-native";
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -32,14 +32,14 @@ import {
   type CellularGeneration,
   type ConnectionType,
   clearSlowRequestSignal,
-  setActualInternetReachable,
+  setConnectivitySnapshot,
   setPendingQueueCount,
   updateNetworkSnapshot,
 } from "@/store/slices/network-slice";
 
 // â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-type BannerKind = "offline" | "online" | "slow";
+type BannerKind = "offline" | "online" | "slow" | "server";
 
 type BannerConfig = {
   kind: BannerKind;
@@ -111,6 +111,16 @@ function buildBanner(kind: BannerKind): BannerConfig {
         iconBackgroundColor: "rgba(255,255,255,0.18)",
         iconColor: "#FDE68A",
       };
+    case "server":
+      return {
+        kind,
+        icon: "cloud-sync",
+        title: "Can't Reach Server",
+        message: "You're online, but the app can't connect to Listifys right now.",
+        gradientColors: ["#78350F", "#92400E"],
+        iconBackgroundColor: "rgba(255,255,255,0.18)",
+        iconColor: "#FDE68A",
+      };
     case "online":
       return {
         kind,
@@ -144,9 +154,10 @@ export function NetworkStatusLayer() {
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
 
-  const { isConnected, isInternetReachable, isSlowConnection } = useAppSelector(
+  const { isConnected, isSlowConnection, actualInternetReachable } = useAppSelector(
     (state) => state.network,
   );
+  const networkActualOffline = actualInternetReachable === false;
 
   const [banner, setBanner] = useState<BannerConfig | null>(null);
   const bannerRef = useRef<BannerConfig | null>(null);
@@ -158,7 +169,9 @@ export function NetworkStatusLayer() {
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasMountedRef = useRef(false);
   const previousIsOfflineRef = useRef(false);
+  const previousServerDownRef = useRef(false);
   const previousIsSlowRef = useRef(false);
+  const probeCompletedRef = useRef(false);
   const appStartedAtRef = useRef(Date.now());
 
   // Keep banner ref in sync with state (used in callbacks to avoid stale closure).
@@ -239,16 +252,32 @@ export function NetworkStatusLayer() {
   // â”€â”€ ConnectivityService â†’ real internet reachability â†’ Redux + banner â”€â”€â”€â”€â”€â”€
 
   useEffect(() => {
-    const unsubscribe = connectivityService.subscribe((online) => {
-      dispatch(setActualInternetReachable(online));
+    const unsubscribe = connectivityService.subscribe((snapshot) => {
+      dispatch(setConnectivitySnapshot(snapshot));
+
+      probeCompletedRef.current = true;
 
       const wasOffline = previousIsOfflineRef.current;
+      const wasServerDown = previousServerDownRef.current;
 
-      if (!online) {
-        // Genuinely offline.
+      if (!snapshot.hasInternet) {
         previousIsOfflineRef.current = true;
+        previousServerDownRef.current = false;
         showBanner(buildBanner("offline"));
-      } else if (wasOffline) {
+        return;
+      }
+
+      previousIsOfflineRef.current = false;
+
+      if (!snapshot.backendReachable) {
+        previousServerDownRef.current = true;
+        showBanner(buildBanner("server"));
+        return;
+      }
+
+      previousServerDownRef.current = false;
+
+      if (wasOffline || wasServerDown) {
         // Just came back online â†’ drain queue.
         previousIsOfflineRef.current = false;
         drainOfflineQueue()
@@ -260,37 +289,50 @@ export function NetworkStatusLayer() {
           })
           .catch(() => {});
         showBanner(buildBanner("online"), TRANSIENT_BANNER_MS);
+      } else if (bannerRef.current?.kind === "offline" || bannerRef.current?.kind === "server") {
+        hideBanner();
       }
     });
 
     return () => unsubscribe();
-  }, [dispatch, showBanner]);
+  }, [dispatch, hideBanner, showBanner]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") {
+        connectivityService.recheck();
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   // â”€â”€ Slow connection banner (transport-layer slow, not internet offline) â”€â”€â”€â”€â”€
 
   useEffect(() => {
-    const isOffline = !isConnected || isInternetReachable === false;
-    const withinStartupGrace = Date.now() - appStartedAtRef.current < 8_000;
+    const withinStartupGrace = Date.now() - appStartedAtRef.current < 10_000;
 
     if (!hasMountedRef.current) {
       hasMountedRef.current = true;
-      previousIsOfflineRef.current = isOffline;
       previousIsSlowRef.current = isSlowConnection;
-      // Never flash "slow connection" on cold start — wait for a real transition.
-      if (isOffline) showBanner(buildBanner("offline"));
+      // Do NOT show offline on cold start from NetInfo alone — wait for probe results.
       return;
     }
 
-    // Slow-connection transitions (only when actually online, after startup grace).
+    const transportOffline = !isConnected;
+    const isOfflineForSlow =
+      transportOffline ||
+      (probeCompletedRef.current && networkActualOffline);
+
+    // Slow-connection transitions (only when genuinely online, after startup grace).
     if (
-      !isOffline &&
+      !isOfflineForSlow &&
       !withinStartupGrace &&
       isSlowConnection &&
       !previousIsSlowRef.current
     ) {
       showBanner(buildBanner("slow"), TRANSIENT_BANNER_MS);
     } else if (
-      !isOffline &&
+      !isOfflineForSlow &&
       !isSlowConnection &&
       previousIsSlowRef.current &&
       bannerRef.current?.kind === "slow"
@@ -299,7 +341,7 @@ export function NetworkStatusLayer() {
     }
 
     previousIsSlowRef.current = isSlowConnection;
-  }, [hideBanner, isConnected, isInternetReachable, isSlowConnection, showBanner]);
+  }, [hideBanner, isConnected, isSlowConnection, networkActualOffline, showBanner]);
 
   // â”€â”€ Cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

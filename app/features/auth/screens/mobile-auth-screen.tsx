@@ -17,6 +17,7 @@ import { AuthUI } from "@/constants/auth-ui";
 import { ListifyFonts } from "@/constants/typography";
 import { AuthPrimaryButton } from "@/features/auth/components/auth-primary-button";
 import { useLocale } from "@/providers/locale-provider";
+import { connectivityService } from "@/lib/connectivity-service";
 import { showErrorToast } from "@/lib/toast";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { clearError, sendPhoneOtp, verifyPhoneOtp } from "@/store/slices/auth-slice";
@@ -60,6 +61,9 @@ export function MobileAuthScreen() {
   useEffect(() => {
     if (error) {
       showErrorToast("Mobile Verification", error);
+      if (/unable to reach|no internet|temporarily unavailable|timed out/i.test(error)) {
+        connectivityService.recheck();
+      }
       dispatch(clearError());
     }
   }, [error, dispatch]);

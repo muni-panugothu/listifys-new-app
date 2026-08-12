@@ -116,6 +116,7 @@ exports.createVehicle = async (req, res) => {
       countryCode,
       features: features || [],
       images: images || [],
+      videos: videos || [],
       brand,
       model,
       variant,

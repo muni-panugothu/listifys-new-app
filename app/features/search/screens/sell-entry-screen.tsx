@@ -12,10 +12,10 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { HomeCategoryTile } from "@/components/home-category-tile";
 import { SellStepPreview } from "@/components/sell-step-indicator";
 import { FLOATING_BOTTOM_NAV_OFFSET } from "@/constants/bottom-nav-tabs";
 import { type CategorySlug } from "@/constants/categories";
+import { SearchCategoryTile } from "@/features/search/components/search-category-tile";
 import { SELL_CATEGORIES_ORDERED } from "@/lib/sell-categories";
 import { ListifyFonts } from "@/constants/typography";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
@@ -24,7 +24,7 @@ import { useAppDispatch } from "@/store/hooks";
 import { setCategory } from "@/store/slices/post-form-slice";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const H_PADDING = 20;
+const H_PADDING = 16;
 const GRID_GAP = 10;
 const GRID_COLS = 4;
 const CATEGORY_SIZE =
@@ -90,16 +90,12 @@ export function SellEntryScreen() {
 
         <SellStepPreview />
 
-        <View
-          className="mt-5 flex-row flex-wrap"
-          style={{ columnGap: GRID_GAP, rowGap: GRID_GAP + 4 }}
-        >
+        <View className="mt-5 flex-row flex-wrap" style={{ gap: GRID_GAP }}>
           {SELL_CATEGORIES_ORDERED.map((category) => (
-            <HomeCategoryTile
+            <SearchCategoryTile
               key={category.slug}
               slug={category.slug}
               label={category.name}
-              icon={category.icon}
               size={CATEGORY_SIZE}
               onPress={() => openCategoryFlow(category.slug)}
             />

@@ -3,15 +3,16 @@ import { memo } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
+import { EventListingMedia } from "@/features/events/components/event-listing-media";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { formatEventDisplayLabel } from "@/lib/event-dates";
-import { Image } from "@/lib/nativewind-interop";
 import { useTheme } from "@/providers/theme-provider";
 
 type EventListingCardProps = {
   event: ListingItem;
   priceLabel: string;
   isSaved: boolean;
+  isMediaActive?: boolean;
   onPress: () => void;
   onToggleSave: () => void;
 };
@@ -20,6 +21,7 @@ function EventListingCardImpl({
   event,
   priceLabel,
   isSaved,
+  isMediaActive = false,
   onPress,
   onToggleSave,
 }: EventListingCardProps) {
@@ -57,20 +59,16 @@ function EventListingCardImpl({
           backgroundColor: colors.surfaceMuted,
         }}
       >
-        {event.images?.[0] ? (
-          <Image
-            source={event.images[0]}
-            contentFit="cover"
-            transition={120}
-            cachePolicy="memory-disk"
-            recyclingKey={event.images[0]}
-            style={{ height: "100%", width: "100%" }}
-          />
-        ) : (
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <MaterialIcons name="event" size={44} color={colors.iconMuted} />
-          </View>
-        )}
+        <EventListingMedia
+          listing={event}
+          recyclingKey={`listing-${event._id}`}
+          isActive={isMediaActive}
+          autoPlay={isMediaActive}
+          loop={isMediaActive}
+          muted
+          style={{ height: "100%", width: "100%" }}
+          placeholderIconSize={44}
+        />
         {featured ? (
           <View
             style={{

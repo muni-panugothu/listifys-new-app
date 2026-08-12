@@ -1,6 +1,7 @@
 import { View, Text } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
+import { useTheme } from "@/providers/theme-provider";
 
 const STEP_LABELS = ["Category", "Details", "Publish"];
 
@@ -10,6 +11,7 @@ type SellStepIndicatorProps = {
 
 /** Minimal step progress — matches profile/settings (no icon row). */
 export function SellStepIndicator({ currentStep }: SellStepIndicatorProps) {
+  const { colors } = useTheme();
   const progressPct = (currentStep / 3) * 100;
 
   return (
@@ -26,7 +28,7 @@ export function SellStepIndicator({ currentStep }: SellStepIndicatorProps) {
           style={{
             fontFamily: ListifyFonts.medium,
             fontSize: 13,
-            color: "#6B7280",
+            color: colors.textSecondary,
           }}
         >
           Step {currentStep} of 3
@@ -35,7 +37,7 @@ export function SellStepIndicator({ currentStep }: SellStepIndicatorProps) {
           style={{
             fontFamily: ListifyFonts.semiBold,
             fontSize: 13,
-            color: "#1A1A1A",
+            color: colors.textPrimary,
           }}
         >
           {STEP_LABELS[currentStep - 1]}
@@ -45,7 +47,7 @@ export function SellStepIndicator({ currentStep }: SellStepIndicatorProps) {
         style={{
           height: 4,
           borderRadius: 999,
-          backgroundColor: "#E5E7EB",
+          backgroundColor: colors.border,
           overflow: "hidden",
         }}
       >
@@ -54,7 +56,7 @@ export function SellStepIndicator({ currentStep }: SellStepIndicatorProps) {
             height: 4,
             width: `${progressPct}%`,
             borderRadius: 999,
-            backgroundColor: "#1A1A1A",
+            backgroundColor: colors.textPrimary,
           }}
         />
       </View>
@@ -64,6 +66,8 @@ export function SellStepIndicator({ currentStep }: SellStepIndicatorProps) {
 
 /** Compact preview on sell entry (before step 1). */
 export function SellStepPreview() {
+  const { colors } = useTheme();
+
   return (
     <View style={{ marginTop: 20, marginBottom: 4 }}>
       <View
@@ -78,7 +82,7 @@ export function SellStepPreview() {
           style={{
             fontFamily: ListifyFonts.medium,
             fontSize: 13,
-            color: "#6B7280",
+            color: colors.textSecondary,
           }}
         >
           3 quick steps
@@ -87,7 +91,7 @@ export function SellStepPreview() {
           style={{
             fontFamily: ListifyFonts.semiBold,
             fontSize: 13,
-            color: "#1A1A1A",
+            color: colors.textPrimary,
           }}
         >
           Category → Details → Publish
@@ -97,7 +101,7 @@ export function SellStepPreview() {
         style={{
           height: 4,
           borderRadius: 999,
-          backgroundColor: "#E5E7EB",
+          backgroundColor: colors.border,
           overflow: "hidden",
         }}
       >
@@ -106,7 +110,7 @@ export function SellStepPreview() {
             height: 4,
             width: "12%",
             borderRadius: 999,
-            backgroundColor: "#1A1A1A",
+            backgroundColor: colors.textPrimary,
           }}
         />
       </View>

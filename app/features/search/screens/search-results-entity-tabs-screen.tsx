@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ListingItemsGridCard } from "@/components/listing-items-grid-card";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
+import { MARKETPLACE_LIST_PROPS } from "@/lib/performance/flat-list-config";
 import { TopSaveToast } from "@/components/top-save-toast";
 import { VoiceSearchModal } from "@/components/voice-search-modal";
 import { QueryChips, type ParsedChip } from "@/features/search/components/query-chips";
@@ -440,7 +441,10 @@ export function SearchResultsEntityTabsScreen() {
   }, [initialEntity, lockedEntity]);
 
   useEffect(() => {
-    doSearch();
+    const timer = setTimeout(() => {
+      void doSearch();
+    }, 350);
+    return () => clearTimeout(timer);
   }, [doSearch]);
 
   const handleRefresh = useCallback(() => {
@@ -597,6 +601,11 @@ export function SearchResultsEntityTabsScreen() {
       );
     },
     [handleToggleSave, openDetail, savedIds, canShowDistanceOnCards, locationCoords.lat, locationCoords.lng, isoCountryCode],
+  );
+
+  const resultKeyExtractor = useCallback(
+    (item: SearchResultItem) => `${item._entity}_${item._id}`,
+    [],
   );
 
   const renderEmptyState = useCallback(() => {
@@ -766,17 +775,11 @@ export function SearchResultsEntityTabsScreen() {
       <FlatList
         data={displayResults}
         numColumns={2}
-        key={isDark ? "dark" : "light"}
-        keyExtractor={(item) => `${item._entity}_${item._id}`}
-        extraData={isDark}
+        keyExtractor={resultKeyExtractor}
         renderItem={renderResultCard}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        removeClippedSubviews
-        initialNumToRender={6}
-        maxToRenderPerBatch={8}
-        windowSize={7}
-        updateCellsBatchingPeriod={50}
+        {...MARKETPLACE_LIST_PROPS}
         columnWrapperStyle={{
           paddingHorizontal: GRID_SIDE_PADDING,
           justifyContent: "space-between",

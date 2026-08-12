@@ -10,6 +10,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ListifyFonts } from "@/constants/typography";
+import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 
 export type EventsFloatingNavTab = "events" | "search";
@@ -28,12 +29,13 @@ function EventsFloatingNavImpl({
 }: EventsFloatingNavProps) {
   const insets = useSafeAreaInsets();
   const { isDark } = useTheme();
+  const et = useEventsTheme();
 
   const barBg = isDark ? "rgba(40,40,44,0.92)" : "rgba(255,255,255,0.94)";
-  const activeCircle = isDark ? "rgba(70,70,76,0.98)" : "rgba(229,231,235,0.98)";
-  const labelColor = isDark ? "#FFFFFF" : "#111827";
-  const mutedLabel = isDark ? "rgba(255,255,255,0.55)" : "rgba(17,24,39,0.45)";
-  const iconColor = isDark ? "#FFFFFF" : "#111827";
+  const activeCircle = et.chipActiveBg;
+  const labelColor = et.textPrimary;
+  const mutedLabel = et.textMuted;
+  const iconColor = et.icon;
 
   const pillStyle = useAnimatedStyle(() => {
     const p = collapseProgress.value;
@@ -92,7 +94,7 @@ function EventsFloatingNavImpl({
             borderRadius: 999,
             backgroundColor: barBg,
             borderWidth: isDark ? 1 : 0,
-            borderColor: "rgba(255,255,255,0.08)",
+            borderColor: et.border,
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 10 },
             shadowOpacity: isDark ? 0.45 : 0.16,

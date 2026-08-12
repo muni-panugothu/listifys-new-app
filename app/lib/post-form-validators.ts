@@ -18,8 +18,14 @@ export function parseEventDateInput(raw: string): Date | null {
   const input = raw.trim();
   if (!input) return null;
 
-  // Reject obvious garbage (e.g. "20222", letters only)
-  if (/^\d{5,}$/.test(input.replace(/\D/g, "")) && !input.includes("/") && !input.includes("-")) {
+  // Reject obvious garbage (e.g. "20222") — but not text dates like "10 Aug 2026".
+  const digitsOnly = input.replace(/\D/g, "");
+  if (
+    !/[A-Za-z]/.test(input) &&
+    /^\d{5,}$/.test(digitsOnly) &&
+    !input.includes("/") &&
+    !input.includes("-")
+  ) {
     return null;
   }
 
@@ -88,4 +94,54 @@ export function normalizeEventTime(raw: string): string {
     return `${hour}:${m[2]} ${suffix}`;
   }
   return input;
+}
+
+/** Format a picked date for the post-ad event date field (e.g. "10 Aug 2026"). */
+export function formatEventDateForForm(date: Date): string {
+  const day = date.getDate();
+  const month = date.toLocaleString("en-IN", { month: "short" });
+  const year = date.getFullYear();
+  return `${day} ${month} ${year}`;
+}
+
+export type EventTimeParts = {
+  hour12: number;
+  minute: number;
+  period: "AM" | "PM";
+};
+
+export function parseEventTimeParts(raw: string): EventTimeParts {
+  const input = raw.trim();
+  const twelve = /^(0?[1-9]|1[0-2]):([0-5]\d)\s*(AM|PM|am|pm)$/.exec(input);
+  if (twelve) {
+    return {
+      hour12: Number(twelve[1]),
+      minute: Number(twelve[2]),
+      period: twelve[3].toUpperCase() as "AM" | "PM",
+    };
+  }
+
+  const twentyFour = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(input);
+  if (twentyFour) {
+    const h24 = Number(twentyFour[1]);
+    const minute = Number(twentyFour[2]);
+    return {
+      hour12: h24 % 12 || 12,
+      minute,
+      period: h24 >= 12 ? "PM" : "AM",
+    };
+  }
+
+  const now = new Date();
+  const h = now.getHours();
+  const roundedMinute = Math.round(now.getMinutes() / 15) * 15;
+  return {
+    hour12: h % 12 || 12,
+    minute: roundedMinute % 60,
+    period: h >= 12 ? "PM" : "AM",
+  };
+}
+
+export function formatEventTimeFromParts(parts: EventTimeParts): string {
+  return `${parts.hour12}:${String(parts.minute).padStart(2, "0")} ${parts.period}`;
 }

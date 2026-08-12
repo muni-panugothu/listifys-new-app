@@ -50,6 +50,16 @@ const LISTING_PROJECTION = {
   coordinates: 1,
   seller: 1,
   sellerName: 1,
+  companyLogo: 1,
+  companyName: 1,
+  jobType: 1,
+  workMode: 1,
+  employmentType: 1,
+  experience: 1,
+  salary: 1,
+  salaryType: 1,
+  appliedBy: 1,
+  savedBy: 1,
 };
 
 function haversineDistanceKm(lat1, lng1, lat2, lng2) {
@@ -525,7 +535,7 @@ router.get("/saved", require("../middleware/auth.middleware").protect, async (re
       entries.map(async ([key, Model]) => {
         const listings = await Model.find({ savedBy: userId, status: "active" })
           .select({ ...LISTING_PROJECTION, seller: 1 })
-          .populate("seller", "name profileImage")
+          .populate("seller", "name profileImage isVerified")
           .sort({ createdAt: -1 })
           .lean();
 
@@ -535,6 +545,12 @@ router.get("/saved", require("../middleware/auth.middleware").protect, async (re
               const url = typeof img === "object" ? img.url || img.src : img;
               return url ? s3Service.toProxyUrl(url) : url;
             });
+          }
+          if (doc.companyLogo) {
+            doc.companyLogo = s3Service.toProxyUrl(doc.companyLogo);
+          }
+          if (doc.seller?.profileImage) {
+            doc.seller.profileImage = s3Service.toProxyUrl(doc.seller.profileImage);
           }
           doc._source = key;
           doc._saved = true;

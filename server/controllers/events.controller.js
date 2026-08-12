@@ -40,6 +40,7 @@ const LIST_PROJECTION = { currency: 1, slug: 1,
   category: 1,
   subcategory: 1,
   images: 1,
+  videos: 1,
   sellerName: 1,
   seller: 1,
   views: 1,
@@ -59,16 +60,51 @@ const LIST_PROJECTION = { currency: 1, slug: 1,
   countryCode: 1,
 };
 
-const normaliseImages = (listing) => {
-  if (!listing) return listing;
-  if (listing.images) {
-    listing.images = listing.images.map((url) => S3Service.toProxyUrl(url));
+const { normaliseListingMedia } = require("../utils/listing-media");
+const { resolveSellerName } = require("../utils/listing-seller");
+const normaliseImages = (listing) => normaliseListingMedia(listing);
+
+function formatHostingDuration(createdAt) {
+  if (!createdAt) return null;
+  const start = new Date(createdAt);
+  if (Number.isNaN(start.getTime())) return null;
+  const months =
+    (new Date().getFullYear() - start.getFullYear()) * 12 +
+    (new Date().getMonth() - start.getMonth());
+  if (months < 1) return "New host";
+  if (months < 12) return `${months} month${months === 1 ? "" : "s"}`;
+  const years = Math.floor(months / 12);
+  return `${years} year${years === 1 ? "" : "s"}`;
+}
+
+async function attachOrganizerStats(listingObj) {
+  if (!listingObj?.seller) return listingObj;
+  const sellerId = listingObj.seller._id || listingObj.seller;
+  if (!sellerId) return listingObj;
+
+  try {
+    const hostedEvents = await Event.countDocuments({
+      seller: sellerId,
+      status: "active",
+    });
+    const rating = Number(listingObj.sellerRating ?? 5);
+    const reviews = Number(listingObj.sellerReviews ?? 0);
+    listingObj.organizerStats = {
+      hostedEvents,
+      hostingDuration: formatHostingDuration(listingObj.seller?.createdAt),
+      likedPercent: Math.min(100, Math.max(0, Math.round((rating / 5) * 100))),
+      ratingsCount: reviews,
+    };
+  } catch {
+    listingObj.organizerStats = {
+      hostedEvents: 0,
+      hostingDuration: null,
+      likedPercent: null,
+      ratingsCount: 0,
+    };
   }
-  if (listing.seller?.profileImage) {
-    listing.seller.profileImage = S3Service.toProxyUrl(listing.seller.profileImage);
-  }
-  return listing;
-};
+  return listingObj;
+}
 
 const VALID_SUBCATEGORIES = [
   "Music",
@@ -101,6 +137,7 @@ exports.createEvent = async (req, res) => {
       countryCode,
       features,
       images,
+      videos,
       eventDate,
       eventTime,
       startDate: bodyStartDate,
@@ -155,6 +192,7 @@ exports.createEvent = async (req, res) => {
       countryCode,
       features: features || [],
       images: images || [],
+      videos: videos || [],
       eventDate,
       eventTime,
       startDate: resolvedDates.startDate,
@@ -170,9 +208,7 @@ exports.createEvent = async (req, res) => {
         coordinates: { type: "Point", coordinates: [Number(lng), Number(lat)] },
       }),
       seller: req.user._id,
-      sellerName: req.user.firstName
-        ? `${req.user.firstName} ${req.user.lastName || ""}`.trim()
-        : req.user.email.split("@")[0],
+      sellerName: resolveSellerName(req.user),
     });
 
     const populated = await Event.findById(listing._id).populate(
@@ -423,6 +459,7 @@ exports.getEventById = async (req, res) => {
 
     const listingObj = listing.toObject ? listing.toObject() : listing;
     normaliseImages(listingObj);
+    await attachOrganizerStats(listingObj);
     res.setHeader("X-Cache", "MISS");
     res.status(200).json({
       success: true,
@@ -482,6 +519,7 @@ exports.updateEvent = async (req, res) => {
       "currency",
       "features",
       "images",
+      "videos",
       "status",
       "eventDate",
       "eventTime",
@@ -885,6 +923,73 @@ exports.getEventCalendarSummary = async (req, res) => {
  * GET /api/events/upcoming
  * Upcoming events with optional date filter (multi-day aware), search, geo, pagination.
  */
+exports.getSimilarEvents = async (req, res) => {
+  try {
+    const param = req.params.id;
+    const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 20);
+    const { lat, lng, countryCode } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(param)) {
+      return res.status(400).json({ success: false, message: "Invalid event ID" });
+    }
+
+    const current = await Event.findById(param).lean();
+    if (!current) {
+      return res.status(404).json({ success: false, message: "Event not found" });
+    }
+
+    const filter = {
+      status: "active",
+      _id: { $ne: current._id },
+      ...buildUpcomingFilter(),
+    };
+
+    if (current.subcategory) {
+      filter.subcategory = current.subcategory;
+    }
+
+    const { applyGeoFilter, applyCountryFilter } = require("../utils/geoQuery");
+    applyCountryFilter(filter, countryCode);
+    applyGeoFilter(filter, lat, lng, req.query.radius ?? 50);
+
+    let listings = await Event.find(filter, LIST_PROJECTION)
+      .sort({ featured: -1, createdAt: -1 })
+      .limit(limit * 2)
+      .populate("seller", "name profileImage")
+      .lean();
+
+    listings = listings.filter((e) => !isEventExpired(e));
+
+    if (listings.length < limit && current.subcategory) {
+      const broader = await Event.find(
+        {
+          status: "active",
+          _id: { $ne: current._id, $nin: listings.map((l) => l._id) },
+          ...buildUpcomingFilter(),
+        },
+        LIST_PROJECTION,
+      )
+        .sort({ featured: -1, createdAt: -1 })
+        .limit(limit)
+        .populate("seller", "name profileImage")
+        .lean();
+      listings = [...listings, ...broader.filter((e) => !isEventExpired(e))];
+    }
+
+    listings = listings.slice(0, limit);
+    listings.forEach(normaliseImages);
+
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=180");
+    return res.status(200).json({ success: true, listings });
+  } catch (error) {
+    logger.error("Get similar events error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch similar events",
+    });
+  }
+};
+
 exports.getUpcomingEvents = async (req, res) => {
   try {
     const {

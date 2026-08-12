@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "@/lib/nativewind-interop";
 import { resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
 import { getCurrencySymbol } from "@/lib/currency";
-import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useFloatingNavPress } from "@/hooks/use-floating-nav-press";
 import { FloatingBottomNav } from "@/components/floating-bottom-nav";
 
 export function ListingSuccessScreen() {
@@ -16,7 +16,7 @@ export function ListingSuccessScreen() {
   const insets = useSafeAreaInsets();
   const topBarHeight = useMemo(() => insets.top + 64, [insets.top]);
   const bottomNavPadding = Math.max(insets.bottom, 8);
-  const handleBottomTabPress = useTabNavigation();
+  const handleBottomTabPress = useFloatingNavPress();
 
   const params = useLocalSearchParams<{
     id?: string;

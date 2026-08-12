@@ -8,6 +8,8 @@ import {
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { NativeModules, Platform } from "react-native";
 
+import type { ProfileCompletion } from "@/features/profile/types/profile-completion";
+
 type ExpoDeviceModule = {
   brand?: string | null;
   modelName?: string | null;
@@ -29,6 +31,7 @@ export type AuthUser = {
   profileImage?: string | null;
   googleProfileImage?: string | null;
   profileImageUrl?: string | null;
+  profileImageKey?: string | null;
   isVerified?: boolean;
   phoneVerified?: boolean;
   followersCount?: number;
@@ -37,6 +40,8 @@ export type AuthUser = {
   createdAt?: string;
   bio?: string | null;
   address?: string | null;
+  dateOfBirth?: string | null;
+  gender?: string | null;
 };
 
 export type AuthResponse = {
@@ -78,6 +83,40 @@ const AUTH_REQUEST_PATH_PREFIXES = [
   "/api/auth/refresh",
 ];
 
+/** Profile and account mutations can hit cold servers / slow mobile networks. */
+const PROFILE_REQUEST_PATH_PREFIXES = [
+  "/api/auth/profile",
+  "/api/auth/update-profile",
+  "/api/auth/profile/upload-image",
+  "/api/auth/upload-profile-image",
+  "/api/auth/change-password",
+  "/api/auth/request-email-change",
+  "/api/auth/verify-email-change",
+];
+
+function usesExtendedRequestTimeout(path: string) {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return (
+    AUTH_REQUEST_PATH_PREFIXES.some((prefix) => normalized.startsWith(prefix)) ||
+    PROFILE_REQUEST_PATH_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+  );
+}
+
+function getRequestTimeoutMs(path: string) {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  if (usesExtendedRequestTimeout(normalized)) {
+    if (
+      typeof __DEV__ !== "undefined" &&
+      __DEV__ &&
+      !isRemoteHostedApiBase(getAuthApiBaseUrl())
+    ) {
+      return API_REQUEST_TIMEOUT_MS;
+    }
+    return AUTH_REQUEST_TIMEOUT_MS;
+  }
+  return API_REQUEST_TIMEOUT_MS;
+}
+
 function isAndroidEmulator(): boolean {
   return Platform.OS === "android" && !Device.isDevice;
 }
@@ -112,21 +151,6 @@ function getDevLanHost(): string | undefined {
 
 function isRemoteHostedApiBase(url: string) {
   return /onrender\.com|render\.com/i.test(url);
-}
-
-function getRequestTimeoutMs(path: string) {
-  const normalized = path.startsWith("/") ? path : `/${path}`;
-  if (AUTH_REQUEST_PATH_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
-    if (
-      typeof __DEV__ !== "undefined" &&
-      __DEV__ &&
-      !isRemoteHostedApiBase(getAuthApiBaseUrl())
-    ) {
-      return API_REQUEST_TIMEOUT_MS;
-    }
-    return AUTH_REQUEST_TIMEOUT_MS;
-  }
-  return API_REQUEST_TIMEOUT_MS;
 }
 
 function getExpoDevHost() {
@@ -248,7 +272,7 @@ function isAndroidPhysicalDevice(): boolean {
   return Platform.OS === "android" && Device.isDevice;
 }
 
-function getCandidateApiBaseUrls() {
+export function getCandidateApiBaseUrls() {
   const candidates: string[] = [];
   const add = (value?: string | null, { prepend = false } = {}) => {
     const normalized = trimUrl(value)?.replace(/\/$/, "");
@@ -669,14 +693,17 @@ async function executeRequestJson<T>(
 
 export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const timeoutMs = getRequestTimeoutMs(path.startsWith("/") ? path : `/${path}`);
-  const isAuthPost = (init?.method ?? "GET").toUpperCase() === "POST" && timeoutMs > API_REQUEST_TIMEOUT_MS;
+  const method = (init?.method ?? "GET").toUpperCase();
+  const shouldRetryOnTimeout =
+    timeoutMs > API_REQUEST_TIMEOUT_MS &&
+    (method === "POST" || method === "PUT" || method === "PATCH");
 
   try {
     return await executeRequestJson<T>(path, init, { timeoutMs });
   } catch (error) {
-    // One retry after cold-start timeout on auth POST (e.g. Render waking up).
+    // One retry after cold-start timeout (e.g. Render waking up or slow mobile network).
     if (
-      isAuthPost &&
+      shouldRetryOnTimeout &&
       error instanceof AuthApiError &&
       error.status === 0 &&
       /timed out/i.test(error.message)
@@ -691,10 +718,22 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
 export function getAuthErrorMessage(error: unknown) {
   if (error instanceof AuthApiError) {
     if (/timed out/i.test(error.message)) {
-      return "The server is taking longer than usual to respond (it may be waking up). Please wait a moment and try again.";
+      return "The server is taking longer than usual to respond. Please wait a moment and try again.";
     }
-    if (error.status === 0 || error.message.toLowerCase().includes("network")) {
-      return "Unable to connect to the server. Please check your internet connection and try again.";
+    if (error.status === 0 || /unable to connect/i.test(error.message)) {
+      return "Unable to reach the server. Check that the app can connect to your network and try again.";
+    }
+    if (error.status === 502 || error.status === 503 || error.status === 504) {
+      return "The server is temporarily unavailable. Please try again in a few seconds.";
+    }
+    if (error.status === 500) {
+      if (/duplicate|already exists/i.test(error.message)) {
+        return "An account with this phone already exists. Please sign in instead.";
+      }
+      return "Verification could not be completed right now. Please try again.";
+    }
+    if (error.status === 429) {
+      return error.message || "Too many attempts. Please wait before trying again.";
     }
     if (
       error.status === 401 &&
@@ -705,19 +744,25 @@ export function getAuthErrorMessage(error: unknown) {
       return "Your session expired. Please sign in again.";
     }
     if (error.status === 409) {
-      return "User already exists. Please sign in instead.";
+      return error.message || "An account with this phone already exists. Please sign in instead.";
     }
     if (error.status === 403 && /origin not allowed/i.test(error.message)) {
       return "Request blocked by server security policy. Please update the app or try again.";
+    }
+    if (error.status === 400) {
+      return error.message || "Invalid or expired OTP. Please check the code and try again.";
     }
     return error.message;
   }
 
   if (error instanceof TypeError) {
-    return "Unable to connect to the server. Please check your internet connection and try again.";
+    return "No internet connection detected. Please check your network and try again.";
   }
 
   if (error instanceof Error && error.message) {
+    if (/network|fetch failed/i.test(error.message)) {
+      return "Unable to reach the server. Please check your connection and try again.";
+    }
     return error.message;
   }
 
@@ -881,6 +926,7 @@ export type ProfileResponse = {
     followingCount?: number;
     listingsCount?: number;
   };
+  profileCompletion?: ProfileCompletion;
 };
 
 export function getProfile() {
@@ -913,6 +959,7 @@ export function updateProfile(data: {
 export function uploadProfileImage(formData: FormData) {
   const normalizedPath = "/api/auth/profile/upload-image";
   const uploadUrl = `${getAuthApiBaseUrl()}${normalizedPath}`;
+  const uploadTimeoutMs = Math.max(getRequestTimeoutMs(normalizedPath), 60_000);
 
   const doUpload = () => {
     const token = getAccessToken();
@@ -929,7 +976,7 @@ export function uploadProfileImage(formData: FormData) {
         },
         body: formData,
       },
-      60_000,
+      uploadTimeoutMs,
     );
   };
 

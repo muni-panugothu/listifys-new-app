@@ -18,7 +18,7 @@ import { VoiceSearchModal } from "@/components/voice-search-modal";
 import { ListifyColors } from "@/constants/listify-theme";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
 import { CATEGORIES } from "@/constants/categories";
-import { ListifyFonts, ListifyTypography } from "@/constants/typography";
+import { ListifyFonts } from "@/constants/typography";
 import {
   fetchServiceListings,
   toggleSaveListing,
@@ -36,7 +36,7 @@ import {
   selectCanShowDistanceOnCards,
 } from "@/store/slices/location-slice";
 import { FloatingBottomNav } from "@/components/floating-bottom-nav";
-import { useTabNavigation } from "@/lib/use-tab-navigation";
+import { useFloatingNavPress } from "@/hooks/use-floating-nav-press";
 import { buildListingChatHref } from "@/lib/listing-chat";
 import { getListingSellerId, isOwnListing } from "@/lib/is-own-listing";
 import { showErrorToast } from "@/lib/toast";
@@ -79,7 +79,7 @@ export function ServicesCategoryHubScreen() {
   const isoCountryCode = (rawCountryCode ?? localeCountryCode ?? null)?.toUpperCase() ?? null;
   const shouldApplyLocationFilter = hasLocationCoords || isoCountryCode === "US";
   const canShowDistanceOnCards = useAppSelector(selectCanShowDistanceOnCards);
-  const handleBottomTabPress = useTabNavigation();
+  const handleBottomTabPress = useFloatingNavPress();
   const { navigateProtected } = useProtectedNavigation();
 
   const [searchQuery, setSearchQuery] = useState("");

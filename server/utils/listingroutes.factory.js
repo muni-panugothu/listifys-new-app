@@ -17,6 +17,8 @@ const express = require('express');
 const { protect } = require('../middleware/auth.middleware');
 const upload = require('../middleware/upload.middleware');
 const { optimiseImages } = require('../middleware/upload.middleware');
+const videoUpload = require('../middleware/upload-video.middleware');
+const { createUploadVideosHandler } = require('./listing-upload.handlers');
 const { postingLimiter, uploadLimiter, saveLimiter, searchLimiter } = require('../middleware/ratelimiter.middleware');
 const { cacheResponseTracked, invalidateAfter } = require('../middleware/cache.middleware');
 const { validateListingInput } = require('../middleware/validation.middleware');
@@ -49,6 +51,15 @@ function createListingRoutes({ entity, controller, validation, cacheTTL = 300, d
   if (controller.uploadImages) {
     router.post('/upload-images', protect, uploadLimiter, upload.array('images', 6), optimiseImages, controller.uploadImages);
   }
+
+  // Upload videos (shared handler — works for all listing categories)
+  router.post(
+    '/upload-videos',
+    protect,
+    uploadLimiter,
+    videoUpload.array('videos', 3),
+    createUploadVideosHandler(entity),
+  );
 
   // Detail + update + delete + save
   router.get('/:id', searchLimiter, cacheResponseTracked(entity, detailTTL, 'detail'), controller.getById);

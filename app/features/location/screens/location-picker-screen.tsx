@@ -48,6 +48,7 @@ import {
 } from "@/components/location-permission-sheet";
 import { ListifyFonts } from "@/constants/typography";
 import { useTheme } from "@/providers/theme-provider";
+import type { ThemeColors } from "@/theme/theme-tokens";
 import {
   extractIsoCountryCode,
   fetchPlaceDetails,
@@ -64,9 +65,6 @@ import {
   useCurrentDeviceLocation,
 } from "@/store/slices/location-slice";
 
-const BRAND = "#27BB97";
-
-// ── List item discriminated union ──────────────────────────────────────────────
 
 type ListRow =
   | { kind: "prediction"; data: PlacePrediction }
@@ -76,7 +74,15 @@ type ListRow =
 
 // ── Skeleton row ───────────────────────────────────────────────────────────────
 
-function SkeletonRow({ shimmer }: { shimmer: Animated.Value }) {
+function SkeletonRow({
+  shimmer,
+  borderColor,
+  skeletonColor,
+}: {
+  shimmer: Animated.Value;
+  borderColor: string;
+  skeletonColor: string;
+}) {
   const opacity = shimmer.interpolate({
     inputRange: [0, 1],
     outputRange: [0.4, 0.9],
@@ -89,7 +95,7 @@ function SkeletonRow({ shimmer }: { shimmer: Animated.Value }) {
         paddingHorizontal: 16,
         paddingVertical: 14,
         borderBottomWidth: 1,
-        borderBottomColor: "#F3F4F6",
+        borderBottomColor: borderColor,
       }}
     >
       <Animated.View
@@ -97,7 +103,7 @@ function SkeletonRow({ shimmer }: { shimmer: Animated.Value }) {
           width: 38,
           height: 38,
           borderRadius: 19,
-          backgroundColor: "#E5E7EB",
+          backgroundColor: skeletonColor,
           marginRight: 13,
           opacity,
         }}
@@ -108,7 +114,7 @@ function SkeletonRow({ shimmer }: { shimmer: Animated.Value }) {
             height: 13,
             width: "65%",
             borderRadius: 6,
-            backgroundColor: "#E5E7EB",
+            backgroundColor: skeletonColor,
             opacity,
           }}
         />
@@ -117,7 +123,7 @@ function SkeletonRow({ shimmer }: { shimmer: Animated.Value }) {
             height: 11,
             width: "80%",
             borderRadius: 6,
-            backgroundColor: "#E5E7EB",
+            backgroundColor: skeletonColor,
             opacity,
           }}
         />
@@ -128,23 +134,23 @@ function SkeletonRow({ shimmer }: { shimmer: Animated.Value }) {
 
 // ── Section header ─────────────────────────────────────────────────────────────
 
-function SectionHeader({ label }: { label: string }) {
+function SectionHeader({ label, colors }: { label: string; colors: ThemeColors }) {
   return (
     <View
       style={{
         paddingHorizontal: 16,
         paddingTop: 14,
         paddingBottom: 6,
-        backgroundColor: "#FAFAFA",
+        backgroundColor: colors.surfaceMuted,
         borderBottomWidth: 1,
-        borderBottomColor: "#F3F4F6",
+        borderBottomColor: colors.border,
       }}
     >
       <Text
         style={{
           fontSize: 11,
           fontFamily: ListifyFonts.semiBold,
-          color: "#9CA3AF",
+          color: colors.textTertiary,
           textTransform: "uppercase",
           letterSpacing: 0.8,
         }}
@@ -161,7 +167,7 @@ export function LocationPickerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
-  const { colors } = useTheme();
+  const { colors, resolvedMode } = useTheme();
 
   const locationLat = useAppSelector((s) => s.location.lat);
   const locationLng = useAppSelector((s) => s.location.lng);
@@ -483,11 +489,17 @@ export function LocationPickerScreen() {
   const renderItem: ListRenderItem<ListRow> = useCallback(
     ({ item, index }) => {
       if (item.kind === "skeleton") {
-        return <SkeletonRow shimmer={shimmer} />;
+        return (
+          <SkeletonRow
+            shimmer={shimmer}
+            borderColor={colors.border}
+            skeletonColor={colors.skeleton}
+          />
+        );
       }
 
       if (item.kind === "section_header") {
-        return <SectionHeader label={item.label} />;
+        return <SectionHeader label={item.label} colors={colors} />;
       }
 
       if (item.kind === "prediction") {
@@ -516,7 +528,7 @@ export function LocationPickerScreen() {
 
       return null;
     },
-    [listData, handlePredictionPress, handleRecentPress, shimmer],
+    [listData, handlePredictionPress, handleRecentPress, shimmer, colors],
   );
 
   const keyExtractor = useCallback((item: ListRow, index: number): string => {
@@ -596,13 +608,13 @@ export function LocationPickerScreen() {
             elevation: 3,
           }}
         >
-          <MaterialIcons name="search" size={22} color={query.length > 0 ? BRAND : "#9CA3AF"} />
+          <MaterialIcons name="search" size={22} color={query.length > 0 ? colors.primary : colors.iconMuted} />
           <TextInput
             ref={inputRef}
             value={query}
             onChangeText={setQuery}
             placeholder="Search city, area or landmark…"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.inputPlaceholder}
             returnKeyType="search"
             autoFocus
             autoCapitalize="words"
@@ -611,13 +623,13 @@ export function LocationPickerScreen() {
             style={{
               flex: 1,
               fontSize: 15.5,
-              color: "#111827",
+              color: colors.textPrimary,
               fontFamily: ListifyFonts.regular,
               paddingVertical: 0,
             }}
           />
           {predictionsLoading && query.trim().length >= 2 ? (
-            <ActivityIndicator size="small" color={BRAND} />
+            <ActivityIndicator size="small" color={colors.primary} />
           ) : null}
           {query.length > 0 && !predictionsLoading ? (
             <Pressable
@@ -633,12 +645,12 @@ export function LocationPickerScreen() {
                   width: 22,
                   height: 22,
                   borderRadius: 11,
-                  backgroundColor: "#E5E7EB",
+                  backgroundColor: colors.surfaceMuted,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <MaterialIcons name="close" size={14} color="#6B7280" />
+                <MaterialIcons name="close" size={14} color={colors.textSecondary} />
               </View>
             </Pressable>
           ) : null}
@@ -652,20 +664,22 @@ export function LocationPickerScreen() {
           <Pressable
             onPress={() => void handleUseCurrentLocation()}
             disabled={gpsLoading}
-            android_ripple={{ color: "#E6FBF4" }}
+            android_ripple={{ color: colors.primarySoft }}
             style={({ pressed }) => ({
               flexDirection: "row",
               alignItems: "center",
               paddingHorizontal: 20,
               paddingVertical: 15,
-              backgroundColor: pressed ? "#F0FDF9" : colors.surface,
+              backgroundColor: pressed ? colors.surfaceMuted : colors.surface,
               marginHorizontal: 16,
               marginTop: 6,
               borderRadius: 14,
               gap: 13,
+              borderWidth: 1,
+              borderColor: colors.border,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.04,
+              shadowOpacity: resolvedMode === "dark" ? 0.18 : 0.04,
               shadowRadius: 4,
               elevation: 1,
               opacity: gpsLoading ? 0.7 : 1,
@@ -676,15 +690,15 @@ export function LocationPickerScreen() {
                 width: 38,
                 height: 38,
                 borderRadius: 19,
-                backgroundColor: "#ECFDF5",
+                backgroundColor: colors.primarySoftStrong,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
               {gpsLoading ? (
-                <ActivityIndicator size="small" color={BRAND} />
+                <ActivityIndicator size="small" color={colors.primary} />
               ) : (
-                <MaterialIcons name="my-location" size={19} color={BRAND} />
+                <MaterialIcons name="my-location" size={19} color={colors.primary} />
               )}
             </View>
             <View style={{ flex: 1 }}>
@@ -692,7 +706,7 @@ export function LocationPickerScreen() {
                 style={{
                   fontSize: 14.5,
                   fontFamily: ListifyFonts.semiBold,
-                  color: BRAND,
+                  color: colors.primary,
                   lineHeight: 20,
                 }}
               >
@@ -703,7 +717,7 @@ export function LocationPickerScreen() {
                   numberOfLines={1}
                   style={{
                     fontSize: 12,
-                    color: "#6B7280",
+                    color: colors.textSecondary,
                     fontFamily: ListifyFonts.regular,
                     lineHeight: 17,
                   }}
@@ -714,7 +728,7 @@ export function LocationPickerScreen() {
                 <Text
                   style={{
                     fontSize: 12,
-                    color: "#9CA3AF",
+                    color: colors.textTertiary,
                     fontFamily: ListifyFonts.regular,
                     lineHeight: 17,
                   }}
@@ -723,7 +737,7 @@ export function LocationPickerScreen() {
                 </Text>
               )}
             </View>
-            <MaterialIcons name="chevron-right" size={20} color={BRAND} />
+            <MaterialIcons name="chevron-right" size={20} color={colors.primary} />
           </Pressable>
         ) : null}
 
@@ -734,12 +748,14 @@ export function LocationPickerScreen() {
               flex: 1,
               marginTop: isQueryActive ? 10 : 8,
               marginHorizontal: 16,
-              backgroundColor: colors.surface,
+              backgroundColor: colors.surfaceElevated,
               borderRadius: 16,
               overflow: "hidden",
+              borderWidth: 1,
+              borderColor: colors.border,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.08,
+              shadowOpacity: resolvedMode === "dark" ? 0.22 : 0.08,
               shadowRadius: 16,
               elevation: 4,
               opacity: listOpacity,
@@ -779,19 +795,19 @@ export function LocationPickerScreen() {
                 width: 72,
                 height: 72,
                 borderRadius: 36,
-                backgroundColor: "#F3F4F6",
+                backgroundColor: colors.surfaceMuted,
                 alignItems: "center",
                 justifyContent: "center",
                 marginBottom: 16,
               }}
             >
-              <MaterialIcons name="search-off" size={34} color="#9CA3AF" />
+              <MaterialIcons name="search-off" size={34} color={colors.iconMuted} />
             </View>
             <Text
               style={{
                 fontSize: 16,
                 fontFamily: ListifyFonts.semiBold,
-                color: "#374151",
+                color: colors.textPrimary,
                 textAlign: "center",
                 marginBottom: 6,
               }}
@@ -802,7 +818,7 @@ export function LocationPickerScreen() {
               style={{
                 fontSize: 13.5,
                 fontFamily: ListifyFonts.regular,
-                color: "#9CA3AF",
+                color: colors.textSecondary,
                 textAlign: "center",
                 lineHeight: 20,
               }}
@@ -827,19 +843,19 @@ export function LocationPickerScreen() {
                 width: 72,
                 height: 72,
                 borderRadius: 36,
-                backgroundColor: "#FEF2F2",
+                backgroundColor: `${colors.danger}18`,
                 alignItems: "center",
                 justifyContent: "center",
                 marginBottom: 16,
               }}
             >
-              <MaterialIcons name="wifi-off" size={32} color="#EF4444" />
+              <MaterialIcons name="wifi-off" size={32} color={colors.danger} />
             </View>
             <Text
               style={{
                 fontSize: 16,
                 fontFamily: ListifyFonts.semiBold,
-                color: "#374151",
+                color: colors.textPrimary,
                 textAlign: "center",
                 marginBottom: 6,
               }}
@@ -850,7 +866,7 @@ export function LocationPickerScreen() {
               style={{
                 fontSize: 13.5,
                 fontFamily: ListifyFonts.regular,
-                color: "#9CA3AF",
+                color: colors.textSecondary,
                 textAlign: "center",
               }}
             >
@@ -865,12 +881,12 @@ export function LocationPickerScreen() {
         <View
           style={{
             ...StyleSheet_absoluteFill,
-            backgroundColor: "rgba(255,255,255,0.7)",
+            backgroundColor: resolvedMode === "dark" ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.7)",
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <ActivityIndicator size="large" color={BRAND} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : null}
 
