@@ -318,6 +318,22 @@ function repairEventDatesIfNeeded(event) {
   };
 }
 
+function eventOccursOnUpcomingWeekend(event, now = new Date()) {
+  const today = now instanceof Date ? now : new Date(now);
+  const dayOfWeek = today.getDay();
+  const daysUntilSaturday = (6 - dayOfWeek + 7) % 7;
+  const saturdayOffset = daysUntilSaturday === 0 ? 7 : daysUntilSaturday;
+
+  const saturday = new Date(today);
+  saturday.setDate(today.getDate() + saturdayOffset);
+  const sunday = new Date(saturday);
+  sunday.setDate(saturday.getDate() + 1);
+
+  return (
+    eventOccursOnDate(event, saturday) || eventOccursOnDate(event, sunday)
+  );
+}
+
 module.exports = {
   parseFlexibleDate,
   parseDateRangeFromText,
@@ -328,6 +344,7 @@ module.exports = {
   parseDateKey,
   getEventRange,
   eventOccursOnDate,
+  eventOccursOnUpcomingWeekend,
   isEventExpired,
   buildDayOverlapFilter,
   buildUpcomingFilter,

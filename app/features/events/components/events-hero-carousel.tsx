@@ -171,6 +171,8 @@ function EventsHeroCarouselImpl({ onExplore }: EventsHeroCarouselProps) {
     [onExplore],
   );
 
+  if (EVENTS_HERO_SLIDES.length === 0) return null;
+
   return (
     <View style={{ marginBottom: 8 }}>
       <FlatList

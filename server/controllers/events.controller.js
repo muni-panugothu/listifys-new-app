@@ -15,6 +15,7 @@ const {
   dateKey,
   getEventRange,
   eventOccursOnDate,
+  eventOccursOnUpcomingWeekend,
   isEventExpired,
   resolveEventDatesFromBody,
   repairEventDatesIfNeeded,
@@ -1005,7 +1006,11 @@ exports.getUpcomingEvents = async (req, res) => {
       countryCode,
       page = 1,
       limit = 30,
+      weekend,
     } = req.query;
+
+    const filterWeekend =
+      weekend === "1" || weekend === "true" || weekend === true;
 
     const safeLimit = Math.min(Math.max(Number(limit) || 30, 1), 50);
     const safePage = Math.max(Number(page) || 1, 1);
@@ -1066,6 +1071,10 @@ exports.getUpcomingEvents = async (req, res) => {
     }
 
     listings = listings.filter((e) => !isEventExpired(e));
+
+    if (filterWeekend) {
+      listings = listings.filter((e) => eventOccursOnUpcomingWeekend(e));
+    }
 
     let hasMore = false;
     if (day) {

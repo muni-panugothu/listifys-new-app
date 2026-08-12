@@ -18,6 +18,9 @@ export type EventsHeroSlide = {
   gradient: [string, string, string];
 };
 
+/** Hero banner slides — temporarily disabled; restore entries below when ready. */
+export const EVENTS_HERO_SLIDES: EventsHeroSlide[] = [];
+/*
 export const EVENTS_HERO_SLIDES: EventsHeroSlide[] = [
   {
     id: "hero-1",
@@ -50,6 +53,7 @@ export const EVENTS_HERO_SLIDES: EventsHeroSlide[] = [
     gradient: ["#DB2777", "#4C1D95", "#0F172A"],
   },
 ];
+*/
 
 export type EventsWeekCategory = {
   id: string;
@@ -482,5 +486,6 @@ export type EventsCategorySection = {
 /** Discovery carousels above the sticky All Events feed. */
 export const EVENTS_CATEGORY_SECTIONS: EventsCategorySection[] = [
   { id: "sec-featured", title: "Featured events", categoryId: "featured" },
+  { id: "sec-music", title: "Music events", categoryId: "music" },
   { id: "sec-comedy", title: "Comedy events", categoryId: "comedy" },
 ];

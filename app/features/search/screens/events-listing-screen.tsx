@@ -40,31 +40,44 @@ import type { EventsAllFilterId } from "@/features/events/data/events-all-filter
 import {
   EVENTS_CATEGORY_SECTIONS,
   EVENTS_WEEK_CATEGORIES,
-  FEATURED_EVENTS_DUMMY,
   type EventsExploreCategory,
   type EventsWeekCategory,
   type FeaturedEventDummy,
 } from "@/features/events/data/events-discovery";
-import { FeaturedProfileCard } from "@/features/home/components/featured-profile-card";
-import {
-  FEATURED_ARTISTS,
-  type FeaturedArtistItem,
-} from "@/features/home/data/featured-mock-data";
+// import { FeaturedProfileCard } from "@/features/home/components/featured-profile-card";
+// import {
+//   FEATURED_ARTISTS,
+//   type FeaturedArtistItem,
+// } from "@/features/home/data/featured-mock-data";
 import { fetchUpcomingEvents } from "@/features/events/services/events-api";
-import { buildEventDetailParams, dummyToListingItem } from "@/features/events/utils/event-detail-helpers";
-import { getListingCoverMediaUrl } from "@/lib/listing-media";
+import type { ListingItem } from "@/features/listing/services/listing-api";
+import {
+  buildEventsFilterQuery,
+  needsClientSideFilter,
+} from "@/features/events/utils/events-filter-query";
+import {
+  buildEventDetailParams,
+  listingToFeaturedEvent,
+  matchesEventsAllFilter,
+} from "@/features/events/utils/event-detail-helpers";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
 import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
+import { useAppSelector } from "@/store/hooks";
+import {
+  selectIsoCountryCode,
+  selectLocationCoords,
+  selectLocationLabel,
+} from "@/store/slices/location-slice";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const H_PAD = 16;
-const ARTIST_CARD_WIDTH = SCREEN_WIDTH * 0.48;
-const ARTIST_GAP = 14;
+// const ARTIST_CARD_WIDTH = SCREEN_WIDTH * 0.48;
+// const ARTIST_GAP = 14;
 const GRID_GAP = 12;
 const GRID_CARD_WIDTH = (SCREEN_WIDTH - H_PAD * 2 - GRID_GAP) / 2;
 
-function filterByQuery(events: FeaturedEventDummy[], q: string) {
+function filterFeaturedByQuery(events: FeaturedEventDummy[], q: string) {
   if (!q) return events;
   return events.filter(
     (e) =>
@@ -77,33 +90,26 @@ function eventsForSection(
   all: FeaturedEventDummy[],
   q: string,
 ): FeaturedEventDummy[] {
-  const filtered = filterByQuery(all, q);
+  const filtered = filterFeaturedByQuery(all, q);
   if (sectionCategoryId === "featured") {
     return filtered.slice(0, 6);
   }
   return filtered.filter((e) => e.category === sectionCategoryId);
 }
 
-function applyAllEventsFilter(
-  events: FeaturedEventDummy[],
-  filterId: EventsAllFilterId,
-): FeaturedEventDummy[] {
-  switch (filterId) {
-    case "all":
-    case "tomorrow":
-    case "weekend":
-    case "under_10km":
-      return events;
-    case "social":
-      return events.filter(
-        (e) =>
-          e.category === "social" ||
-          e.title.toLowerCase().includes("social") ||
-          e.venue.toLowerCase().includes("social"),
-      );
-    default:
-      return events.filter((e) => e.category === filterId);
-  }
+function filterListingsByQuery(listings: ListingItem[], q: string) {
+  if (!q) return listings;
+  const needle = q.toLowerCase();
+  return listings.filter((item) => {
+    const venue =
+      ((item as { venue?: string }).venue as string | undefined)?.trim() ||
+      item.location?.trim() ||
+      "";
+    return (
+      item.title?.toLowerCase().includes(needle) ||
+      venue.toLowerCase().includes(needle)
+    );
+  });
 }
 
 function formatCustomRangeLabel(start: Date, end: Date) {
@@ -134,7 +140,7 @@ export function EventsListingScreen() {
     null,
   );
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
-  const [savedArtistIds, setSavedArtistIds] = useState<Set<string>>(new Set());
+  // const [savedArtistIds, setSavedArtistIds] = useState<Set<string>>(new Set());
   const [activeNavTab, setActiveNavTab] =
     useState<EventsFloatingNavTab>("events");
   const [hubVisible, setHubVisible] = useState(false);
@@ -162,62 +168,97 @@ export function EventsListingScreen() {
     : null;
   const periodText = weekPeriodLabel(selectedPeriod, customLabel);
 
-  const artists = useMemo(() => {
-    if (!query) return FEATURED_ARTISTS;
-    return FEATURED_ARTISTS.filter(
-      (a) =>
-        a.name.toLowerCase().includes(query) ||
-        a.subtitle.toLowerCase().includes(query),
-    );
-  }, [query]);
+  // Artists in your District — temporarily disabled
+  // const artists = useMemo(() => {
+  //   if (!query) return FEATURED_ARTISTS;
+  //   return FEATURED_ARTISTS.filter(
+  //     (a) =>
+  //       a.name.toLowerCase().includes(query) ||
+  //       a.subtitle.toLowerCase().includes(query),
+  //   );
+  // }, [query]);
 
-  const [featuredEvents, setFeaturedEvents] =
-    useState<FeaturedEventDummy[]>(FEATURED_EVENTS_DUMMY);
+  const locationCoords = useAppSelector(selectLocationCoords);
+  const locationLabel = useAppSelector(selectLocationLabel);
+  const isoCountryCode = useAppSelector(selectIsoCountryCode);
+
+  const [apiListings, setApiListings] = useState<ListingItem[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+
+  const loadUpcomingEvents = useCallback(async (force = false) => {
+    setEventsLoading(true);
+    try {
+      const queryParams = buildEventsFilterQuery(allFilterId, {
+        lat: locationCoords.lat,
+        lng: locationCoords.lng,
+        countryCode: isoCountryCode,
+        locationLabel,
+      });
+      const res = await fetchUpcomingEvents(queryParams, { force });
+      let listings = res.listings ?? [];
+      if (needsClientSideFilter(allFilterId)) {
+        listings = listings.filter((listing) =>
+          matchesEventsAllFilter(listing, allFilterId, {
+            userLat: locationCoords.lat,
+            userLng: locationCoords.lng,
+          }),
+        );
+      }
+      setApiListings(listings);
+    } catch {
+      setApiListings([]);
+    } finally {
+      setEventsLoading(false);
+    }
+  }, [
+    allFilterId,
+    isoCountryCode,
+    locationCoords.lat,
+    locationCoords.lng,
+    locationLabel,
+  ]);
 
   useEffect(() => {
-    void fetchUpcomingEvents({ limit: 12, sort: "newest" })
-      .then((res) => {
-        if (!res.listings?.length) return;
-        setFeaturedEvents(
-          res.listings.map((listing) => ({
-            id: listing._id,
-            title: listing.title,
-            image: getListingCoverMediaUrl(listing) || listing.images?.[0] || "",
-            videos: listing.videos,
-            venue:
-              ((listing as { venue?: string }).venue as string | undefined)?.trim() ||
-              listing.location?.trim() ||
-              "",
-            eventDate: (listing.eventDate as string | undefined) ?? "",
-            eventTime: (listing.eventTime as string | undefined) ?? "",
-            price: listing.price ?? 0,
-            category:
-              (listing.subcategory as string | undefined)?.toLowerCase() ||
-              "featured",
-          })),
-        );
-      })
-      .catch(() => {});
-  }, []);
+    void loadUpcomingEvents();
+  }, [loadUpcomingEvents]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadUpcomingEvents(true);
+    }, [loadUpcomingEvents]),
+  );
+
+  const featuredEvents = useMemo(
+    () => apiListings.map(listingToFeaturedEvent),
+    [apiListings],
+  );
 
   const featuredSection = EVENTS_CATEGORY_SECTIONS[0];
-  const comedySection = EVENTS_CATEGORY_SECTIONS[1];
+  const musicSection = EVENTS_CATEGORY_SECTIONS[1];
+  const comedySection = EVENTS_CATEGORY_SECTIONS[2];
 
   const allEventsFiltered = useMemo(() => {
-    const base = filterByQuery(FEATURED_EVENTS_DUMMY, query);
-    const filtered = applyAllEventsFilter(base, allFilterId);
-    return filtered.length > 0 ? filtered : base;
-  }, [allFilterId, query]);
+    const base = filterListingsByQuery(apiListings, query);
+    if (needsClientSideFilter(allFilterId)) {
+      return base.filter((listing) =>
+        matchesEventsAllFilter(listing, allFilterId, {
+          userLat: locationCoords.lat,
+          userLng: locationCoords.lng,
+        }),
+      );
+    }
+    return base;
+  }, [allFilterId, apiListings, locationCoords.lat, locationCoords.lng, query]);
 
   const eventRows = useMemo(() => {
     const rows: Array<{
       id: string;
-      left: FeaturedEventDummy;
-      right?: FeaturedEventDummy;
+      left: ListingItem;
+      right?: ListingItem;
     }> = [];
     for (let i = 0; i < allEventsFiltered.length; i += 2) {
       rows.push({
-        id: `row-${allEventsFiltered[i].id}`,
+        id: `row-${allEventsFiltered[i]._id}`,
         left: allEventsFiltered[i],
         right: allEventsFiltered[i + 1],
       });
@@ -245,25 +286,40 @@ export function EventsListingScreen() {
     [router],
   );
 
+  const openListingEvent = useCallback(
+    (listing: ListingItem, index: number, pool: ListingItem[]) => {
+      const ids = pool.map((item) => item._id);
+      router.push({
+        pathname: "/event-detail",
+        params: buildEventDetailParams(listing._id, ids, index),
+      } as Href);
+    },
+    [router],
+  );
+
   const featuredCarouselEvents = useMemo(
     () => eventsForSection(featuredSection.categoryId, featuredEvents, query),
     [featuredEvents, featuredSection.categoryId, query],
   );
 
   const comedyCarouselEvents = useMemo(() => {
-    const comedySection = EVENTS_CATEGORY_SECTIONS[1];
     if (!comedySection) return [];
     return eventsForSection(comedySection.categoryId, featuredEvents, query);
-  }, [featuredEvents, query]);
+  }, [comedySection, featuredEvents, query]);
 
-  const handleToggleArtistSave = useCallback((id: string) => {
-    setSavedArtistIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const musicCarouselEvents = useMemo(() => {
+    if (!musicSection) return [];
+    return eventsForSection(musicSection.categoryId, featuredEvents, query);
+  }, [featuredEvents, musicSection, query]);
+
+  // const handleToggleArtistSave = useCallback((id: string) => {
+  //   setSavedArtistIds((prev) => {
+  //     const next = new Set(prev);
+  //     if (next.has(id)) next.delete(id);
+  //     else next.add(id);
+  //     return next;
+  //   });
+  // }, []);
 
   const handleWeekSelect = useCallback(
     (cat: EventsWeekCategory) => {
@@ -381,28 +437,28 @@ export function EventsListingScreen() {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   }, []);
 
-  const artistKeyExtractor = useCallback(
-    (item: FeaturedArtistItem) => item.id,
-    [],
-  );
+  // const artistKeyExtractor = useCallback(
+  //   (item: FeaturedArtistItem) => item.id,
+  //   [],
+  // );
 
-  const renderArtist = useCallback(
-    ({ item }: { item: FeaturedArtistItem }) => (
-      <FeaturedProfileCard
-        id={item.id}
-        name={item.name}
-        subtitle={item.subtitle}
-        avatar={item.avatar}
-        stats={item.stats}
-        eventDate={item.eventDate}
-        cardWidth={ARTIST_CARD_WIDTH}
-        isSaved={savedArtistIds.has(item.id)}
-        onPress={() => {}}
-        onToggleSave={() => handleToggleArtistSave(item.id)}
-      />
-    ),
-    [handleToggleArtistSave, savedArtistIds],
-  );
+  // const renderArtist = useCallback(
+  //   ({ item }: { item: FeaturedArtistItem }) => (
+  //     <FeaturedProfileCard
+  //       id={item.id}
+  //       name={item.name}
+  //       subtitle={item.subtitle}
+  //       avatar={item.avatar}
+  //       stats={item.stats}
+  //       eventDate={item.eventDate}
+  //       cardWidth={ARTIST_CARD_WIDTH}
+  //       isSaved={savedArtistIds.has(item.id)}
+  //       onPress={() => {}}
+  //       onToggleSave={() => handleToggleArtistSave(item.id)}
+  //     />
+  //   ),
+  //   [handleToggleArtistSave, savedArtistIds],
+  // );
 
   return (
     <View style={{ flex: 1, backgroundColor: et.background }}>
@@ -545,11 +601,24 @@ export function EventsListingScreen() {
           showOffers
         />
 
+        {musicSection && musicCarouselEvents.length > 0 ? (
+          <EventsSectionCarousel
+            title={musicSection.title}
+            events={musicCarouselEvents}
+            savedIds={savedIds}
+            onToggleSave={handleToggleSave}
+            onPressEvent={(event, index) =>
+              openFeaturedEvent(event, index, musicCarouselEvents)
+            }
+          />
+        ) : null}
+
         <EventsExploreGrid
           selectedId={selectedExploreId}
           onSelect={handleExploreSelect}
         />
 
+        {/* Artists in your District — temporarily disabled
         {artists.length > 0 ? (
           <View style={{ marginTop: 28, marginBottom: 4 }}>
             <View
@@ -606,6 +675,7 @@ export function EventsListingScreen() {
             </ScrollView>
           </View>
         ) : null}
+        */}
 
         {comedySection ? (
           <EventsSectionCarousel
@@ -650,6 +720,19 @@ export function EventsListingScreen() {
         {filtersSticky ? <View style={{ height: 54 }} /> : null}
 
         <View style={{ paddingBottom: 8 }}>
+          {!eventsLoading && eventRows.length === 0 ? (
+            <Text
+              style={{
+                fontFamily: ListifyFonts.regular,
+                fontSize: 15,
+                color: colors.textSecondary,
+                paddingHorizontal: H_PAD,
+                paddingTop: GRID_GAP,
+              }}
+            >
+              No upcoming events match this filter yet. Try another category or post a new event.
+            </Text>
+          ) : null}
           {eventRows.map((row) => (
             <View
               key={row.id}
@@ -661,25 +744,29 @@ export function EventsListingScreen() {
               }}
             >
               <EventsGridCard
-                event={dummyToListingItem(row.left)}
+                event={row.left}
                 cardWidth={GRID_CARD_WIDTH}
-                isSaved={savedIds.has(row.left.id)}
+                isSaved={savedIds.has(row.left._id)}
                 onPress={() => {
-                  const index = allEventsFiltered.findIndex((e) => e.id === row.left.id);
-                  openFeaturedEvent(row.left, Math.max(0, index), allEventsFiltered);
+                  const index = allEventsFiltered.findIndex(
+                    (e) => e._id === row.left._id,
+                  );
+                  openListingEvent(row.left, Math.max(0, index), allEventsFiltered);
                 }}
-                onToggleSave={() => handleToggleSave(row.left.id)}
+                onToggleSave={() => handleToggleSave(row.left._id)}
               />
               {row.right ? (
                 <EventsGridCard
-                  event={dummyToListingItem(row.right)}
+                  event={row.right}
                   cardWidth={GRID_CARD_WIDTH}
-                  isSaved={savedIds.has(row.right.id)}
+                  isSaved={savedIds.has(row.right._id)}
                   onPress={() => {
-                    const index = allEventsFiltered.findIndex((e) => e.id === row.right!.id);
-                    openFeaturedEvent(row.right!, Math.max(0, index), allEventsFiltered);
+                    const index = allEventsFiltered.findIndex(
+                      (e) => e._id === row.right!._id,
+                    );
+                    openListingEvent(row.right!, Math.max(0, index), allEventsFiltered);
                   }}
-                  onToggleSave={() => handleToggleSave(row.right!.id)}
+                  onToggleSave={() => handleToggleSave(row.right!._id)}
                 />
               ) : (
                 <View style={{ width: GRID_CARD_WIDTH }} />

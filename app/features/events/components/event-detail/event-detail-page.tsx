@@ -613,6 +613,7 @@ function EventDetailPageImpl({
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
         bounces
         contentContainerStyle={{
           paddingTop: SCROLL_TOP_PADDING,
@@ -1073,10 +1074,16 @@ function EventDetailPageImpl({
               >
                 Similar events
               </Text>
-              <Animated.ScrollView
+              <ScrollView
                 horizontal
+                nestedScrollEnabled
+                directionalLockEnabled
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 12, paddingRight: 4 }}
+                decelerationRate="fast"
+                snapToInterval={pageWidth * 0.52 + 12}
+                snapToAlignment="start"
+                scrollEventThrottle={16}
+                contentContainerStyle={{ gap: 12, paddingRight: 18 }}
               >
                 {similarEvents.map((event, idx) => (
                   <FeaturedEventCard
@@ -1088,7 +1095,7 @@ function EventDetailPageImpl({
                     onToggleSave={() => {}}
                   />
                 ))}
-              </Animated.ScrollView>
+              </ScrollView>
             </View>
           ) : null}
         </View>

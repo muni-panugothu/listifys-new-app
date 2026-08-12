@@ -1,9 +1,11 @@
 import type { FeaturedEventDummy } from "@/features/events/data/events-discovery";
 import { FEATURED_EVENTS_DUMMY } from "@/features/events/data/events-discovery";
+import type { EventsAllFilterId } from "@/features/events/data/events-all-filters";
 import type { ListingItem } from "@/features/listing/services/listing-api";
-import { formatEventDisplayLabel } from "@/lib/event-dates";
+import { eventOccursOnDate, formatEventDisplayLabel } from "@/lib/event-dates";
 import { formatPrice } from "@/lib/currency";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
+import { getListingCoverMediaUrl } from "@/lib/listing-media";
 
 export type EventOrganizerStats = {
   hostedEvents?: number;
@@ -69,6 +71,101 @@ export function isLikelyVideoUrl(url: string): boolean {
 
 export function findDummyFeaturedEvent(id: string): FeaturedEventDummy | null {
   return FEATURED_EVENTS_DUMMY.find((e) => e.id === id) ?? null;
+}
+
+/** Maps API listing → carousel/grid card shape used on the Events hub. */
+export function listingToFeaturedEvent(listing: ListingItem): FeaturedEventDummy {
+  const subcategory = (listing.subcategory as string | undefined)?.trim();
+  return {
+    id: listing._id,
+    title: listing.title,
+    image: getListingCoverMediaUrl(listing) || listing.images?.[0] || "",
+    videos: listing.videos,
+    venue:
+      ((listing as { venue?: string }).venue as string | undefined)?.trim() ||
+      listing.location?.trim() ||
+      "",
+    eventDate: (listing.eventDate as string | undefined) ?? "",
+    eventTime: (listing.eventTime as string | undefined) ?? "",
+    price: listing.price ?? 0,
+    category: subcategory?.toLowerCase() || "featured",
+    ...(listing.price === 0 ? { offerLabel: "FREE Entry" } : {}),
+  };
+}
+
+function listingHaystack(listing: ListingItem): string {
+  return `${listing.title ?? ""} ${listing.description ?? ""} ${((listing.features as string[] | undefined) ?? []).join(" ")}`.toLowerCase();
+}
+
+function addDays(base: Date, days: number): Date {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+export function matchesEventsAllFilter(
+  listing: ListingItem,
+  filterId: EventsAllFilterId,
+  opts?: { userLat?: number | null; userLng?: number | null },
+): boolean {
+  const sub = (listing.subcategory as string | undefined)?.toLowerCase() ?? "";
+  const hay = listingHaystack(listing);
+  const dateFields = {
+    eventDate: listing.eventDate as string | undefined,
+    eventTime: listing.eventTime as string | undefined,
+    startDate: listing.startDate as string | undefined,
+    endDate: listing.endDate as string | undefined,
+  };
+
+  switch (filterId) {
+    case "all":
+      return true;
+    case "tomorrow":
+      return eventOccursOnDate(dateFields, addDays(new Date(), 1));
+    case "weekend": {
+      const today = new Date();
+      const daysUntilSaturday = (6 - today.getDay() + 7) % 7;
+      const saturday = addDays(today, daysUntilSaturday === 0 ? 7 : daysUntilSaturday);
+      const sunday = addDays(saturday, 1);
+      return (
+        eventOccursOnDate(dateFields, saturday) || eventOccursOnDate(dateFields, sunday)
+      );
+    }
+    case "under_10km": {
+      if (opts?.userLat == null || opts?.userLng == null) return true;
+      const label = getListingDistanceLabel(
+        listing,
+        { lat: opts.userLat, lng: opts.userLng },
+        listing.countryCode as string | undefined,
+      );
+      if (!label) return true;
+      const km = Number(label.replace(/[^\d.]/g, ""));
+      return Number.isFinite(km) ? km <= 10 : true;
+    }
+    case "music":
+      return sub === "music";
+    case "comedy":
+      return sub === "comedy";
+    case "nightlife":
+      return sub === "music" || /club|dj|night|party|bar|after.?dark|karaoke/.test(hay);
+    case "food":
+      return sub.includes("food") || sub.includes("drink");
+    case "workshops":
+      return sub === "education" || /workshop|training|seminar/.test(hay);
+    case "festivals":
+      return sub === "community" || /fest|festival/.test(hay);
+    case "family":
+      return /family|kids|child|children/.test(hay);
+    case "social":
+      return (
+        sub === "community" ||
+        /social|mixer|network|meetup/.test(hay)
+      );
+    case "sports":
+      return sub === "sports";
+    default:
+      return true;
+  }
 }
 
 export function dummyToListingItem(item: FeaturedEventDummy): ListingItem {

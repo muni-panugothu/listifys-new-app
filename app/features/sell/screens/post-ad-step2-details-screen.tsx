@@ -1206,6 +1206,23 @@ export function PostAdStep2DetailsScreen() {
              ═══════════════════════════════════════════════════════════════ */}
           {isEvent && (
             <>
+              <View
+                className="mb-4 rounded-2xl px-4 py-3"
+                style={{ backgroundColor: colors.primarySoft }}
+              >
+                <Text
+                  className="text-[13px]"
+                  style={{ color: colors.textSecondary, fontFamily: ListifyFonts.medium }}
+                >
+                  Event type: {subcategory || "—"}
+                </Text>
+                <Text
+                  className="mt-1 text-[12px]"
+                  style={{ color: colors.textTertiary, fontFamily: ListifyFonts.regular }}
+                >
+                  This determines where your event appears (Music, Comedy, Food & Drinks, etc.).
+                </Text>
+              </View>
               <View className="mb-6 flex-row gap-4">
                 <View className="flex-1">
                   <Label text="Event Date" required />

@@ -24,6 +24,12 @@ function filterForWeekCategory(
       return /social|mixer|network|meetup|community/.test(hay);
     });
   }
+  if (id === "family") {
+    return listings.filter((item) => {
+      const hay = `${item.title} ${item.description ?? ""} ${(item.features as string[] | undefined)?.join(" ") ?? ""}`.toLowerCase();
+      return /family|kids|child|children/.test(hay);
+    });
+  }
   return listings;
 }
 
@@ -52,10 +58,12 @@ export function useCategoryStoryEvents(opts: UseCategoryStoryEventsOptions) {
     setIsLoading(true);
     setError(null);
     try {
+      const apiSubcategory =
+        weekCategory.subcategory ?? config.apiSubcategory;
       const params: Parameters<typeof fetchUpcomingEvents>[0] = {
-        subcategory: config.apiSubcategory,
+        subcategory: apiSubcategory,
         limit: STORY_LIMIT,
-        sort: "newest",
+        sort: lat != null && lng != null ? "nearest" : "newest",
         countryCode,
       };
       if (lat != null && lng != null) {

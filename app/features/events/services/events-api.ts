@@ -33,6 +33,8 @@ export type EventsQueryParams = {
   page?: number;
   limit?: number;
   days?: number;
+  /** Upcoming Saturday–Sunday */
+  weekend?: boolean;
 };
 
 function buildQuery(params: EventsQueryParams): string {
@@ -51,6 +53,7 @@ function buildQuery(params: EventsQueryParams): string {
   if (params.page) query.set("page", String(params.page));
   if (params.limit) query.set("limit", String(params.limit));
   if (params.days) query.set("days", String(params.days));
+  if (params.weekend) query.set("weekend", "1");
   return query.toString();
 }
 

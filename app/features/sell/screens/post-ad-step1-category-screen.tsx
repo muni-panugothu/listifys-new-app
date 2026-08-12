@@ -7,6 +7,10 @@ import { useFocusEffect } from "@react-navigation/native";
 import { SellFlowLayout, SellSectionCard } from "@/components/sell-flow-layout";
 import { CATEGORY_MAP, type CategorySlug } from "@/constants/categories";
 import { ListifyFonts } from "@/constants/typography";
+import {
+  EVENT_SUBCATEGORY_HINTS,
+  sortEventSubcategories,
+} from "@/features/events/data/events-subcategory-meta";
 import { useTheme } from "@/providers/theme-provider";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
@@ -33,10 +37,12 @@ export function PostAdStep1CategoryScreen() {
 
   const categorySlug = getValidCategorySlug(params.category);
   const categoryConfig = CATEGORY_MAP[categorySlug];
-  const subcategories = useMemo(
-    () => categoryConfig?.subcategories ?? [],
-    [categorySlug],
-  );
+  const subcategories = useMemo(() => {
+    const list = categoryConfig?.subcategories ?? [];
+    if (categorySlug === "events") return sortEventSubcategories(list);
+    return list;
+  }, [categoryConfig?.subcategories, categorySlug]);
+  const isEventCategory = categorySlug === "events";
   const showSubcategorySearch = subcategories.length >= 3;
 
   // Read the current Redux subcategory so we can restore it when this screen
@@ -102,7 +108,11 @@ export function PostAdStep1CategoryScreen() {
     <SellFlowLayout
       step={1}
       title={categoryConfig?.name ?? "Category"}
-      subtitle="Choose a subcategory"
+      subtitle={
+        isEventCategory
+          ? "Choose event type — matches Events discovery categories"
+          : "Choose a subcategory"
+      }
       keyboardPersistTaps="always"
       onBack={handleBack}
       rightAction={
@@ -186,6 +196,7 @@ export function PostAdStep1CategoryScreen() {
         ) : null}
         {filteredSubcategories.map((sub, index) => {
           const isSelected = sub === selectedSubcategory;
+          const hint = isEventCategory ? EVENT_SUBCATEGORY_HINTS[sub] : undefined;
           return (
             <Pressable
               key={sub}
@@ -194,25 +205,39 @@ export function PostAdStep1CategoryScreen() {
                 flexDirection: "row",
                 alignItems: "center",
                 paddingHorizontal: 16,
-                paddingVertical: 15,
+                paddingVertical: hint ? 13 : 15,
                 backgroundColor: pressed ? colors.surfaceMuted : "transparent",
                 borderBottomWidth:
                   index < filteredSubcategories.length - 1 ? 1 : 0,
                 borderBottomColor: colors.border,
               })}
             >
-              <Text
-                style={{
-                  flex: 1,
-                  fontFamily: isSelected
-                    ? ListifyFonts.semiBold
-                    : ListifyFonts.regular,
-                  fontSize: 15,
-                  color: isSelected ? colors.textPrimary : colors.textSecondary,
-                }}
-              >
-                {sub}
-              </Text>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text
+                  style={{
+                    fontFamily: isSelected
+                      ? ListifyFonts.semiBold
+                      : ListifyFonts.regular,
+                    fontSize: 15,
+                    color: isSelected ? colors.textPrimary : colors.textSecondary,
+                  }}
+                >
+                  {sub}
+                </Text>
+                {hint ? (
+                  <Text
+                    style={{
+                      marginTop: 3,
+                      fontFamily: ListifyFonts.regular,
+                      fontSize: 12,
+                      lineHeight: 16,
+                      color: colors.textTertiary,
+                    }}
+                  >
+                    {hint}
+                  </Text>
+                ) : null}
+              </View>
               <View
                 style={{
                   width: 22,

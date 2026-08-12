@@ -29,11 +29,12 @@ import {
   type HomeSpotlightItem,
 } from "@/features/home/components/home-spotlight-carousel";
 import {
-  EXPLORE_NEAR_YOU,
-  FEATURED_ARTISTS,
   type ExploreNearYouItem,
   type FeaturedArtistItem,
 } from "@/features/home/data/featured-mock-data";
+import { listingToExploreNearYouItem } from "@/features/home/utils/nearby-events";
+import { fetchUpcomingEvents } from "@/features/events/services/events-api";
+import { buildEventDetailParams } from "@/features/events/utils/event-detail-helpers";
 import { HOME_EXPLORE_CATEGORIES } from "@/features/home/data/home-explore-categories";
 import { ListifyFonts, ListifyTypography } from "@/constants/typography";
 import { getUnreadCount as getNotificationUnreadCount } from "@/features/auth/services/auth-api";
@@ -169,6 +170,7 @@ export function HomeFeedRootScreen() {
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [nearbyMusicEvents, setNearbyMusicEvents] = useState<ListingItem[]>([]);
   const [showLoginSheet, setShowLoginSheet] = useState(false);
   const locationPromptAttempted = useRef(false);
    // Apply location filter when user has a valid location (GPS/manual) or when the user is in the US.
@@ -279,6 +281,59 @@ export function HomeFeedRootScreen() {
     ]
   );
 
+  const loadNearbyMusicEvents = useCallback(async (opts?: { force?: boolean }) => {
+    if (isOffline) return;
+    try {
+      const hasCoords =
+        locationCoords.lat != null && locationCoords.lng != null;
+      const res = await fetchUpcomingEvents(
+        {
+          subcategory: "Music",
+          limit: 12,
+          sort: hasCoords ? "nearest" : "newest",
+          countryCode: effectiveCountryCode ?? undefined,
+          ...(hasCoords
+            ? {
+                lat: locationCoords.lat ?? undefined,
+                lng: locationCoords.lng ?? undefined,
+                radius: 50,
+              }
+            : {}),
+          ...(locationCoords.label &&
+          locationCoords.label !== "Set location" &&
+          !locationCoords.label.startsWith("Detecting")
+            ? { location: extractCityFromLocationLabel(locationCoords.label) ?? locationCoords.label }
+            : {}),
+        },
+        { force: opts?.force },
+      );
+      setNearbyMusicEvents(
+        filterOutOwnListings(res.listings ?? [], user?.id),
+      );
+    } catch {
+      setNearbyMusicEvents([]);
+    }
+  }, [
+    effectiveCountryCode,
+    isOffline,
+    locationCoords.label,
+    locationCoords.lat,
+    locationCoords.lng,
+    user?.id,
+  ]);
+
+  useEffect(() => {
+    if (!sessionHydrated || isOffline) return;
+    void loadNearbyMusicEvents();
+  }, [isOffline, loadNearbyMusicEvents, sessionHydrated]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isOffline) return;
+      void loadNearbyMusicEvents({ force: true });
+    }, [isOffline, loadNearbyMusicEvents]),
+  );
+
   useEffect(() => {
     if (!sessionHydrated) return;
     void dispatch(hydrateAppLocation());
@@ -367,9 +422,10 @@ export function HomeFeedRootScreen() {
     const timer = setTimeout(() => {
       lastFeedFetchAtRef.current = Date.now();
       loadFeed({ allowCacheFallback: false }).catch(() => {});
+      void loadNearbyMusicEvents({ force: true });
     }, 400);
     return () => clearTimeout(timer);
-  }, [locationHydrated, locationCoords.lat, locationCoords.lng, loadFeed]);
+  }, [locationHydrated, locationCoords.lat, locationCoords.lng, loadFeed, loadNearbyMusicEvents]);
 
   useEffect(() => {
     if (!sessionHydrated) return;
@@ -406,6 +462,7 @@ export function HomeFeedRootScreen() {
     await Promise.all([
       dispatch(fetchProfile()).unwrap().catch(() => {}),
       loadFeed(),
+      loadNearbyMusicEvents({ force: true }),
       getRecentlyViewed(shouldApplyLocationFilter ? effectiveCountryCode : null).then(setRecentlyViewed).catch(() => {}),
       getNotificationUnreadCount()
         .then((r) => setNotificationUnreadCount(r.unreadCount ?? 0))
@@ -414,7 +471,7 @@ export function HomeFeedRootScreen() {
         .then((r) => setChatUnreadCount(r.unreadCount ?? 0))
         .catch(() => {}),
     ]);
-  }, [dispatch, effectiveCountryCode, loadFeed, shouldApplyLocationFilter]);
+  }, [dispatch, effectiveCountryCode, loadFeed, loadNearbyMusicEvents, shouldApplyLocationFilter]);
 
   const { refreshing, onRefresh } = usePullToRefresh(handleRefresh);
 
@@ -555,14 +612,36 @@ export function HomeFeedRootScreen() {
     });
   }, []);
 
-  const handleToggleExploreSave = useCallback((id: string) => {
-    setSavedExploreIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const handleToggleExploreSave = useCallback(async (eventId: string) => {
+    if (isOffline) return;
+    try {
+      const res = await toggleSaveListing("events", eventId);
+      setSavedExploreIds((prev) => {
+        const next = new Set(prev);
+        if (res.saved) next.add(eventId);
+        else next.delete(eventId);
+        return next;
+      });
+    } catch {
+      // silently fail
+    }
+  }, [isOffline]);
+
+  const nearbyMusicExploreItems = useMemo(
+    () => nearbyMusicEvents.map(listingToExploreNearYouItem),
+    [nearbyMusicEvents],
+  );
+
+  const openNearbyMusicEvent = useCallback(
+    (eventId: string, index: number) => {
+      const ids = nearbyMusicEvents.map((e) => e._id);
+      router.push({
+        pathname: "/event-detail",
+        params: buildEventDetailParams(eventId, ids, index),
+      } as Href);
+    },
+    [nearbyMusicEvents, router],
+  );
 
   const featuredArtistKeyExtractor = useCallback(
     (item: FeaturedArtistItem) => item.id,
@@ -592,20 +671,34 @@ export function HomeFeedRootScreen() {
   );
 
   const renderExploreItem = useCallback(
-    ({ item }: { item: ExploreNearYouItem }) => (
-      <ExploreNearYouCard
-        id={item.id}
-        image={item.image}
-        location={item.location}
-        title={item.title}
-        dateTime={item.dateTime}
-        cardWidth={exploreCardWidth}
-        isSaved={savedExploreIds.has(item.id)}
-        onPress={() => {}}
-        onToggleSave={() => handleToggleExploreSave(item.id)}
-      />
-    ),
-    [exploreCardWidth, handleToggleExploreSave, savedExploreIds],
+    ({ item, index }: { item: ExploreNearYouItem; index: number }) => {
+      const listing = nearbyMusicEvents[index];
+      const isSaved =
+        savedExploreIds.has(item.id) ||
+        Boolean(user?.id && listing?.savedBy?.includes(user.id));
+
+      return (
+        <ExploreNearYouCard
+          id={item.id}
+          image={item.image}
+          location={item.location}
+          title={item.title}
+          dateTime={item.dateTime}
+          cardWidth={exploreCardWidth}
+          isSaved={isSaved}
+          onPress={() => openNearbyMusicEvent(item.id, index)}
+          onToggleSave={() => handleToggleExploreSave(item.id)}
+        />
+      );
+    },
+    [
+      exploreCardWidth,
+      handleToggleExploreSave,
+      nearbyMusicEvents,
+      openNearbyMusicEvent,
+      savedExploreIds,
+      user?.id,
+    ],
   );
 
   const topBarHeight = insets.top + 64;
@@ -1003,7 +1096,7 @@ export function HomeFeedRootScreen() {
         ) : null} */}
 
         {/* ===== Explore Near You — image cards ===== */}
-        {!isOffline ? (
+        {!isOffline && nearbyMusicExploreItems.length > 0 ? (
           <View className="mb-8">
             <View className="mb-4 flex-row items-center justify-between px-4">
               <Text
@@ -1015,14 +1108,25 @@ export function HomeFeedRootScreen() {
               >
                 Explore music events near you
               </Text>
-              <Pressable hitSlop={8}>
+              <Pressable
+                hitSlop={8}
+                onPress={() =>
+                  router.push({
+                    pathname: "/events-category",
+                    params: {
+                      categoryId: "music",
+                      categoryLabel: "Music",
+                    },
+                  } as Href)
+                }
+              >
                 <MaterialIcons name="chevron-right" size={22} color={colors.icon} />
               </Pressable>
             </View>
 
             <FlatList
               horizontal
-              data={EXPLORE_NEAR_YOU}
+              data={nearbyMusicExploreItems}
               keyExtractor={exploreKeyExtractor}
               renderItem={renderExploreItem}
               showsHorizontalScrollIndicator={false}
