@@ -153,6 +153,16 @@ function isRemoteHostedApiBase(url: string) {
   return /onrender\.com|render\.com/i.test(url);
 }
 
+function isLocalDevApiBase(url: string): boolean {
+  const host = getUrlHost(url)?.toLowerCase();
+  if (!host) return true;
+  if (host === "localhost" || host === "127.0.0.1" || host === "10.0.2.2") return true;
+  return isPrivateLanHost(host);
+}
+
+/** Production fallback when EXPO_PUBLIC_API_BASE_URL was not baked into a release build. */
+const PRODUCTION_API_FALLBACK = "https://listifys-new-app.onrender.com";
+
 function getExpoDevHost() {
   // expo-dev-client / Expo Go sets hostUri at runtime so the LAN IP is always current.
   // Try all known manifest shapes from oldest (Expo SDK <46) to newest (SDK 46+).
@@ -242,7 +252,7 @@ function resolveApiBaseUrl(): string {
     return "http://10.0.2.2:5000";
   }
 
-  return "http://localhost:5000";
+  return PRODUCTION_API_FALLBACK;
 }
 
 /** Always resolves the current API base (Metro LAN IP on physical devices in dev). */
@@ -288,6 +298,12 @@ export function getCandidateApiBaseUrls() {
   const configured = getConfiguredApiBaseUrl();
   const selfHealing = getDevSelfHealingBaseUrl();
 
+  // Hosted API (Render, etc.) — never probe unreachable LAN/localhost first.
+  if (configured && !isLocalDevApiBase(configured)) {
+    add(configured, { prepend: true });
+    return candidates;
+  }
+
   if (typeof __DEV__ !== "undefined" && __DEV__) {
     // Reachable hosts first so a stale configured LAN IP never costs a full timeout.
     add(selfHealing);
@@ -309,6 +325,20 @@ export function getCandidateApiBaseUrls() {
   add(getAuthApiBaseUrl());
 
   return candidates;
+}
+
+/** URLs used for backend health probes (connectivity banner). */
+export function getBackendProbeBaseUrls(): string[] {
+  const configured = getConfiguredApiBaseUrl();
+  if (configured && !isLocalDevApiBase(configured)) {
+    return [configured.replace(/\/$/, "")];
+  }
+  const candidates = getCandidateApiBaseUrls();
+  return candidates.length ? candidates : [getAuthApiBaseUrl()];
+}
+
+export function getBackendProbeTimeoutMs(baseUrl: string): number {
+  return isLocalDevApiBase(baseUrl) ? 5_000 : 25_000;
 }
 
 function isNetworkLikeError(error: unknown) {
@@ -337,7 +367,7 @@ async function fetchWithTimeout(
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new AuthApiError(
-        "The request timed out. Please check your internet connection and try again.",
+        "The request timed out. The server may be waking up — please try again.",
         0,
       );
     }
@@ -669,10 +699,19 @@ async function executeRequestJson<T>(
   }
 
   if (!response) {
-    if (lastNetworkError) {
+    if (lastNetworkError instanceof AuthApiError) {
       throw lastNetworkError;
     }
-    throw new AuthApiError("Unable to connect to the server.", 0);
+    const timedOut =
+      lastNetworkError instanceof Error &&
+      /timed out|abort/i.test(lastNetworkError.message);
+    throw new AuthApiError(
+      timedOut
+        ? "The request timed out. The server may be waking up — please try again."
+        : "Unable to connect to the Listifys server. Please wait a moment and try again.",
+      0,
+      lastNetworkError,
+    );
   }
 
   const data = await parseJsonSafe(response);
@@ -720,8 +759,8 @@ export function getAuthErrorMessage(error: unknown) {
     if (/timed out/i.test(error.message)) {
       return "The server is taking longer than usual to respond. Please wait a moment and try again.";
     }
-    if (error.status === 0 || /unable to connect/i.test(error.message)) {
-      return "Unable to reach the server. Check that the app can connect to your network and try again.";
+    if (error.status === 0 || /unable to connect|can't reach|listifys server/i.test(error.message)) {
+      return "Can't reach the Listifys server right now. Please wait a moment and try again.";
     }
     if (error.status === 502 || error.status === 503 || error.status === 504) {
       return "The server is temporarily unavailable. Please try again in a few seconds.";
@@ -756,12 +795,12 @@ export function getAuthErrorMessage(error: unknown) {
   }
 
   if (error instanceof TypeError) {
-    return "No internet connection detected. Please check your network and try again.";
+    return "Can't reach the Listifys server right now. Please wait a moment and try again.";
   }
 
   if (error instanceof Error && error.message) {
-    if (/network|fetch failed/i.test(error.message)) {
-      return "Unable to reach the server. Please check your connection and try again.";
+    if (/network|fetch failed|econnreset|timed out|abort/i.test(error.message)) {
+      return "Can't reach the Listifys server right now. Please wait a moment and try again.";
     }
     return error.message;
   }

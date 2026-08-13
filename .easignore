@@ -1,18 +1,26 @@
-# Monorepo: EAS uploads from git root — ignore native/build artifacts under app/
+# Monorepo root — EAS uploads from git root when building from app/
+# Mobile build only needs app/; exclude everything else below.
+
+# Backend (not part of mobile build)
+server
+
+# Docs and scratch folders
+docs
+.tmp-screens
+
+# Native / deps under app (EAS runs fresh prebuild + npm install)
 app/android
 app/ios
 app/node_modules
 app/.expo
 app/.expo-export-test
+app/dist
 
 # Gradle / CMake caches (often locked on Windows during local builds)
 **/.gradle
 **/.cxx
 **/android/build
 **/android/app/build
-
-# Server is not part of the mobile build
-server/node_modules
 
 # Env and secrets
 **/.env

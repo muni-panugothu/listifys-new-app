@@ -47,8 +47,9 @@ const IMAGE_HEIGHT = CARD_WIDTH * 1.16;
 const META_HEIGHT = 52;
 const CARD_HEIGHT = IMAGE_HEIGHT + META_HEIGHT;
 const ITEM_SIZE = CARD_WIDTH + CARD_GAP;
-const AUTO_MS = 2800;
-const RESUME_MS = 3200;
+const AUTO_MS = 6000;
+const SCROLL_ANIM_MS = 1500;
+const RESUME_MS = 6200;
 const SIDE_SCALE = 0.88;
 
 function badgeForCategory(category: string) {
@@ -300,6 +301,8 @@ function HomeSpotlightCarouselImpl({
   const { colors, isDark } = useTheme();
   const listRef = useRef<Animated.FlatList<HomeSpotlightItem>>(null);
   const indexRef = useRef(0);
+  const offsetRef = useRef(0);
+  const scrollAnimFrameRef = useRef<number | null>(null);
   const pausedRef = useRef(false);
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollX = useSharedValue(0);
@@ -309,27 +312,62 @@ function HomeSpotlightCarouselImpl({
     indexRef.current = index;
   }, [index]);
 
+  const slowScrollToIndex = useCallback((next: number) => {
+    const targetOffset = next * ITEM_SIZE;
+    const startOffset = offsetRef.current;
+    const startTime = Date.now();
+
+    if (scrollAnimFrameRef.current != null) {
+      cancelAnimationFrame(scrollAnimFrameRef.current);
+      scrollAnimFrameRef.current = null;
+    }
+
+    const step = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / SCROLL_ANIM_MS, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const currentOffset =
+        startOffset + (targetOffset - startOffset) * eased;
+
+      offsetRef.current = currentOffset;
+      listRef.current?.scrollToOffset({
+        offset: currentOffset,
+        animated: false,
+      });
+
+      if (progress < 1) {
+        scrollAnimFrameRef.current = requestAnimationFrame(step);
+        return;
+      }
+
+      scrollAnimFrameRef.current = null;
+      indexRef.current = next;
+      setIndex(next);
+    };
+
+    scrollAnimFrameRef.current = requestAnimationFrame(step);
+  }, []);
+
   useEffect(() => {
     if (items.length <= 1) return;
     const timer = setInterval(() => {
       if (pausedRef.current) return;
       const next = (indexRef.current + 1) % items.length;
       try {
-        listRef.current?.scrollToOffset({
-          offset: next * ITEM_SIZE,
-          animated: true,
-        });
-        setIndex(next);
+        slowScrollToIndex(next);
       } catch {
         // ignore
       }
     }, AUTO_MS);
     return () => clearInterval(timer);
-  }, [items.length]);
+  }, [items.length, slowScrollToIndex]);
 
   useEffect(
     () => () => {
       if (resumeTimer.current) clearTimeout(resumeTimer.current);
+      if (scrollAnimFrameRef.current != null) {
+        cancelAnimationFrame(scrollAnimFrameRef.current);
+      }
     },
     [],
   );
@@ -337,6 +375,10 @@ function HomeSpotlightCarouselImpl({
   const pauseAuto = useCallback(() => {
     pausedRef.current = true;
     if (resumeTimer.current) clearTimeout(resumeTimer.current);
+    if (scrollAnimFrameRef.current != null) {
+      cancelAnimationFrame(scrollAnimFrameRef.current);
+      scrollAnimFrameRef.current = null;
+    }
   }, []);
 
   const scheduleResume = useCallback(() => {
@@ -355,8 +397,12 @@ function HomeSpotlightCarouselImpl({
   const onMomentumEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const x = e.nativeEvent.contentOffset.x;
+      offsetRef.current = x;
       const next = Math.round(x / ITEM_SIZE);
-      if (next >= 0 && next < items.length) setIndex(next);
+      if (next >= 0 && next < items.length) {
+        indexRef.current = next;
+        setIndex(next);
+      }
       scheduleResume();
     },
     [items.length, scheduleResume],
@@ -408,7 +454,7 @@ function HomeSpotlightCarouselImpl({
             ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
           }}
         >
-          In the spotlight
+          Fresh recommendation
         </Text>
         {onSeeAll ? (
           <Pressable onPress={onSeeAll} hitSlop={8}>

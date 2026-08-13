@@ -62,12 +62,9 @@ export function resolveCompanyLogoUrl(job: JobListingExtras): string | null {
   if (job.company?.logo?.trim()) return job.company.logo.trim();
   if (job.companyLogo?.trim()) return job.companyLogo.trim();
 
-  const seller = job.seller as { profileImage?: string } | undefined;
-  if (seller?.profileImage?.trim()) return seller.profileImage.trim();
-
   const domain =
-    extractCompanyDomain(job.companyWebsite) ??
-    domainFromCompanyName(job.companyName ?? job.sellerName);
+    extractCompanyDomain(job.company?.website ?? job.companyWebsite) ??
+    domainFromCompanyName(job.company?.name ?? job.companyName ?? job.sellerName);
 
   if (domain) return `https://logo.clearbit.com/${domain}`;
 
@@ -79,7 +76,12 @@ export function getCompanyDisplayName(job: JobListingExtras): string {
 }
 
 export function getCompanyInitial(name: string): string {
-  return (name.trim().charAt(0) || "J").toUpperCase();
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return `${words[0].charAt(0)}${words[1].charAt(0)}`.toUpperCase();
+  }
+  const single = words[0]?.charAt(0) ?? "C";
+  return single.toUpperCase();
 }
 
 export type JobCompanyMeta = {

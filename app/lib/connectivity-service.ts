@@ -14,14 +14,15 @@
  */
 
 import {
-  getAuthApiBaseUrl,
-  getCandidateApiBaseUrls,
+  getBackendProbeBaseUrls,
+  getBackendProbeTimeoutMs,
 } from "@/features/auth/services/auth-api";
 
 const PROBE_TIMEOUT_MS = 5_000;
 const DEBOUNCE_MS = 800;
 /** Avoid flip-flopping on a single failed probe during Wi-Fi handoff. */
 const OFFLINE_CONFIRM_COUNT = 2;
+const SERVER_DOWN_CONFIRM_COUNT = 2;
 
 const GOOGLE_PROBE_URL = "https://connectivitycheck.gstatic.com/generate_204";
 const CF_PROBE_URL = "https://1.1.1.1/cdn-cgi/trace";
@@ -60,32 +61,41 @@ export async function checkGeneralInternet(): Promise<boolean> {
   return googleOk || cfOk;
 }
 
+async function probeBackendBase(baseUrl: string): Promise<boolean> {
+  const timeoutMs = getBackendProbeTimeoutMs(baseUrl);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/health`, {
+      method: "GET",
+      signal: controller.signal,
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Validates app-server reachability using the same URL candidates as API calls. */
 export async function checkBackendReachable(): Promise<boolean> {
-  const bases = getCandidateApiBaseUrls();
-  const unique = [...new Set(bases.length ? bases : [getAuthApiBaseUrl()])];
+  const unique = [...new Set(getBackendProbeBaseUrls())];
 
-  const results = await Promise.all(
-    unique.map(async (baseUrl) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-      try {
-        const res = await fetch(`${baseUrl.replace(/\/$/, "")}/health`, {
-          method: "GET",
-          signal: controller.signal,
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        });
-        return res.ok;
-      } catch {
-        return false;
-      } finally {
-        clearTimeout(timer);
-      }
-    }),
-  );
+  for (const baseUrl of unique) {
+    if (await probeBackendBase(baseUrl)) {
+      return true;
+    }
+    // One retry — Render free tier can take 30–60s to wake from sleep.
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    if (await probeBackendBase(baseUrl)) {
+      return true;
+    }
+  }
 
-  return results.some(Boolean);
+  return false;
 }
 
 export async function checkConnectivity(): Promise<ConnectivitySnapshot> {
@@ -113,6 +123,7 @@ class ConnectivityService {
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private _checkInFlight = false;
   private _offlineStreak = 0;
+  private _serverDownStreak = 0;
 
   subscribe(listener: ConnectivityListener): () => void {
     this._listeners.add(listener);
@@ -148,6 +159,7 @@ class ConnectivityService {
     if (!netInfoIsConnected) {
       this._debounceTimer = setTimeout(() => {
         this._offlineStreak = OFFLINE_CONFIRM_COUNT;
+        this._serverDownStreak = SERVER_DOWN_CONFIRM_COUNT;
         this._setSnapshot({ hasInternet: false, backendReachable: false });
       }, DEBOUNCE_MS);
       return;
@@ -175,8 +187,18 @@ class ConnectivityService {
         if (this._offlineStreak < OFFLINE_CONFIRM_COUNT && !force) {
           return;
         }
+        this._serverDownStreak = 0;
       } else {
         this._offlineStreak = 0;
+
+        if (!snapshot.backendReachable) {
+          this._serverDownStreak += 1;
+          if (this._serverDownStreak < SERVER_DOWN_CONFIRM_COUNT && !force) {
+            return;
+          }
+        } else {
+          this._serverDownStreak = 0;
+        }
       }
 
       this._setSnapshot(snapshot);

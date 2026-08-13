@@ -1,6 +1,6 @@
 /**
  * Static demo content for the "Artists in your District" and
- * "Explore music events near you" sections on the home feed.
+ * "Explore Events near you" sections on the home feed.
  *
  * These are purely UI placeholders — no API, business logic, or state slice
  * changes have been made. Swap the arrays here when the real endpoints ship.

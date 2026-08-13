@@ -22,7 +22,9 @@ const androidClientId =
 const iosClientId =
   process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim() || null;
 
-const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() || undefined;
+const apiBaseUrl =
+  process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ||
+  "https://listifys-new-app.onrender.com";
 
 /** @type {import('expo/config').ExpoConfig} */
 module.exports = {

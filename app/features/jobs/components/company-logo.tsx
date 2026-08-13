@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Text, View, type ViewStyle } from "react-native";
 
 import { ListifyFonts } from "@/constants/typography";
@@ -40,8 +40,13 @@ function CompanyLogoImpl({
   const [failed, setFailed] = useState(false);
   const companyName = getCompanyDisplayName(job);
   const logoUrl = useMemo(() => resolveCompanyLogoUrl(job), [job]);
+  const initial = useMemo(() => getCompanyInitial(companyName), [companyName]);
   const innerSize = imageSize ?? Math.max(size - borderWidth * 2 - 8, size * 0.72);
   const showImage = Boolean(logoUrl) && !failed;
+
+  useEffect(() => {
+    setFailed(false);
+  }, [logoUrl]);
 
   return (
     <View
@@ -74,11 +79,11 @@ function CompanyLogoImpl({
         <Text
           style={{
             fontFamily: ListifyFonts.bold,
-            fontSize: Math.round(size * 0.38),
+            fontSize: Math.round(size * (initial.length > 1 ? 0.3 : 0.38)),
             color: "#FFFFFF",
           }}
         >
-          {getCompanyInitial(companyName)}
+          {initial}
         </Text>
       )}
     </View>

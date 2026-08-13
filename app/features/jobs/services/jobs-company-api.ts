@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 
 import { AUTH_API_BASE_URL, resolveAbsoluteMediaUrl, requestJson } from "@/features/auth/services/auth-api";
+import { authenticatedMultipartPost } from "@/lib/authenticated-multipart";
 
 export type EmployerCompanyProfile = {
   _id?: string;
@@ -51,16 +52,19 @@ export async function uploadEmployerCompanyLogo(localUri: string): Promise<strin
   const ext = match ? match[1] : "jpg";
   const mimeType = `image/${ext === "jpg" ? "jpeg" : ext}`;
 
-  const formData = new FormData();
-  formData.append("logo", {
-    uri: Platform.OS === "android" ? localUri : localUri.replace("file://", ""),
-    name: filename,
-    type: mimeType,
-  } as unknown as Blob);
+  const buildFormData = () => {
+    const formData = new FormData();
+    formData.append("logo", {
+      uri: Platform.OS === "android" ? localUri : localUri.replace("file://", ""),
+      name: filename,
+      type: mimeType,
+    } as unknown as Blob);
+    return formData;
+  };
 
   const response = await authenticatedMultipartPost(
     `${AUTH_API_BASE_URL}/api/jobs/company-profile/upload-logo`,
-    formData,
+    buildFormData,
   );
 
   const data = await response.json().catch(() => ({}));

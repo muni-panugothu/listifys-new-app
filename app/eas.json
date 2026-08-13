@@ -12,7 +12,7 @@
         "gradleCommand": ":app:assembleDebug --no-configure-on-demand"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://listifys-app.onrender.com",
+        "EXPO_PUBLIC_API_BASE_URL": "https://listifys-new-app.onrender.com",
         "EXPO_PUBLIC_GOOGLE_MAPS_KEY": "AIzaSyDE0mXggZkkQxJKiogRvdT73J5yOqj6dVI",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "582870381419-m26s615uhqhcf6scj9rrov3s5qm8nb7n.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "582870381419-mkv03be59hu8camecqif5cg7btkaesko.apps.googleusercontent.com"
@@ -27,7 +27,7 @@
       "env": {
         "EAS_SKIP_AUTO_FINGERPRINT": "1",
         "EXPO_PUBLIC_NOTIFICATION_DEBUG": "1",
-        "EXPO_PUBLIC_API_BASE_URL": "https://listifys-app.onrender.com",
+        "EXPO_PUBLIC_API_BASE_URL": "https://listifys-new-app.onrender.com",
         "EXPO_PUBLIC_GOOGLE_MAPS_KEY": "AIzaSyDE0mXggZkkQxJKiogRvdT73J5yOqj6dVI",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "582870381419-m26s615uhqhcf6scj9rrov3s5qm8nb7n.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "582870381419-mkv03be59hu8camecqif5cg7btkaesko.apps.googleusercontent.com"
@@ -40,7 +40,7 @@
       },
       "env": {
         "EXPO_PUBLIC_NOTIFICATION_DEBUG": "1",
-        "EXPO_PUBLIC_API_BASE_URL": "https://listifys-app.onrender.com",
+        "EXPO_PUBLIC_API_BASE_URL": "https://listifys-new-app.onrender.com",
         "EXPO_PUBLIC_GOOGLE_MAPS_KEY": "AIzaSyDE0mXggZkkQxJKiogRvdT73J5yOqj6dVI",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "582870381419-m26s615uhqhcf6scj9rrov3s5qm8nb7n.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "582870381419-mkv03be59hu8camecqif5cg7btkaesko.apps.googleusercontent.com"

@@ -17,6 +17,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ListingItemsGridCard, getListingGridCarouselHeight } from "@/components/listing-items-grid-card";
+import { JobListingCard } from "@/features/category/components/job-listing-card";
+import type { JobListingExtras } from "@/features/jobs/utils/jobs-formatters";
+import { HomeServiceDetailCard } from "@/features/home/components/home-service-detail-card";
 import {
   ExploreNearYouCard,
 } from "@/features/home/components/explore-near-you-card";
@@ -41,7 +44,9 @@ import { getUnreadCount as getNotificationUnreadCount } from "@/features/auth/se
 import { subscribeNotificationUnreadAdjust } from "@/lib/notification-unread-bus";
 import { getUnreadCount as getChatUnreadCount } from "@/features/messaging/services/chat-api";
 import {
+  fetchCategoryListings,
   fetchHomeFeed,
+  fetchServiceListings,
   getCachedHomeFeed,
   getRecentlyViewed,
   toggleSaveListing,
@@ -55,7 +60,10 @@ import { ProfileAvatarImage } from "@/components/profile-avatar-image";
 import { Image } from "@/lib/nativewind-interop";
 import { useLocale } from "@/providers/locale-provider";
 import { useTheme } from "@/providers/theme-provider";
-import { filterOutOwnListings } from "@/lib/is-own-listing";
+import { filterOutOwnListings, getListingSellerId, isOwnListing } from "@/lib/is-own-listing";
+import { buildListingChatHref } from "@/lib/listing-chat";
+import { showErrorToast } from "@/lib/toast";
+import { useProtectedNavigation } from "@/lib/use-protected-navigation";
 import { formatPrice } from "@/lib/currency";
 import { resolveListingDistanceKm, getListingDistanceLabel } from "@/lib/listing-distance";
 import {
@@ -88,6 +96,15 @@ const SELL_BANNER_CAMERA_IMAGE =
 const EXPLORE_GAP = 8;
 const EXPLORE_ROW_GAP = 6;
 const EXPLORE_H_PAD = 16;
+const NEARBY_EVENTS_STALE_MS = 60_000;
+const NEARBY_SERVICES_STALE_MS = 60_000;
+const NEARBY_JOBS_STALE_MS = 60_000;
+const HOME_SERVICES_LIMIT = 4;
+const HOME_JOBS_LIMIT = 4;
+const SERVICE_CARD_WIDTH = Math.round(SCREEN_WIDTH * 0.86);
+const SERVICE_CARD_GAP = 14;
+const JOB_CARD_WIDTH = Math.round(SCREEN_WIDTH * 0.86);
+const JOB_CARD_GAP = 14;
 /** Two-row horizontal Explore — marketplace categories. */
 const EXPLORE_CARD_W = Math.round(SCREEN_WIDTH * 0.28);
 /** Card body only — icon overflow sits above this. */
@@ -171,7 +188,11 @@ export function HomeFeedRootScreen() {
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [nearbyMusicEvents, setNearbyMusicEvents] = useState<ListingItem[]>([]);
+  const [nearbyServices, setNearbyServices] = useState<ListingItem[]>([]);
+  const [nearbyJobs, setNearbyJobs] = useState<ListingItem[]>([]);
+  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [showLoginSheet, setShowLoginSheet] = useState(false);
+  const { navigateProtected } = useProtectedNavigation();
   const locationPromptAttempted = useRef(false);
    // Apply location filter when user has a valid location (GPS/manual) or when the user is in the US.
    const hasValidLocation = locationCoords.lat != null && locationCoords.lng != null;
@@ -288,7 +309,6 @@ export function HomeFeedRootScreen() {
         locationCoords.lat != null && locationCoords.lng != null;
       const res = await fetchUpcomingEvents(
         {
-          subcategory: "Music",
           limit: 12,
           sort: hasCoords ? "nearest" : "newest",
           countryCode: effectiveCountryCode ?? undefined,
@@ -322,22 +342,171 @@ export function HomeFeedRootScreen() {
     user?.id,
   ]);
 
+  const loadNearbyServices = useCallback(async () => {
+    if (isOffline) return;
+    try {
+      const hasCoords =
+        locationCoords.lat != null && locationCoords.lng != null;
+      const locationText =
+        locationCoords.label &&
+        locationCoords.label !== "Set location" &&
+        !locationCoords.label.startsWith("Detecting")
+          ? extractCityFromLocationLabel(locationCoords.label) ??
+            locationCoords.label
+          : undefined;
+
+      const pickItems = (listings: ListingItem[]) =>
+        filterOutOwnListings(listings ?? [], user?.id).slice(
+          0,
+          HOME_SERVICES_LIMIT,
+        );
+
+      let items: ListingItem[] = [];
+
+      if (hasCoords) {
+        const geoRes = await fetchServiceListings({
+          limit: HOME_SERVICES_LIMIT,
+          sort: "-createdAt",
+          countryCode: effectiveCountryCode ?? undefined,
+          lat: locationCoords.lat ?? undefined,
+          lng: locationCoords.lng ?? undefined,
+          radius: 100,
+          location: locationText,
+        });
+        items = pickItems(geoRes.listings);
+      }
+
+      if (items.length === 0) {
+        const scopedRes = await fetchServiceListings({
+          limit: HOME_SERVICES_LIMIT,
+          sort: "-createdAt",
+          countryCode: effectiveCountryCode ?? undefined,
+          location: locationText,
+        });
+        items = pickItems(scopedRes.listings);
+      }
+
+      if (items.length === 0) {
+        const latestRes = await fetchServiceListings({
+          limit: HOME_SERVICES_LIMIT,
+          sort: "-createdAt",
+        });
+        items = pickItems(latestRes.listings);
+      }
+
+      setNearbyServices(items);
+    } catch {
+      setNearbyServices([]);
+    }
+  }, [
+    effectiveCountryCode,
+    isOffline,
+    locationCoords.label,
+    locationCoords.lat,
+    locationCoords.lng,
+    user?.id,
+  ]);
+
+  const loadNearbyJobs = useCallback(async () => {
+    if (isOffline) return;
+    try {
+      const hasCoords =
+        locationCoords.lat != null && locationCoords.lng != null;
+      const locationText =
+        locationCoords.label &&
+        locationCoords.label !== "Set location" &&
+        !locationCoords.label.startsWith("Detecting")
+          ? extractCityFromLocationLabel(locationCoords.label) ??
+            locationCoords.label
+          : undefined;
+
+      const pickItems = (listings: ListingItem[]) =>
+        filterOutOwnListings(listings ?? [], user?.id).slice(
+          0,
+          HOME_JOBS_LIMIT,
+        );
+
+      let items: ListingItem[] = [];
+
+      if (hasCoords) {
+        const geoRes = await fetchCategoryListings("jobs", {
+          limit: HOME_JOBS_LIMIT,
+          sort: "newest",
+          countryCode: effectiveCountryCode ?? undefined,
+          lat: locationCoords.lat ?? undefined,
+          lng: locationCoords.lng ?? undefined,
+          radius: 100,
+          location: locationText,
+        });
+        items = pickItems(geoRes.listings);
+      }
+
+      if (items.length === 0) {
+        const scopedRes = await fetchCategoryListings("jobs", {
+          limit: HOME_JOBS_LIMIT,
+          sort: "newest",
+          countryCode: effectiveCountryCode ?? undefined,
+          location: locationText,
+        });
+        items = pickItems(scopedRes.listings);
+      }
+
+      if (items.length === 0) {
+        const latestRes = await fetchCategoryListings("jobs", {
+          limit: HOME_JOBS_LIMIT,
+          sort: "newest",
+        });
+        items = pickItems(latestRes.listings);
+      }
+
+      setNearbyJobs(items);
+      if (user?.id) {
+        const saved = new Set<string>();
+        for (const item of items) {
+          if (item.savedBy?.includes(user.id)) saved.add(item._id);
+        }
+        setSavedJobIds(saved);
+      }
+    } catch {
+      setNearbyJobs([]);
+    }
+  }, [
+    effectiveCountryCode,
+    isOffline,
+    locationCoords.label,
+    locationCoords.lat,
+    locationCoords.lng,
+    user?.id,
+  ]);
+
   useEffect(() => {
     if (!sessionHydrated || isOffline) return;
     void loadNearbyMusicEvents();
-  }, [isOffline, loadNearbyMusicEvents, sessionHydrated]);
+    void loadNearbyServices();
+    void loadNearbyJobs();
+  }, [isOffline, loadNearbyJobs, loadNearbyMusicEvents, loadNearbyServices, sessionHydrated]);
 
   const lastNearbyFetchAtRef = useRef(0);
-  const NEARBY_EVENTS_STALE_MS = 60_000;
+  const lastNearbyServicesFetchAtRef = useRef(0);
+  const lastNearbyJobsFetchAtRef = useRef(0);
 
   useFocusEffect(
     useCallback(() => {
       if (isOffline) return;
       const now = Date.now();
-      if (now - lastNearbyFetchAtRef.current < NEARBY_EVENTS_STALE_MS) return;
-      lastNearbyFetchAtRef.current = now;
-      void loadNearbyMusicEvents();
-    }, [isOffline, loadNearbyMusicEvents]),
+      if (now - lastNearbyFetchAtRef.current >= NEARBY_EVENTS_STALE_MS) {
+        lastNearbyFetchAtRef.current = now;
+        void loadNearbyMusicEvents();
+      }
+      if (now - lastNearbyServicesFetchAtRef.current >= NEARBY_SERVICES_STALE_MS) {
+        lastNearbyServicesFetchAtRef.current = now;
+        void loadNearbyServices();
+      }
+      if (now - lastNearbyJobsFetchAtRef.current >= NEARBY_JOBS_STALE_MS) {
+        lastNearbyJobsFetchAtRef.current = now;
+        void loadNearbyJobs();
+      }
+    }, [isOffline, loadNearbyJobs, loadNearbyMusicEvents, loadNearbyServices]),
   );
 
   useEffect(() => {
@@ -424,9 +593,11 @@ export function HomeFeedRootScreen() {
       lastFeedFetchAtRef.current = Date.now();
       loadFeed({ allowCacheFallback: false }).catch(() => {});
       void loadNearbyMusicEvents();
+      void loadNearbyServices();
+      void loadNearbyJobs();
     }, 400);
     return () => clearTimeout(timer);
-  }, [locationHydrated, locationCoords.lat, locationCoords.lng, loadFeed, loadNearbyMusicEvents]);
+  }, [locationHydrated, locationCoords.lat, locationCoords.lng, loadFeed, loadNearbyJobs, loadNearbyMusicEvents, loadNearbyServices]);
 
   useEffect(() => {
     if (!sessionHydrated) return;
@@ -464,6 +635,8 @@ export function HomeFeedRootScreen() {
       dispatch(fetchProfile()).unwrap().catch(() => {}),
       loadFeed(),
       loadNearbyMusicEvents({ force: true }),
+      loadNearbyServices(),
+      loadNearbyJobs(),
       getRecentlyViewed(shouldApplyLocationFilter ? effectiveCountryCode : null).then(setRecentlyViewed).catch(() => {}),
       getNotificationUnreadCount()
         .then((r) => setNotificationUnreadCount(r.unreadCount ?? 0))
@@ -472,7 +645,7 @@ export function HomeFeedRootScreen() {
         .then((r) => setChatUnreadCount(r.unreadCount ?? 0))
         .catch(() => {}),
     ]);
-  }, [dispatch, effectiveCountryCode, loadFeed, loadNearbyMusicEvents, shouldApplyLocationFilter]);
+  }, [dispatch, effectiveCountryCode, loadFeed, loadNearbyJobs, loadNearbyMusicEvents, loadNearbyServices, shouldApplyLocationFilter]);
 
   const { refreshing, onRefresh } = usePullToRefresh(handleRefresh);
 
@@ -603,6 +776,8 @@ export function HomeFeedRootScreen() {
 
   const featuredCardWidth = SCREEN_WIDTH * 0.48;
   const exploreCardWidth = SCREEN_WIDTH * 0.5;
+  const serviceCardWidth = SERVICE_CARD_WIDTH;
+  const jobCardWidth = JOB_CARD_WIDTH;
 
   const handleToggleArtistSave = useCallback((id: string) => {
     setSavedArtistIds((prev) => {
@@ -633,6 +808,60 @@ export function HomeFeedRootScreen() {
     [nearbyMusicEvents],
   );
 
+  const homeServiceItems = useMemo(() => {
+    if (nearbyServices.length > 0) return nearbyServices;
+
+    const feedServices = feedData?.categories?.services?.listings ?? [];
+    let items = filterOutOwnListings(feedServices, user?.id);
+
+    if (items.length === 0) {
+      items = filterOutOwnListings(
+        allListings.filter((item) => {
+          const cat =
+            (item as ListingItem & { _source?: string })._source ??
+            item.category ??
+            "";
+          return cat === "services";
+        }),
+        user?.id,
+      );
+    }
+
+    return items.slice(0, HOME_SERVICES_LIMIT);
+  }, [
+    allListings,
+    feedData?.categories?.services?.listings,
+    nearbyServices,
+    user?.id,
+  ]);
+
+  const homeJobItems = useMemo(() => {
+    if (nearbyJobs.length > 0) return nearbyJobs;
+
+    const feedJobs = feedData?.categories?.jobs?.listings ?? [];
+    let items = filterOutOwnListings(feedJobs, user?.id);
+
+    if (items.length === 0) {
+      items = filterOutOwnListings(
+        allListings.filter((item) => {
+          const cat =
+            (item as ListingItem & { _source?: string })._source ??
+            item.category ??
+            "";
+          return cat === "jobs";
+        }),
+        user?.id,
+      );
+    }
+
+    return items.slice(0, HOME_JOBS_LIMIT);
+  }, [
+    allListings,
+    feedData?.categories?.jobs?.listings,
+    nearbyJobs,
+    user?.id,
+  ]);
+
   const openNearbyMusicEvent = useCallback(
     (eventId: string, index: number) => {
       const ids = nearbyMusicEvents.map((e) => e._id);
@@ -642,6 +871,78 @@ export function HomeFeedRootScreen() {
       } as Href);
     },
     [nearbyMusicEvents, router],
+  );
+
+  const openServiceDetail = useCallback(
+    (serviceId: string) => {
+      router.push(`/service-detail?id=${serviceId}&category=services` as Href);
+    },
+    [router],
+  );
+
+  const openJobDetail = useCallback(
+    (jobId: string) => {
+      router.push(`/job-detail?id=${jobId}&category=jobs` as Href);
+    },
+    [router],
+  );
+
+  const handleToggleJobSave = useCallback(async (jobId: string) => {
+    if (isOffline) return;
+    try {
+      const res = await toggleSaveListing("jobs", jobId);
+      setSavedJobIds((prev) => {
+        const next = new Set(prev);
+        if (res.saved) next.add(jobId);
+        else next.delete(jobId);
+        return next;
+      });
+    } catch {
+      // silently fail
+    }
+  }, [isOffline]);
+
+  const handleServiceMessage = useCallback(
+    (item: ListingItem) => {
+      const sellerId = getListingSellerId(item);
+      if (!sellerId) {
+        showErrorToast("Unavailable", "Provider information is missing for this service.");
+        return;
+      }
+      if (isOwnListing(item, user?.id)) {
+        showErrorToast("Not Allowed", "You cannot message yourself on your own service.");
+        return;
+      }
+
+      const pricing = (item as { pricing?: { basePrice?: number } }).pricing;
+      const providerUser =
+        typeof item.userId === "object" ? item.userId : null;
+      const providerName =
+        providerUser?.name ?? item.sellerName ?? "Provider";
+      const contactImage =
+        providerUser?.profileImage ??
+        providerUser?.googleProfileImage ??
+        providerUser?.avatar ??
+        item.seller?.profileImage ??
+        null;
+
+      navigateProtected(
+        buildListingChatHref({
+          recipientId: sellerId,
+          sellerId,
+          name: providerName,
+          contactImage,
+          productId: item._id,
+          productType: "services",
+          productTitle: item.title ?? item.subcategory ?? "Service",
+          productPrice: pricing?.basePrice ?? item.price,
+          productImage: item.images?.[0] ?? null,
+          currency: item.currency ?? "₹",
+        }),
+        "messages",
+      );
+    },
+    [navigateProtected, user?.id],
   );
 
   const exploreColumns = useMemo(
@@ -683,6 +984,55 @@ export function HomeFeedRootScreen() {
   const exploreKeyExtractor = useCallback(
     (item: ExploreNearYouItem) => item.id,
     [],
+  );
+
+  const serviceKeyExtractor = useCallback(
+    (item: ListingItem) => item._id,
+    [],
+  );
+
+  const renderServiceItem = useCallback(
+    ({ item }: { item: ListingItem }) => (
+      <HomeServiceDetailCard
+        item={item}
+        cardWidth={serviceCardWidth}
+        isoCountryCode={effectiveCountryCode}
+        onPress={() => openServiceDetail(item._id)}
+        onMessage={() => handleServiceMessage(item)}
+      />
+    ),
+    [
+      effectiveCountryCode,
+      handleServiceMessage,
+      openServiceDetail,
+      serviceCardWidth,
+    ],
+  );
+
+  const jobKeyExtractor = useCallback((item: ListingItem) => item._id, []);
+
+  const renderJobItem = useCallback(
+    ({ item }: { item: ListingItem }) => (
+      <View style={{ width: jobCardWidth }}>
+        <JobListingCard
+          job={item as JobListingExtras}
+          isoCountryCode={effectiveCountryCode}
+          isSaved={savedJobIds.has(item._id) || savedIds.has(item._id)}
+          onPress={() => openJobDetail(item._id)}
+          onToggleSave={() => {
+            void handleToggleJobSave(item._id);
+          }}
+        />
+      </View>
+    ),
+    [
+      effectiveCountryCode,
+      handleToggleJobSave,
+      jobCardWidth,
+      openJobDetail,
+      savedIds,
+      savedJobIds,
+    ],
   );
 
   const renderFeaturedArtistItem = useCallback(
@@ -1028,7 +1378,7 @@ export function HomeFeedRootScreen() {
           </View>
         </View> */}
 
-        {/* In the spotlight — same feed data as Fresh recommendations */}
+        {/* Fresh recommendation carousel */}
         {!isOffline ? (
           spotlightItems.length > 0 ? (
             <View className="mb-6 mt-5">
@@ -1041,7 +1391,7 @@ export function HomeFeedRootScreen() {
                     pathname: "/search-results-entity-tabs",
                     params: {
                       q: "",
-                      title: "In the spotlight",
+                      title: "Fresh recommendation",
                       countryCode: effectiveCountryCode ?? "",
                     },
                   } as Href)
@@ -1121,19 +1471,11 @@ export function HomeFeedRootScreen() {
                   ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
                 }}
               >
-                Explore music events near you
+                Explore Events near you
               </Text>
               <Pressable
                 hitSlop={8}
-                onPress={() =>
-                  router.push({
-                    pathname: "/events-category",
-                    params: {
-                      categoryId: "music",
-                      categoryLabel: "Music",
-                    },
-                  } as Href)
-                }
+                onPress={() => router.push("/events-listing" as Href)}
               >
                 <MaterialIcons name="chevron-right" size={22} color={colors.icon} />
               </Pressable>
@@ -1152,6 +1494,86 @@ export function HomeFeedRootScreen() {
               }}
               decelerationRate="fast"
               snapToInterval={exploreCardWidth + 14}
+              snapToAlignment="start"
+              {...HORIZONTAL_CAROUSEL_PROPS}
+            />
+          </View>
+        ) : null}
+
+        {/* ===== Service details — professional marketplace cards ===== */}
+        {!isOffline && homeServiceItems.length > 0 ? (
+          <View className="mb-8">
+            <View className="mb-4 flex-row items-center justify-between px-4">
+              <Text
+                className="text-[22px] font-bold"
+                style={{
+                  color: colors.textPrimary,
+                  ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
+                }}
+              >
+                Service details near you
+              </Text>
+              <Pressable
+                hitSlop={8}
+                onPress={() => router.push("/services-category-hub" as Href)}
+              >
+                <MaterialIcons name="chevron-right" size={22} color={colors.icon} />
+              </Pressable>
+            </View>
+
+            <FlatList
+              horizontal
+              data={homeServiceItems}
+              keyExtractor={serviceKeyExtractor}
+              renderItem={renderServiceItem}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{
+                paddingHorizontal: 16,
+                paddingBottom: 6,
+                gap: SERVICE_CARD_GAP,
+              }}
+              decelerationRate="fast"
+              snapToInterval={serviceCardWidth + SERVICE_CARD_GAP}
+              snapToAlignment="start"
+              {...HORIZONTAL_CAROUSEL_PROPS}
+            />
+          </View>
+        ) : null}
+
+        {/* ===== Jobs near you — horizontal job cards ===== */}
+        {!isOffline && homeJobItems.length > 0 ? (
+          <View className="mb-8">
+            <View className="mb-4 flex-row items-center justify-between px-4">
+              <Text
+                className="text-[22px] font-bold"
+                style={{
+                  color: colors.textPrimary,
+                  ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
+                }}
+              >
+                Jobs near you
+              </Text>
+              <Pressable
+                hitSlop={8}
+                onPress={() => router.push("/jobs-listing" as Href)}
+              >
+                <MaterialIcons name="chevron-right" size={22} color={colors.icon} />
+              </Pressable>
+            </View>
+
+            <FlatList
+              horizontal
+              data={homeJobItems}
+              keyExtractor={jobKeyExtractor}
+              renderItem={renderJobItem}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{
+                paddingHorizontal: 16,
+                paddingBottom: 6,
+                gap: JOB_CARD_GAP,
+              }}
+              decelerationRate="fast"
+              snapToInterval={jobCardWidth + JOB_CARD_GAP}
               snapToAlignment="start"
               {...HORIZONTAL_CAROUSEL_PROPS}
             />
