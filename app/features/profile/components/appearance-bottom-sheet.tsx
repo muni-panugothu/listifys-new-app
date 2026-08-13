@@ -111,6 +111,8 @@ export function AppearanceBottomSheet({
               backgroundColor: colors.surface,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
+              borderTopWidth: 1,
+              borderColor: colors.border,
               paddingBottom: Math.max(insets.bottom + 12, 24),
               paddingTop: 8,
               shadowColor: "#000",
@@ -222,21 +224,21 @@ export function AppearanceBottomSheet({
               disabled={saving}
               className="items-center rounded-full py-4"
               style={({ pressed }) => ({
-                backgroundColor: colors.textPrimary,
-                opacity: pressed || saving ? 0.85 : 1,
+                backgroundColor: colors.primary,
+                opacity: saving ? 0.65 : pressed ? 0.88 : 1,
               })}
             >
               <Text
                 className="text-[16px]"
                 style={{
                   fontFamily: ListifyFonts.semiBold,
-                  color: colors.background,
+                  color: colors.textOnPrimary,
                   ...(Platform.OS === "android"
                     ? { includeFontPadding: false }
                     : {}),
                 }}
               >
-                Save preference
+                {saving ? "Saving…" : "Save preference"}
               </Text>
             </Pressable>
           </View>

@@ -700,11 +700,17 @@ async function executeRequestJson<T>(
 
   if (!response) {
     if (lastNetworkError instanceof AuthApiError) {
+      void import("@/lib/connectivity-service")
+        .then(({ connectivityService }) => connectivityService.reportBackendFailure())
+        .catch(() => {});
       throw lastNetworkError;
     }
     const timedOut =
       lastNetworkError instanceof Error &&
       /timed out|abort/i.test(lastNetworkError.message);
+    void import("@/lib/connectivity-service")
+      .then(({ connectivityService }) => connectivityService.reportBackendFailure())
+      .catch(() => {});
     throw new AuthApiError(
       timedOut
         ? "The request timed out. The server may be waking up — please try again."
@@ -726,6 +732,10 @@ async function executeRequestJson<T>(
       throw new AuthApiError(extractErrorMessage(data), response.status, data);
     }
   }
+
+  void import("@/lib/connectivity-service")
+    .then(({ connectivityService }) => connectivityService.reportBackendSuccess())
+    .catch(() => {});
 
   return (data ?? {}) as T;
 }
@@ -1306,6 +1316,7 @@ export function submitServiceReview(data: {
   rating: number;
   comment: string;
   title?: string;
+  images?: Array<{ url: string; publicId?: string }>;
 }) {
   return requestJson<{ success: boolean; data?: unknown }>("/api/services/reviews", {
     method: "POST",

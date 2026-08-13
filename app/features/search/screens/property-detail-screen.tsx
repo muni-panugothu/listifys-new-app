@@ -48,6 +48,7 @@ import {
 } from "@/lib/listing-contact-phone";
 import { showErrorToast } from "@/lib/toast";
 import { ProfileAvatarImage } from "@/components/profile-avatar-image";
+import { ListingLocationSection } from "@/components/listing-location-section";
 import { useTheme } from "@/providers/theme-provider";
 
 type SellerPopulated = {
@@ -694,13 +695,27 @@ export function PropertyDetailScreen() {
             >
               {badgeLabel}
             </Text>
-            <View style={{ flexDirection: "row", alignItems: "baseline" }}>
-              <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 20, color: colors.textPrimary }}>
-                {price || "On request"}
-              </Text>
-              {price && isRental ? (
-                <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: colors.textSecondary }}>
-                  /Month
+            <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 10 }}>
+              <View style={{ flexDirection: "row", alignItems: "baseline" }}>
+                <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 20, color: colors.textPrimary }}>
+                  {price || "On request"}
+                </Text>
+                {price && isRental ? (
+                  <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 14, color: colors.textSecondary }}>
+                    /Month
+                  </Text>
+                ) : null}
+              </View>
+              {distanceLabel ? (
+                <Text
+                  style={{
+                    fontFamily: ListifyFonts.medium,
+                    fontSize: 13,
+                    color: colors.textSecondary,
+                    paddingBottom: 1,
+                  }}
+                >
+                  {distanceLabel}
                 </Text>
               ) : null}
             </View>
@@ -730,7 +745,6 @@ export function PropertyDetailScreen() {
               }}
             >
               {locationText}
-              {distanceLabel ? ` · ${distanceLabel}` : ""}
             </Text>
           </View>
 
@@ -776,6 +790,14 @@ export function PropertyDetailScreen() {
               </View>
             ))}
           </View>
+
+          {listing ? (
+            <ListingLocationSection
+              listing={listing}
+              category={categorySlug}
+              embedded
+            />
+          ) : null}
 
           {/* Description — always visible like reference */}
           <View style={{ marginTop: 26 }}>

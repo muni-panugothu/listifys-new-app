@@ -32,17 +32,18 @@ import {
 } from "@/features/listing/services/listing-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { useDynamicSubcategories } from "@/hooks/use-dynamic-subcategories";
-import { getListingDistanceLabel } from "@/lib/listing-distance";
+import { getListingDistanceLabel, resolveListingDistanceKm } from "@/lib/listing-distance";
+import { buildLocationQueryParams } from "@/lib/location-query-params";
 import { useLocale } from "@/providers/locale-provider";
 import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
 import {
-  selectIsoCountryCode,
   selectLocationCoords,
   selectLocationLabel,
-  selectLocationSource,
+  selectLocationQueryState,
 } from "@/store/slices/location-slice";
 import { getCurrencyCodeFromCountry, getCurrencySymbol } from "@/lib/currency";
+import { MARKETPLACE_LIST_PROPS } from "@/lib/performance/flat-list-config";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const BRAND = "#27BB97";
@@ -87,7 +88,14 @@ function formatEventPrice(price?: number, currency?: string, isoCountryCode?: st
   return `${symbol}${Number(price).toLocaleString("en-IN")}`;
 }
 
-function sortListings(items: ListingItem[], sortKey: string) {
+function sortListings(
+  items: ListingItem[],
+  sortKey: string,
+  options?: {
+    userCoords?: { lat: number; lng: number } | null;
+    categorySlug?: CategorySlug;
+  },
+) {
   const copy = [...items];
   if (sortKey === "price_asc") {
     copy.sort((a, b) => Number(a.price ?? 1e12) - Number(b.price ?? 1e12));
@@ -98,6 +106,34 @@ function sortListings(items: ListingItem[], sortKey: string) {
       const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return bt - at;
+    });
+  } else if (
+    sortKey === "relevance" &&
+    options?.userCoords &&
+    options.categorySlug
+  ) {
+    copy.sort((a, b) => {
+      const da =
+        resolveListingDistanceKm(
+          {
+            _id: a._id,
+            category: options.categorySlug,
+            distance: a.distance as number | undefined,
+            coordinates: a.coordinates,
+          },
+          options.userCoords,
+        ) ?? Number.POSITIVE_INFINITY;
+      const db =
+        resolveListingDistanceKm(
+          {
+            _id: b._id,
+            category: options.categorySlug,
+            distance: b.distance as number | undefined,
+            coordinates: b.coordinates,
+          },
+          options.userCoords,
+        ) ?? Number.POSITIVE_INFINITY;
+      return da - db;
     });
   }
   return copy;
@@ -140,13 +176,11 @@ export function CategoryBrowseScreen({
   const user = useAppSelector((s) => s.auth.user);
   const userCoords = useAppSelector(selectLocationCoords);
   const locationLabel = useAppSelector(selectLocationLabel);
-  const rawCountryCode = useAppSelector(selectIsoCountryCode);
-  const locationSource = useAppSelector(selectLocationSource);
+  const locationQueryState = useAppSelector(selectLocationQueryState);
   const hasLocationCoords =
     userCoords.lat != null &&
     userCoords.lng != null;
-  const isoCountryCode = (rawCountryCode ?? localeCountryCode ?? null)?.toUpperCase() ?? null;
-  const shouldApplyCountryFilter = hasLocationCoords || isoCountryCode === "US";
+  const isoCountryCode = (locationQueryState.isoCountryCode ?? localeCountryCode ?? null)?.toUpperCase() ?? null;
 
   // Subcategories fetched live from the DB so any new subcategory added to
   // the model (or posted by a seller) appears immediately — static list from
@@ -195,42 +229,42 @@ export function CategoryBrowseScreen({
 
   const headerHeight = insets.top + 12 + 52;
   const categoryTabsHeight = 52;
+  const countSortBarHeight = layout === "events" ? 0 : 44;
   const eventsTitleHeight = layout === "events" ? 64 : 0;
   const datePickerHeight = layout === "events" ? 96 : 0;
-  const stickyOffset = headerHeight + eventsTitleHeight + datePickerHeight + categoryTabsHeight;
+  const stickyOffset =
+    headerHeight +
+    eventsTitleHeight +
+    datePickerHeight +
+    categoryTabsHeight +
+    countSortBarHeight;
 
   const loadListings = useCallback(async () => {
     setLoading(true);
     try {
       const hasCoords = hasLocationCoords;
 
-      // Only filter by location when the user has actually set one.
-      // "Set location" / "Detecting location…" are UI placeholders — passing
-      // them to the server as a text filter returns 0 results.
-      const isRealLabel =
-        hasLocationCoords &&
-        Boolean(locationLabel) &&
-        locationLabel !== "Set location" &&
-        !locationLabel.startsWith("Detecting");
-      const locationForApi = isRealLabel
-        ? locationLabel.split(",").map((p) => p.trim()).filter(Boolean).slice(0, 2).join(", ") || undefined
-        : undefined;
+      const baseParams = {
+        subcategory: selectedSubcategory === "All" ? undefined : selectedSubcategory,
+        search: appliedSearch.trim() || undefined,
+        ...buildLocationQueryParams(locationQueryState, { radius: 100 }),
+      };
 
       const res = await Promise.race([
-        fetchCategoryListings(categorySlug, {
-          subcategory: selectedSubcategory === "All" ? undefined : selectedSubcategory,
-          search: appliedSearch.trim() || undefined,
-          location: locationForApi,
-          lat: hasCoords ? userCoords.lat! : undefined,
-          lng: hasCoords ? userCoords.lng! : undefined,
-          radius: hasCoords ? 100 : undefined,
-          countryCode: shouldApplyCountryFilter ? isoCountryCode : undefined,
-        }),
+        fetchCategoryListings(categorySlug, baseParams),
         new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error("timeout")), FETCH_TIMEOUT_MS);
         }),
       ]);
-      const items = res.listings ?? [];
+      let items = res.listings ?? [];
+
+      if (items.length === 0 && hasLocationCoords) {
+        const fallback = await fetchCategoryListings(categorySlug, {
+          subcategory: selectedSubcategory === "All" ? undefined : selectedSubcategory,
+          search: appliedSearch.trim() || undefined,
+        });
+        items = fallback.listings ?? [];
+      }
       setListings(items);
       if (user?.id) {
         const saved = new Set<string>();
@@ -248,8 +282,7 @@ export function CategoryBrowseScreen({
     appliedSearch,
     categorySlug,
     hasLocationCoords,
-    isoCountryCode,
-    locationLabel,
+    locationQueryState,
     selectedSubcategory,
     user?.id,
     userCoords.lat,
@@ -281,7 +314,13 @@ export function CategoryBrowseScreen({
   const { refreshing, onRefresh } = usePullToRefresh(handleRefresh);
 
   const displayListings = useMemo(() => {
-    let items = sortListings(listings, activeSort);
+    let items = sortListings(listings, activeSort, {
+      userCoords:
+        hasLocationCoords && userCoords.lat != null && userCoords.lng != null
+          ? { lat: userCoords.lat, lng: userCoords.lng }
+          : null,
+      categorySlug,
+    });
     const q = searchQuery.trim().toLowerCase();
     if (q) {
       items = items.filter(
@@ -292,7 +331,7 @@ export function CategoryBrowseScreen({
       );
     }
     return items;
-  }, [activeSort, listings, searchQuery]);
+  }, [activeSort, categorySlug, hasLocationCoords, listings, searchQuery, userCoords.lat, userCoords.lng]);
 
   const openDetail = useCallback(
     (item: ListingItem) => {
@@ -481,7 +520,9 @@ export function CategoryBrowseScreen({
           style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
         >
           No listings found
-          {locationLabel && locationLabel !== "Set location" ? ` in ${locationLabel.split(",")[0]}` : ""}
+          {hasLocationCoords && locationLabel && locationLabel !== "Set location"
+            ? ` near ${locationLabel.split(",")[0]}`
+            : ""}
         </Text>
         <Text
           className="mt-2 text-center text-[14px]"
@@ -507,13 +548,13 @@ export function CategoryBrowseScreen({
     });
   }, [sortMenuOpen]);
 
-  const listHeaderComponent = useMemo(() => {
+  const countSortBar = useMemo(() => {
     if (layout === "events") return null;
 
     return (
       <View
-        className="mb-4 flex-row items-center justify-between px-4"
-        style={{ zIndex: 20 }}
+        className="flex-row items-center justify-between px-4"
+        style={{ height: countSortBarHeight }}
       >
         <Text
           style={{
@@ -573,13 +614,10 @@ export function CategoryBrowseScreen({
     );
   }, [
     activeSort,
-    colors.border,
-    colors.surfaceElevated,
-    colors.surfaceMuted,
     colors.textPrimary,
     colors.textSecondary,
+    countSortBarHeight,
     displayListings.length,
-    isDark,
     jobsAccent,
     layout,
     sortMenuOpen,
@@ -810,22 +848,37 @@ export function CategoryBrowseScreen({
         </ScrollView>
       </View>
 
+      {countSortBar ? (
+        <View
+          className="absolute inset-x-0 z-39"
+          style={{
+            top:
+              headerHeight +
+              eventsTitleHeight +
+              datePickerHeight +
+              categoryTabsHeight,
+            height: countSortBarHeight,
+            backgroundColor: pageBackground,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+          }}
+        >
+          {countSortBar}
+        </View>
+      ) : null}
+
       <FlatList
         data={displayListings}
         renderItem={renderListItem}
         keyExtractor={keyExtractor}
         numColumns={isGridLayout ? 2 : 1}
         key={`${layout}-${isDark ? "dark" : "light"}`}
-        extraData={isDark}
         showsVerticalScrollIndicator={false}
         onScrollBeginDrag={() => {
           if (sortMenuOpen) setSortMenuOpen(false);
         }}
         scrollEventThrottle={16}
-        removeClippedSubviews
-        maxToRenderPerBatch={isGridLayout ? 8 : 6}
-        initialNumToRender={isGridLayout ? 8 : 6}
-        windowSize={5}
+        {...MARKETPLACE_LIST_PROPS}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -843,7 +896,6 @@ export function CategoryBrowseScreen({
         }}
         columnWrapperStyle={isGridLayout ? { gap: GRID_GUTTER } : undefined}
         ItemSeparatorComponent={itemSeparator}
-        ListHeaderComponent={listHeaderComponent}
         ListEmptyComponent={listEmptyComponent}
       />
 

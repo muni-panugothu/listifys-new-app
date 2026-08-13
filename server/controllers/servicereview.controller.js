@@ -16,7 +16,7 @@ const { publishReviewNotification } = require('../queues/producers/notification.
 
 exports.createReview = async (req, res) => {
   try {
-    const { bookingId, listingId, providerId, rating, title, comment, pros, cons } = req.body;
+    const { bookingId, listingId, providerId, rating, title, comment, pros, cons, images } = req.body;
     
     let isVerified = false;
     let actualProviderId = providerId;
@@ -42,6 +42,16 @@ exports.createReview = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Must provide either a bookingId, or both listingId and providerId to review' });
     }
 
+    const normalizedImages = Array.isArray(images)
+      ? images.slice(0, 3).map((img) => {
+          if (typeof img === 'string' && img.trim()) return { url: img.trim() };
+          if (img && typeof img === 'object' && typeof img.url === 'string' && img.url.trim()) {
+            return { url: img.url.trim(), publicId: img.publicId };
+          }
+          return null;
+        }).filter(Boolean)
+      : [];
+
     const review = await ServiceReview.create({
       bookingId: bookingId || undefined,
       providerId: actualProviderId,
@@ -52,6 +62,7 @@ exports.createReview = async (req, res) => {
       comment,
       pros: Array.isArray(pros) ? pros.slice(0, 3) : [],
       cons: Array.isArray(cons) ? cons.slice(0, 3) : [],
+      images: normalizedImages,
       verified: isVerified
     });
 

@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ServiceProviderListCard } from "@/components/service-provider-list-card";
 import { VoiceSearchModal } from "@/components/voice-search-modal";
 import { ListifyColors } from "@/constants/listify-theme";
+import { buildLocationQueryParams } from "@/lib/location-query-params";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
 import { CATEGORIES } from "@/constants/categories";
 import { ListifyFonts } from "@/constants/typography";
@@ -29,10 +30,9 @@ import { useLocale } from "@/providers/locale-provider";
 import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
 import {
-  selectIsoCountryCode,
   selectLocationCoords,
   selectLocationLabel,
-  selectLocationSource,
+  selectLocationQueryState,
   selectCanShowDistanceOnCards,
 } from "@/store/slices/location-slice";
 import { FloatingBottomNav } from "@/components/floating-bottom-nav";
@@ -71,13 +71,11 @@ export function ServicesCategoryHubScreen() {
   const user = useAppSelector((s) => s.auth.user);
   const userCoords = useAppSelector(selectLocationCoords);
   const locationLabel = useAppSelector(selectLocationLabel);
-  const rawCountryCode = useAppSelector(selectIsoCountryCode);
-  const locationSource = useAppSelector(selectLocationSource);
+  const locationQueryState = useAppSelector(selectLocationQueryState);
   const hasLocationCoords =
     userCoords.lat != null &&
     userCoords.lng != null;
-  const isoCountryCode = (rawCountryCode ?? localeCountryCode ?? null)?.toUpperCase() ?? null;
-  const shouldApplyLocationFilter = hasLocationCoords || isoCountryCode === "US";
+  const isoCountryCode = (locationQueryState.isoCountryCode ?? localeCountryCode ?? null)?.toUpperCase() ?? null;
   const canShowDistanceOnCards = useAppSelector(selectCanShowDistanceOnCards);
   const handleBottomTabPress = useFloatingNavPress();
   const { navigateProtected } = useProtectedNavigation();
@@ -112,16 +110,22 @@ export function ServicesCategoryHubScreen() {
         budget:     "pricing.basePrice",
         latest:     "-createdAt",
       };
-      const res = await fetchServiceListings({
+      let res = await fetchServiceListings({
         subcategory: selectedSubcategory === "All" ? undefined : selectedSubcategory,
         search: appliedSearch.trim() || undefined,
-        lat: hasLocationCoords ? userCoords.lat! : undefined,
-        lng: hasLocationCoords ? userCoords.lng! : undefined,
-        radius: hasLocationCoords ? 100 : undefined,
-        countryCode: shouldApplyLocationFilter ? isoCountryCode : undefined,
+        ...buildLocationQueryParams(locationQueryState, { radius: 100 }),
         sort: sortMap[activeFilter] ?? "-createdAt",
       });
-      const items = res.listings ?? [];
+      let items = res.listings ?? [];
+
+      if (items.length === 0 && hasLocationCoords) {
+        res = await fetchServiceListings({
+          subcategory: selectedSubcategory === "All" ? undefined : selectedSubcategory,
+          search: appliedSearch.trim() || undefined,
+          sort: sortMap[activeFilter] ?? "-createdAt",
+        });
+        items = res.listings ?? [];
+      }
       setListings(items);
       if (user?.id) {
         const saved = new Set<string>();
@@ -141,11 +145,9 @@ export function ServicesCategoryHubScreen() {
     activeFilter,
     appliedSearch,
     hasLocationCoords,
-    isoCountryCode,
+    locationQueryState,
     selectedSubcategory,
     user?.id,
-    userCoords.lat,
-    userCoords.lng,
   ]);
 
   useEffect(() => {

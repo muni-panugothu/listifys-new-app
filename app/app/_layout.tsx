@@ -128,7 +128,7 @@ function AppLayout() {
     if (Platform.OS === "android") {
       setStatusBarBackgroundColor(themeColors.statusBarBackground, false);
       setStatusBarTranslucent(false);
-      void SystemUI.setBackgroundColorAsync(themeColors.statusBarBackground);
+      void SystemUI.setBackgroundColorAsync(themeColors.tabCanvas);
     }
   }, [themeColors.statusBarBackground, themeColors.statusBarStyle]);
 

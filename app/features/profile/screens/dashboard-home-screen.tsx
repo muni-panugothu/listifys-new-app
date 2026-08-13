@@ -274,7 +274,7 @@ export function DashboardHomeScreen() {
         : "System";
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.background }}>
+    <View className="flex-1" style={{ backgroundColor: colors.tabCanvas }}>
       <View
         className="absolute inset-x-0 top-0 z-30 flex-row items-center justify-between px-5"
         style={{ paddingTop: insets.top + 8 }}
@@ -302,6 +302,7 @@ export function DashboardHomeScreen() {
         showsVerticalScrollIndicator={false}
         bounces
         scrollEventThrottle={16}
+        style={{ flex: 1, backgroundColor: colors.tabCanvas }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -312,6 +313,7 @@ export function DashboardHomeScreen() {
         }
         contentContainerStyle={{
           flexGrow: 1,
+          backgroundColor: colors.tabCanvas,
           paddingBottom: 96 + bottomNavPadding,
         }}
       >
@@ -320,14 +322,15 @@ export function DashboardHomeScreen() {
           <ProfileHeaderArt height={HEADER_ART_HEIGHT} />
         </View>
 
-        {/* Avatar left (half on banner) — always visible */}
+        {/* Profile + menu — single surface block through bottom of scroll */}
         <View
-          className="z-10 px-5 pb-2"
           style={{
+            flexGrow: 1,
             marginTop: -AVATAR_OVERLAP,
-            backgroundColor: colors.surface,
+            backgroundColor: colors.tabCanvas,
           }}
         >
+        <View className="z-10 px-5 pb-2">
           <View
             className="self-start"
             style={{
@@ -434,10 +437,7 @@ export function DashboardHomeScreen() {
         </View>
 
         {/* Menu list */}
-        <View
-          className="mt-2 px-5 pt-4"
-          style={{ backgroundColor: colors.surface }}
-        >
+        <View className="px-5 pt-2 pb-6">
           <MenuRow
             colors={colors}
             icon="person-outline"
@@ -597,6 +597,7 @@ export function DashboardHomeScreen() {
               <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
             </Pressable>
           )}
+        </View>
         </View>
       </ScrollView>
 

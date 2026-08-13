@@ -1,16 +1,26 @@
 import { createAsyncThunk, createSelector, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 import {
+  clearAllPersistedLocations,
+  clearDeviceLocation,
   detectDeviceLocation,
   ensureDeviceLocationAccess,
   geocodeSearchQuery,
   hasLocationPermission,
-  loadStoredLocation,
+  loadDeviceLocation,
+  loadManualLocation,
+  migrateLegacyLocationStorage,
+  resolveActiveLocationFromStorage,
   LOCATION_AUTO_REFRESH_MS,
-  LOCATION_STORAGE_KEY,
   saveStoredLocation,
   type StoredAppLocation,
 } from "@/lib/location-service";
+
+import {
+  formatHomeLocationHeader,
+  hasActionableLocation,
+  type LocationQueryState,
+} from "@/lib/location-query-params";
 
 import type { RootState } from "../index";
 
@@ -51,85 +61,59 @@ function applyStored(state: LocationState, stored: StoredAppLocation) {
 
 export const hydrateAppLocation = createAsyncThunk(
   "location/hydrate",
-  async (_, { getState }) => {
-    const stored = await loadStoredLocation();
-    const permitted = await hasLocationPermission();
-
-    if (stored) {
-      // Manual picks are always honoured. GPS / legacy caches are dropped when
-      // the user has denied location (e.g. tapped "No thanks" on the prompt).
-      if (stored.source === "manual") {
-        return stored;
-      }
-
-      if (!permitted) {
-        try {
-          const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
-          await AsyncStorage.removeItem(LOCATION_STORAGE_KEY);
-        } catch {
-          // best-effort
-        }
-      } else if (stored.source === "gps" || stored.lat != null) {
-        return stored;
-      }
-    }
-
-    const user = (getState() as RootState).auth.user;
-    const profileAddress = user?.address?.trim();
-    if (profileAddress) {
-      return {
-        label: profileAddress,
-        lat: null,
-        lng: null,
-        source: "profile" as const,
-      };
-    }
-
-    return null;
+  async () => {
+    await migrateLegacyLocationStorage();
+    return resolveActiveLocationFromStorage();
   },
+);
+
+/** Clear manual + device storage and reset Redux to global mode. */
+export const clearActiveLocation = createAsyncThunk(
+  "location/clearActive",
+  async () => {
+    await clearAllPersistedLocations();
+  },
+);
+
+/** Sync Redux with storage after permission changes (deny/allow/manual). */
+export const reconcileLocationPermission = createAsyncThunk(
+  "location/reconcilePermission",
+  async () => resolveActiveLocationFromStorage(),
 );
 
 export const refreshDeviceLocation = createAsyncThunk(
   "location/refreshDevice",
   async (options: { force?: boolean } | undefined, { getState, dispatch, rejectWithValue }) => {
     try {
-      const stored = await loadStoredLocation();
+      const stored = await loadManualLocation();
       const force = options?.force === true;
 
       // Never auto-override a user's manually chosen location with GPS
-      if (!force && stored?.source === "manual") {
+      if (!force && stored) {
         return stored;
       }
 
-      // If the OS no longer grants location, drop any stale GPS cache so we
-      // don't keep showing the user's previous location after they've revoked
-      // the permission. Manual entries above are preserved on purpose.
       const permitted = await hasLocationPermission();
       if (!permitted) {
-        if (stored?.source === "gps") {
-          try {
-            const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
-            await AsyncStorage.removeItem(LOCATION_STORAGE_KEY);
-          } catch {
-            // best-effort
-          }
-        }
+        await clearDeviceLocation();
         return rejectWithValue("PERMISSION_DENIED");
       }
 
+      const deviceStored = await loadDeviceLocation();
+
       if (
-        stored?.source === "gps" &&
-        stored.updatedAt &&
+        deviceStored?.source === "gps" &&
+        deviceStored.updatedAt &&
         !force &&
-        Date.now() - stored.updatedAt < LOCATION_AUTO_REFRESH_MS
+        Date.now() - deviceStored.updatedAt < LOCATION_AUTO_REFRESH_MS
       ) {
-        return stored;
+        return deviceStored;
       }
 
       const loc = (getState() as RootState).location;
       const previous: StoredAppLocation | null =
-        stored ??
-        (loc.lat != null && loc.lng != null
+        deviceStored ??
+        (loc.source === "gps" && loc.lat != null && loc.lng != null
           ? {
               label: loc.label,
               lat: loc.lat,
@@ -184,6 +168,9 @@ export const useCurrentDeviceLocation = createAsyncThunk(
     try {
       const access = await ensureDeviceLocationAccess();
       if (!access.ok) {
+        if (access.reason === "permission_denied") {
+          await clearDeviceLocation();
+        }
         return rejectWithValue(
           access.reason === "permission_denied"
             ? "PERMISSION_DENIED"
@@ -191,17 +178,17 @@ export const useCurrentDeviceLocation = createAsyncThunk(
         );
       }
 
-      const stored = await loadStoredLocation();
+      const deviceStored = await loadDeviceLocation();
       const loc = (getState() as RootState).location;
       const previous: StoredAppLocation | null =
-        stored ??
-        (loc.lat != null && loc.lng != null
+        deviceStored ??
+        (loc.source === "gps" && loc.lat != null && loc.lng != null
           ? {
               label: loc.label,
               lat: loc.lat,
               lng: loc.lng,
               isoCountryCode: loc.isoCountryCode,
-              source: loc.source === "manual" ? "manual" : "gps",
+              source: "gps",
               updatedAt: 0,
             }
           : null);
@@ -263,17 +250,13 @@ const locationSlice = createSlice({
      */
     applyInstantCoords(state, action: PayloadAction<StoredAppLocation>) {
       const { lat, lng, label, isoCountryCode } = action.payload;
-      if (state.source === "manual") return; // never override manual pick
+      if (state.source === "manual") return;
       state.lat = lat;
       state.lng = lng;
-      // Keep existing label if it's real; only use placeholder if nothing exists
-      if (!state.label || state.label === "Set location") {
-        state.label = label || "Detecting location…";
-      }
+      state.label = label || "Detecting location…";
       if (isoCountryCode) state.isoCountryCode = isoCountryCode;
       state.source = "gps";
       state.error = null;
-      // Do NOT set status = "ready" — keep "loading" so spinner shows until full label arrives
     },
     /** Directly set location from an autocomplete selection (no async needed). */
     setLocationDirect(
@@ -306,15 +289,8 @@ const locationSlice = createSlice({
       .addCase(hydrateAppLocation.fulfilled, (state, action) => {
         state.hydrated = true;
         const payload = action.payload;
-        if (payload && "lat" in payload && payload.lat != null) {
-          applyStored(state, payload as StoredAppLocation);
-        } else if (payload && "label" in payload) {
-          state.label = payload.label;
-          state.lat = null;
-          state.lng = null;
-          state.source = payload.source ?? "profile";
-          state.status = "ready";
-          state.error = null;
+        if (payload) {
+          applyStored(state, payload);
         } else {
           clearGpsCoords(state);
           state.status = "ready";
@@ -322,7 +298,33 @@ const locationSlice = createSlice({
       })
       .addCase(hydrateAppLocation.rejected, (state) => {
         state.hydrated = true;
+        clearGpsCoords(state);
         state.status = "ready";
+      })
+
+      .addCase(reconcileLocationPermission.fulfilled, (state, action) => {
+        const payload = action.payload;
+        if (payload) {
+          applyStored(state, payload);
+        } else {
+          clearGpsCoords(state);
+        }
+        state.status = "ready";
+        state.error = null;
+      })
+      .addCase(reconcileLocationPermission.rejected, (state) => {
+        clearGpsCoords(state);
+        state.status = "ready";
+      })
+
+      .addCase(clearActiveLocation.fulfilled, (state) => {
+        state.label = initialState.label;
+        state.lat = null;
+        state.lng = null;
+        state.isoCountryCode = null;
+        state.source = null;
+        state.status = "ready";
+        state.error = null;
       })
 
       .addCase(refreshDeviceLocation.pending, (state) => {
@@ -334,13 +336,10 @@ const locationSlice = createSlice({
       })
       .addCase(refreshDeviceLocation.rejected, (state, action) => {
         const reason = (action.payload as string) ?? "Location unavailable";
-        // When the OS denies/revokes permission, drop any cached GPS coords so
-        // the app no longer claims the user is at a stale location. Manual
-        // and profile-set locations are preserved.
         if (reason === "PERMISSION_DENIED") {
           clearGpsCoords(state);
         }
-        state.status = state.lat != null ? "ready" : "error";
+        state.status = state.source === "manual" ? "ready" : state.lat != null ? "ready" : "error";
         state.error = reason;
       })
 
@@ -395,7 +394,11 @@ export const selectLocationLabel = (state: RootState) => {
   if (state.location.status === "loading" && !state.location.hydrated) {
     return "Detecting location…";
   }
-  return state.location.label;
+  const { lat, lng, source, label } = state.location;
+  if (lat == null || lng == null || (source !== "manual" && source !== "gps")) {
+    return "Set location";
+  }
+  return label;
 };
 
 export const selectLocationCoords = createSelector(
@@ -412,9 +415,42 @@ export const selectIsoCountryCode = (state: RootState) =>
 export const selectLocationSource = (state: RootState) =>
   state.location.source;
 
-/** Distance on cards is shown only after the user explicitly picks a location. */
+/** Distance on cards is shown only when coordinates are available. */
 export const selectCanShowDistanceOnCards = (state: RootState) =>
-  state.location.lat != null &&
-  state.location.lng != null;
+  hasActionableLocation(selectLocationQueryState(state));
+
+export const selectLocationQueryState = createSelector(
+  (state: RootState) => state.location.lat,
+  (state: RootState) => state.location.lng,
+  (state: RootState) => state.location.label,
+  (state: RootState) => state.location.isoCountryCode,
+  (state: RootState) => state.location.source,
+  (lat, lng, label, isoCountryCode, source): LocationQueryState => ({
+    lat,
+    lng,
+    label,
+    isoCountryCode,
+    source,
+  }),
+);
+
+export const selectHasActionableLocation = (state: RootState) =>
+  hasActionableLocation(selectLocationQueryState(state));
+
+/** Active location mode for UI / API: device (gps), manual, or none. */
+export const selectLocationMode = (state: RootState): "device" | "manual" | "none" => {
+  const { source, lat, lng } = state.location;
+  if (lat != null && lng != null && source === "manual") return "manual";
+  if (lat != null && lng != null && source === "gps") return "device";
+  return "none";
+};
+
+export const selectIsGlobalLocationMode = (state: RootState) =>
+  selectLocationMode(state) === "none";
+
+export const selectHomeLocationHeader = createSelector(
+  selectLocationQueryState,
+  (queryState) => formatHomeLocationHeader(queryState),
+);
 
 export default locationSlice.reducer;

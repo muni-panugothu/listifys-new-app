@@ -228,6 +228,7 @@ export const cacheKeys = {
   eventsUpcoming: (queryKey: string) => `events:upcoming:${queryKey}`,
   eventsSimilar: (eventId: string, queryKey: string) =>
     `events:similar:${eventId}:${queryKey}`,
+  serviceListings: (queryKey: string) => `list:services:${queryKey}`,
 };
 
 // ── Cross-screen seed bridge ──────────────────────────────────────────────────

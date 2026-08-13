@@ -1,5 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { memo } from "react";
 
 import { ListingTimeBadge } from "@/components/listing-time-badge";
 import { ListifyFonts } from "@/constants/typography";
@@ -24,7 +25,7 @@ type MyListingManageCardProps = {
   showActions?: boolean;
 };
 
-export function MyListingManageCard({
+export const MyListingManageCard = memo(function MyListingManageCard({
   listing,
   statusLabel,
   statusColor = "#27BB97",
@@ -215,4 +216,4 @@ export function MyListingManageCard({
       </View>
     </Pressable>
   );
-}
+});

@@ -27,11 +27,14 @@ import {
 type ListingLocationSectionProps = {
   listing: ListingItem;
   category?: string;
+  /** When nested inside a screen that already applies horizontal padding. */
+  embedded?: boolean;
 };
 
 export function ListingLocationSection({
   listing,
   category,
+  embedded = false,
 }: ListingLocationSectionProps) {
   const { colors } = useTheme();
   const userCoords = useAppSelector(selectLocationCoords);
@@ -112,7 +115,7 @@ export function ListingLocationSection({
   };
 
   return (
-    <View className="mt-5 px-4">
+    <View className={embedded ? "mt-5" : "mt-5 px-4"}>
       <Text
         style={{
           marginBottom: 12,

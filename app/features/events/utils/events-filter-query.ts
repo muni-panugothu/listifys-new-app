@@ -22,7 +22,7 @@ export function buildEventsFilterQuery(
   const params: EventsQueryParams = {
     limit: 50,
     sort: "newest",
-    countryCode: opts.countryCode,
+    ...(hasCoords && opts.countryCode ? { countryCode: opts.countryCode } : {}),
   };
 
   if (hasCoords && filterId === "under_10km") {
@@ -32,13 +32,9 @@ export function buildEventsFilterQuery(
     params.sort = "nearest";
   }
 
-  if (
-    opts.locationLabel &&
-    opts.locationLabel !== "Set location" &&
-    !opts.locationLabel.startsWith("Detecting")
-  ) {
-    params.location = opts.locationLabel.split(",")[0]?.trim();
-  }
+  // Do not send city-name text filters on the main listing — GPS sublocalities
+  // (e.g. "Uppal") hide events stored under a different city (e.g. "Hyderabad").
+  // Geo radius is applied only for the explicit under_10km chip above.
 
   switch (filterId) {
     case "all":

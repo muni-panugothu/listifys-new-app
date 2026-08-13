@@ -27,8 +27,7 @@ import { useTabNavigation } from "@/lib/use-tab-navigation";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   hydrateAppLocation,
-  selectLocationLabel,
-  setProfileFallbackLocation,
+  selectHomeLocationHeader,
 } from "@/store/slices/location-slice";
 import type { Href } from "@/lib/safe-router";
 
@@ -56,8 +55,13 @@ export function SearchHomeScreen() {
   const { colors } = useTheme();
   const user = useAppSelector((s) => s.auth.user);
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
-  const displayLocation = useAppSelector(selectLocationLabel);
-  const displayLocationText = isAuthenticated ? displayLocation : "Select location";
+  const locationHeader = useAppSelector(selectHomeLocationHeader);
+  const displayLocationText = isAuthenticated
+    ? locationHeader.primary
+    : "Select Location";
+  const displayLocationSubtext = isAuthenticated
+    ? locationHeader.secondary || "Tap to change location"
+    : "Tap to choose location";
   const [query, setQuery] = useState("");
   const [savedCount, setSavedCount] = useState(0);
   const [voiceVisible, setVoiceVisible] = useState(false);
@@ -82,12 +86,6 @@ export function SearchHomeScreen() {
     if (!isAuthenticated) return;
     void dispatch(hydrateAppLocation());
   }, [dispatch, isAuthenticated]);
-
-  useEffect(() => {
-    if (isAuthenticated && user?.address?.trim()) {
-      dispatch(setProfileFallbackLocation(user.address.trim()));
-    }
-  }, [dispatch, isAuthenticated, user?.address]);
 
   const handleQueryChange = useCallback((text: string) => {
     setQuery(text);
@@ -159,7 +157,7 @@ export function SearchHomeScreen() {
   );
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.background }}>
+    <View className="flex-1" style={{ backgroundColor: colors.tabCanvas }}>
       <VoiceSearchModal
         visible={voiceVisible}
         onResult={handleVoiceResult}
@@ -217,7 +215,7 @@ export function SearchHomeScreen() {
                 color: colors.textTertiary,
               }}
             >
-              {isAuthenticated ? "Tap to change location" : "Tap to choose location"}
+              {displayLocationSubtext}
             </Text>
           </Pressable>
 

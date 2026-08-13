@@ -6,6 +6,7 @@ import type { RootState } from "@/store";
 export const selectAuthUser = (s: RootState) => s.auth.user;
 export const selectIsAuthenticated = (s: RootState) => s.auth.isAuthenticated;
 export const selectAuthUserId = (s: RootState) => s.auth.user?.id ?? null;
+export const selectSessionHydrated = (s: RootState) => s.auth.sessionHydrated;
 
 export const selectNetworkConnected = (s: RootState) => s.network.isConnected;
 

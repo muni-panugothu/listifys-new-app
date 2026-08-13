@@ -96,11 +96,13 @@ export function EventsCategoryStoryScreen() {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
   }, [params.startIndex]);
 
+  const hasCoords = userCoords?.lat != null && userCoords?.lng != null;
+
   const { events, isLoading, error } = useCategoryStoryEvents({
     weekCategory,
     lat: userCoords?.lat ?? undefined,
     lng: userCoords?.lng ?? undefined,
-    countryCode: isoCountryCode,
+    countryCode: hasCoords ? isoCountryCode : undefined,
     locationLabel,
   });
 

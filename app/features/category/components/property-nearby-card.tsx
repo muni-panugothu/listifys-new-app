@@ -167,31 +167,54 @@ function PropertyNearbyCardImpl({
             }}
           >
             {locationLabel}
-            {distanceLabel ? ` · ${distanceLabel}` : ""}
           </Text>
         </View>
 
-        <View style={{ marginTop: 8, flexDirection: "row", alignItems: "baseline", gap: 3 }}>
-          <Text
-            numberOfLines={1}
-            style={{
-              fontFamily: ListifyFonts.bold,
-              fontSize: 16,
-              color: colors.textPrimary,
-              ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
-            }}
-          >
-            {priceLabel}
-          </Text>
-          {price != null && priceSuffix ? (
+        <View
+          style={{
+            marginTop: 8,
+            flexDirection: "row",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            gap: 8,
+          }}
+        >
+          <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "baseline", gap: 3 }}>
             <Text
+              numberOfLines={1}
               style={{
-                fontFamily: ListifyFonts.regular,
-                fontSize: 12,
-                color: colors.textTertiary,
+                fontFamily: ListifyFonts.bold,
+                fontSize: 16,
+                color: colors.textPrimary,
+                ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
               }}
             >
-              {priceSuffix}
+              {priceLabel}
+            </Text>
+            {price != null && priceSuffix ? (
+              <Text
+                style={{
+                  fontFamily: ListifyFonts.regular,
+                  fontSize: 12,
+                  color: colors.textTertiary,
+                }}
+              >
+                {priceSuffix}
+              </Text>
+            ) : null}
+          </View>
+          {distanceLabel ? (
+            <Text
+              numberOfLines={1}
+              style={{
+                flexShrink: 0,
+                fontFamily: ListifyFonts.medium,
+                fontSize: 12,
+                color: colors.textSecondary,
+                ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
+              }}
+            >
+              {distanceLabel}
             </Text>
           ) : null}
         </View>

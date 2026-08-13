@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { resolveWeekStoryConfig } from "@/features/events/data/events-week-story";
 import type { EventsWeekCategory } from "@/features/events/data/events-discovery";
-import { fetchUpcomingEvents } from "@/features/events/services/events-api";
+import { fetchUpcomingEventsReliable } from "@/features/events/services/events-api";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 
 const STORY_LIMIT = 20;
@@ -64,18 +64,15 @@ export function useCategoryStoryEvents(opts: UseCategoryStoryEventsOptions) {
         subcategory: apiSubcategory,
         limit: STORY_LIMIT,
         sort: lat != null && lng != null ? "nearest" : "newest",
-        countryCode,
       };
       if (lat != null && lng != null) {
         params.lat = lat;
         params.lng = lng;
         params.radius = 50;
-      }
-      if (locationLabel && locationLabel !== "Set location") {
-        params.location = locationLabel.split(",")[0]?.trim();
+        if (countryCode) params.countryCode = countryCode;
       }
 
-      const res = await fetchUpcomingEvents(params, { force: true });
+      const res = await fetchUpcomingEventsReliable(params, { force: true });
       if (seq !== seqRef.current) return;
 
       let listings = res.listings ?? [];
@@ -88,7 +85,7 @@ export function useCategoryStoryEvents(opts: UseCategoryStoryEventsOptions) {
     } finally {
       if (seq === seqRef.current) setIsLoading(false);
     }
-  }, [config.apiSubcategory, countryCode, lat, lng, locationLabel, weekCategory]);
+  }, [config.apiSubcategory, countryCode, lat, lng, weekCategory]);
 
   useEffect(() => {
     void load();

@@ -1,4 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { useEffect, useRef } from "react";
 import { Modal, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -10,6 +11,7 @@ type PortfolioGalleryModalProps = {
   visible: boolean;
   title?: string;
   images: string[];
+  initialIndex?: number;
   onClose: () => void;
 };
 
@@ -17,11 +19,22 @@ export function PortfolioGalleryModal({
   visible,
   title = "Portfolio",
   images,
+  initialIndex = 0,
   onClose,
 }: PortfolioGalleryModalProps) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const imageSize = (width - 48 - 12) / 2;
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (!visible || images.length === 0) return;
+    const safeIndex = Math.max(0, Math.min(initialIndex, images.length - 1));
+    const row = Math.floor(safeIndex / 2);
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ y: row * (imageSize + 12), animated: false });
+    });
+  }, [visible, initialIndex, images.length, imageSize]);
 
   return (
     <Modal
@@ -50,6 +63,7 @@ export function PortfolioGalleryModal({
           </View>
 
           <ScrollView
+            ref={scrollRef}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{
               paddingHorizontal: 20,

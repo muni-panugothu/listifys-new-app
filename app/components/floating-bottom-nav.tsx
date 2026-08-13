@@ -23,20 +23,20 @@ function FloatingBottomNavImpl({
   onTabPress,
 }: FloatingBottomNavProps) {
   const insets = useSafeAreaInsets();
-  const { colors, isDark, resolvedMode } = useTheme();
+  const { colors, isDark } = useTheme();
 
-  const barBackground = isDark ? colors.surface : "#F3F4F6";
-  const barBorder = isDark ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.12)";
-  const activePillBackground = isDark ? "rgba(255,255,255,0.14)" : "#E5E7EB";
-  const activePillBorder = isDark ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.1)";
-  const activeColor = isDark ? colors.textPrimary : "#111827";
-  const idleColor = isDark ? colors.iconMuted : "#6B7280";
+  const activeColor = isDark ? colors.textPrimary : colors.textPrimary;
+  const idleColor = colors.iconMuted;
 
   return (
     <View
       pointerEvents="box-none"
-      className="absolute inset-x-0 bottom-5 z-50 items-center"
-      style={{ paddingBottom: Math.max(insets.bottom, 10) }}
+      className="absolute inset-x-0 bottom-0 z-50 items-center"
+      style={{
+        paddingTop: 10,
+        paddingBottom: Math.max(insets.bottom, 10),
+        backgroundColor: colors.tabCanvas,
+      }}
     >
       <View
         style={{
@@ -47,12 +47,12 @@ function FloatingBottomNavImpl({
           paddingHorizontal: 6,
           paddingVertical: 6,
           gap: 4,
-          backgroundColor: barBackground,
+          backgroundColor: colors.floatingNav,
           borderWidth: 1,
-          borderColor: barBorder,
+          borderColor: colors.floatingNavBorder,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 8 },
-          shadowOpacity: resolvedMode === "dark" ? 0.4 : 0.12,
+          shadowOpacity: isDark ? 0.4 : 0.12,
           shadowRadius: 20,
           elevation: 12,
         }}
@@ -84,10 +84,10 @@ function FloatingBottomNavImpl({
                   paddingVertical: 8,
                   borderRadius: 999,
                   backgroundColor: isActive
-                    ? activePillBackground
+                    ? colors.floatingNavActivePill
                     : "transparent",
                   borderWidth: 1,
-                  borderColor: isActive ? activePillBorder : "transparent",
+                  borderColor: isActive ? colors.floatingNavActiveBorder : "transparent",
                 }}
               >
                 {isActive ? (

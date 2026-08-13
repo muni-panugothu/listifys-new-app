@@ -15,7 +15,7 @@ export type EventListingMediaProps = {
   listing: Pick<ListingItem, "images" | "videos">;
   style?: StyleProp<ViewStyle>;
   recyclingKey?: string;
-  /** When false, video shows poster only. Defaults to true for event cards. */
+  /** When false, video shows poster only. Defaults to false in list/grid cards. */
   isActive?: boolean;
   autoPlay?: boolean;
   muted?: boolean;
@@ -57,8 +57,8 @@ function EventListingMediaImpl({
   listing,
   style,
   recyclingKey,
-  isActive = true,
-  autoPlay = true,
+  isActive = false,
+  autoPlay = false,
   muted = true,
   paused = false,
   loop = true,

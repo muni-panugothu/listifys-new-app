@@ -6,7 +6,7 @@ import type {
   CategorySubTab,
 } from "@/features/events/data/events-category-config";
 import {
-  fetchUpcomingEvents,
+  fetchUpcomingEventsReliable,
   type EventsQueryParams,
 } from "@/features/events/services/events-api";
 import type { ListingItem } from "@/features/listing/services/listing-api";
@@ -162,7 +162,6 @@ export function useCategoryEventsFeed(opts: UseCategoryEventsFeedOptions) {
     const params: EventsQueryParams = {
       subcategory: apiSubcategory,
       limit: PAGE_SIZE,
-      countryCode,
       sort: useNearest ? "nearest" : sort === "date" ? "date" : "newest",
     };
 
@@ -170,10 +169,7 @@ export function useCategoryEventsFeed(opts: UseCategoryEventsFeedOptions) {
       params.lat = lat;
       params.lng = lng;
       params.radius = under10km ? 10 : 50;
-    }
-
-    if (locationLabel && locationLabel !== "Set location") {
-      params.location = locationLabel.split(",")[0]?.trim();
+      if (countryCode) params.countryCode = countryCode;
     }
 
     if (dateFilter === "today") {
@@ -222,7 +218,7 @@ export function useCategoryEventsFeed(opts: UseCategoryEventsFeedOptions) {
       }));
 
       try {
-        const result = await fetchUpcomingEvents(
+        const result = await fetchUpcomingEventsReliable(
           { ...queryParams, page },
           { force: mode === "refresh" },
         );

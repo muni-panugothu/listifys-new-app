@@ -15,7 +15,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ListingItemsGridCard } from "@/components/listing-items-grid-card";
+import { buildLocationQueryParams } from "@/lib/location-query-params";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
+import { getCategoryHref } from "@/lib/navigate-to-category";
 import { MARKETPLACE_LIST_PROPS } from "@/lib/performance/flat-list-config";
 import { TopSaveToast } from "@/components/top-save-toast";
 import { VoiceSearchModal } from "@/components/voice-search-modal";
@@ -38,11 +40,10 @@ import {
 import type { Href } from "@/lib/safe-router";
 import { useAppSelector } from "@/store/hooks";
 import {
-  selectIsoCountryCode,
   selectLocationCoords,
-  selectLocationLabel,
+  selectLocationQueryState,
+  selectHasActionableLocation,
   selectCanShowDistanceOnCards,
-  selectLocationSource,
 } from "@/store/slices/location-slice";
 import { useLocale } from "@/providers/locale-provider";
 import { useTheme } from "@/providers/theme-provider";
@@ -227,22 +228,18 @@ export function SearchResultsEntityTabsScreen() {
   const { colors, isDark } = useTheme();
   const { isoCountryCode: localeCountryCode } = useLocale();
   const locationCoords = useAppSelector(selectLocationCoords);
-  const locationLabel = useAppSelector(selectLocationLabel);
-  const locationSource = useAppSelector(selectLocationSource);
+  const locationQueryState = useAppSelector(selectLocationQueryState);
+  const hasActionableLocation = useAppSelector(selectHasActionableLocation);
   const canShowDistanceOnCards = useAppSelector(selectCanShowDistanceOnCards);
-  // Prefer Redux (always up-to-date), fall back to URL param passed by caller.
-  const reduxCountryCode = useAppSelector(selectIsoCountryCode);
   const paramCountryCode = parseQueryParam(params.countryCode) || null;
-  const effectiveCountryCode =
-    (reduxCountryCode ?? paramCountryCode ?? localeCountryCode ?? null)?.toUpperCase() ?? null;
   const hasLocationCoords =
     locationCoords.lat != null &&
     locationCoords.lng != null;
-  const shouldApplyLocationFilter =
-    hasLocationCoords ||
-    paramCountryCode != null ||
-    effectiveCountryCode === "US";
-  const isoCountryCode = shouldApplyLocationFilter ? effectiveCountryCode : null;
+  const geoParams = buildLocationQueryParams(locationQueryState, { radius: 100 });
+  const isoCountryCode =
+    hasLocationCoords
+      ? (geoParams.countryCode ?? paramCountryCode ?? null)
+      : paramCountryCode;
   const initialEntity = useMemo(
     () => parseEntityParam(params.entity),
     [params.entity],
@@ -273,9 +270,20 @@ export function SearchResultsEntityTabsScreen() {
   const [trendingSearches, setTrendingSearches] = useState<string[]>([]);
 
   const headerHeight = insets.top + 12 + 52;
-  const categoryTabsHeight = 52;
-  // Category tabs are now inline in ListHeaderComponent — no extra sticky offset needed
-  const stickyTopOffset = headerHeight;
+  const categoryTabsHeight = showEntityTabs ? 52 : 0;
+  const sortChipsHeight = 52;
+  const stickyTopOffset = headerHeight + categoryTabsHeight + sortChipsHeight;
+
+  const handleCategoryTabPress = useCallback(
+    (tabKey: string) => {
+      if (tabKey === "all") {
+        setActiveEntity("all");
+        return;
+      }
+      router.push(getCategoryHref(tabKey as CategorySlug));
+    },
+    [router],
+  );
 
   const loadSaved = useCallback(async () => {
     try {
@@ -332,9 +340,9 @@ export function SearchResultsEntityTabsScreen() {
           try {
             const feed = await fetchHomeFeedWithTimeout(
               60,
-              hasLocationCoords ? locationCoords.lat : undefined,
-              hasLocationCoords ? locationCoords.lng : undefined,
-              isoCountryCode,
+              geoParams.lat,
+              geoParams.lng,
+              isoCountryCode ?? undefined,
             );
             const feedListings = feed?.categories
               ? Object.values(feed.categories).flatMap((cat) => cat.listings ?? [])
@@ -360,12 +368,6 @@ export function SearchResultsEntityTabsScreen() {
           return;
         }
 
-        const hasCoords = hasLocationCoords;
-        const isRealLabel =
-          shouldApplyLocationFilter &&
-          Boolean(locationCoords.label) &&
-          locationCoords.label !== "Set location" &&
-          !locationCoords.label.startsWith("Detecting");
         const res = await searchListings({
           q,
           entity: activeEntity === "all" ? undefined : activeEntity,
@@ -378,10 +380,8 @@ export function SearchResultsEntityTabsScreen() {
             | "views",
           page: 1,
           limit: 50,
-          lat: hasCoords ? locationCoords.lat! : undefined,
-          lng: hasCoords ? locationCoords.lng! : undefined,
-          location: !hasCoords && isRealLabel ? locationCoords.label : undefined,
-          countryCode: isoCountryCode,
+          ...geoParams,
+          countryCode: isoCountryCode ?? undefined,
         });
 
         // Smart entity auto-detection: if server detected a single entity from
@@ -420,11 +420,8 @@ export function SearchResultsEntityTabsScreen() {
       activeEntity,
       activeSort,
       hasLocationCoords,
-      locationCoords.label,
-      locationCoords.lat,
-      locationCoords.lng,
+      geoParams,
       isoCountryCode,
-      shouldApplyLocationFilter,
     ],
   );
 
@@ -631,8 +628,8 @@ export function SearchResultsEntityTabsScreen() {
           style={{ fontFamily: ListifyFonts.bold, color: colors.textPrimary }}
         >
           No listings found
-          {locationLabel && locationLabel !== "Set location" && locationLabel !== "Detecting location…"
-            ? ` in ${locationLabel.split(",")[0]}`
+          {hasActionableLocation && locationQueryState.label
+            ? ` near ${locationQueryState.label.split(",")[0]}`
             : ""}
         </Text>
         <Text
@@ -677,7 +674,7 @@ export function SearchResultsEntityTabsScreen() {
         ) : null}
       </View>
     );
-  }, [colors.iconMuted, colors.border, colors.surface, colors.textPrimary, colors.textSecondary, handleTrendingTap, loading, locationLabel, trendingSearches]);
+  }, [colors.iconMuted, colors.border, colors.surface, colors.textPrimary, colors.textSecondary, handleTrendingTap, hasActionableLocation, loading, locationQueryState.label, trendingSearches]);
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.background }}>
@@ -770,7 +767,121 @@ export function SearchResultsEntityTabsScreen() {
         </View>
       </View>
 
-      {/* Category tabs moved inline into ListHeaderComponent — no sticky absolute view */}
+      {/* Sticky category tabs */}
+      {showEntityTabs ? (
+      <View
+        className="absolute inset-x-0 z-40"
+        style={{
+          top: headerHeight,
+          height: categoryTabsHeight,
+          backgroundColor: colors.background,
+        }}
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: GRID_SIDE_PADDING,
+            paddingVertical: 10,
+            gap: 20,
+            alignItems: "center",
+          }}
+        >
+          {CATEGORY_TABS.map((tab) => {
+            const isActive = tab.key === activeEntity;
+            return (
+              <Pressable
+                key={tab.key}
+                onPress={() => handleCategoryTabPress(tab.key)}
+                style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+              >
+                <Text
+                  className="text-[22px] tracking-tight"
+                  style={{
+                    fontFamily: ListifyFonts.bold,
+                    color: isActive ? colors.textPrimary : colors.textTertiary,
+                  }}
+                >
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+      ) : null}
+
+      {/* Sticky sort / filter chips */}
+      <View
+        className="absolute inset-x-0 z-39"
+        style={{
+          top: headerHeight + categoryTabsHeight,
+          height: sortChipsHeight,
+          backgroundColor: colors.background,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+        }}
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: GRID_SIDE_PADDING,
+            gap: 8,
+            alignItems: "center",
+            paddingVertical: 8,
+          }}
+        >
+          {SORT_OPTIONS.map((opt) => {
+            const isActive = opt.key === activeSort;
+            return (
+              <Pressable
+                key={opt.key}
+                onPress={() => setActiveSort(opt.key)}
+                className="rounded-full px-3.5 py-2"
+                style={{
+                  backgroundColor: isActive ? colors.primarySoft : colors.surface,
+                  borderWidth: 1,
+                  borderColor: isActive ? colors.primarySoftStrong : colors.border,
+                }}
+              >
+                <Text
+                  className="text-[12px]"
+                  style={{
+                    fontFamily: ListifyFonts.medium,
+                    color: isActive ? colors.primary : colors.textSecondary,
+                  }}
+                >
+                  {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/nearby-map-view-bottom-sheet",
+                params: { q: searchQuery },
+              } as Href)
+            }
+            className="flex-row items-center gap-1 rounded-full px-3.5 py-2"
+            style={{
+              borderWidth: 1,
+              borderColor: colors.primarySoftStrong,
+              backgroundColor: colors.surface,
+            }}
+          >
+            <MaterialIcons name="map" size={15} color={colors.primary} />
+            <Text
+              className="text-[12px]"
+              style={{ fontFamily: ListifyFonts.medium, color: colors.primary }}
+            >
+              Map
+            </Text>
+          </Pressable>
+        </ScrollView>
+      </View>
 
       <FlatList
         data={displayResults}
@@ -798,101 +909,8 @@ export function SearchResultsEntityTabsScreen() {
           paddingBottom: Math.max(insets.bottom, 16) + 24,
           flexGrow: displayResults.length === 0 ? 1 : undefined,
         }}
-        ListHeaderComponent={(
+        ListHeaderComponent={
           <>
-            {/* ── Category tabs ── always shown above sort chips */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{
-                paddingHorizontal: GRID_SIDE_PADDING,
-                paddingVertical: 10,
-                gap: 20,
-                alignItems: "center",
-              }}
-            >
-              {CATEGORY_TABS.map((tab) => {
-                const isActive = tab.key === activeEntity;
-                return (
-                  <Pressable
-                    key={tab.key}
-                    onPress={() => setActiveEntity(tab.key)}
-                    style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
-                  >
-                    <Text
-                      className="text-[22px] tracking-tight"
-                      style={{
-                        fontFamily: ListifyFonts.bold,
-                        color: isActive ? colors.textPrimary : colors.textTertiary,
-                      }}
-                    >
-                      {tab.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            {/* ── Sort chips ── */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              className="mb-4"
-              contentContainerStyle={{
-                paddingHorizontal: GRID_SIDE_PADDING,
-                gap: 8,
-              }}
-            >
-              {SORT_OPTIONS.map((opt) => {
-                const isActive = opt.key === activeSort;
-                return (
-                  <Pressable
-                    key={opt.key}
-                    onPress={() => setActiveSort(opt.key)}
-                    className="rounded-full px-3.5 py-2"
-                    style={{
-                      backgroundColor: isActive ? colors.primarySoft : colors.surface,
-                      borderWidth: 1,
-                      borderColor: isActive ? colors.primarySoftStrong : colors.border,
-                    }}
-                  >
-                    <Text
-                      className="text-[12px]"
-                      style={{
-                        fontFamily: ListifyFonts.medium,
-                        color: isActive ? colors.primary : colors.textSecondary,
-                      }}
-                    >
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-
-              <Pressable
-                onPress={() =>
-                  router.push({
-                    pathname: "/nearby-map-view-bottom-sheet",
-                    params: { q: searchQuery },
-                  } as Href)
-                }
-                className="flex-row items-center gap-1 rounded-full px-3.5 py-2"
-                style={{
-                  borderWidth: 1,
-                  borderColor: colors.primarySoftStrong,
-                  backgroundColor: colors.surface,
-                }}
-              >
-                <MaterialIcons name="map" size={15} color={colors.primary} />
-                <Text
-                  className="text-[12px]"
-                  style={{ fontFamily: ListifyFonts.medium, color: colors.primary }}
-                >
-                  Map
-                </Text>
-              </Pressable>
-            </ScrollView>
-
             {parsedChips.length > 0 ? (
               <QueryChips chips={parsedChips} onRemove={handleRemoveChip} />
             ) : null}
@@ -903,7 +921,7 @@ export function SearchResultsEntityTabsScreen() {
               </View>
             ) : null}
           </>
-        )}
+        }
         ListEmptyComponent={renderEmptyState}
         ListFooterComponent={
           pagination && displayResults.length > 0 ? (

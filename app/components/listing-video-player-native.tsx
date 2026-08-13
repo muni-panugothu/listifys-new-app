@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Pressable, View, type StyleProp, type ViewStyle } from "react-native";
 
 import { Image } from "@/lib/nativewind-interop";
@@ -211,8 +211,10 @@ function ListingVideoPlayerInner({
   );
 }
 
+const ListingVideoPlayerInnerMemo = memo(ListingVideoPlayerInner);
+
 /** Plain function export — required for dynamic require() from expo-video-support. */
-export function ListingVideoPlayerNative({
+export const ListingVideoPlayerNative = memo(function ListingVideoPlayerNative({
   uri,
   poster,
   style,
@@ -247,7 +249,7 @@ export function ListingVideoPlayerNative({
   }
 
   return (
-    <ListingVideoPlayerInner
+    <ListingVideoPlayerInnerMemo
       uri={uri}
       poster={poster}
       style={style}
@@ -262,4 +264,4 @@ export function ListingVideoPlayerNative({
       onProgress={onProgress}
     />
   );
-}
+});

@@ -372,6 +372,58 @@ export async function fetchHomeFeed(params?: {
   );
 }
 
+function countFeedListings(feed: FeedResponse): number {
+  if (!feed?.categories) return 0;
+  return Object.values(feed.categories).reduce(
+    (sum, bucket) => sum + (bucket?.listings?.length ?? 0),
+    0,
+  );
+}
+
+function hasGeoOrLocationParams(params?: {
+  location?: string;
+  lat?: number;
+  lng?: number;
+}): boolean {
+  return Boolean(
+    params?.location ||
+      params?.lat != null ||
+      params?.lng != null,
+  );
+}
+
+/** Primary feed fetch with automatic global fallback when geo/location filters return empty. */
+export async function fetchHomeFeedReliable(
+  params?: Parameters<typeof fetchHomeFeed>[0],
+): Promise<FeedResponse> {
+  const limit = params?.limit ?? 12;
+  const page = params?.page;
+
+  try {
+    const primary = await fetchHomeFeed(params);
+    if (countFeedListings(primary) > 0 || !hasGeoOrLocationParams(params)) {
+      return primary;
+    }
+  } catch {
+    if (!hasGeoOrLocationParams(params) && !params?.countryCode) {
+      throw new Error("home_feed_unavailable");
+    }
+  }
+
+  if (params?.countryCode) {
+    try {
+      const countryScoped = await fetchHomeFeed({ limit, page, countryCode: params.countryCode });
+      if (countFeedListings(countryScoped) > 0) {
+        return countryScoped;
+      }
+    } catch {
+      // fall through to fully global
+    }
+  }
+
+  return fetchHomeFeed({ limit, page });
+}
+
 export async function getCachedHomeFeed(): Promise<CachedHomeFeed | null> {
   try {
     const raw = await AsyncStorage.getItem(HOME_FEED_CACHE_KEY);
@@ -682,11 +734,36 @@ export async function fetchServiceListings(params?: {
   if (params?.limit) query.set("limit", String(params.limit));
   if (params?.sort) query.set("sort", params.sort);
   const qs = query.toString();
-  const res = await apiRequest<{ success: boolean; data: ListingItem[]; pagination?: { total: number } }>(
-    `/api/services/listings${qs ? `?${qs}` : ""}`,
+  const cacheKey = cacheKeys.serviceListings(
+    [
+      `sub:${params?.subcategory ?? ""}`,
+      `search:${encodeURIComponent(params?.search ?? "")}`,
+      `loc:${encodeURIComponent(params?.location ?? "")}`,
+      `lat:${params?.lat ?? ""}`,
+      `lng:${params?.lng ?? ""}`,
+      `radius:${params?.radius ?? ""}`,
+      `cc:${params?.countryCode ?? ""}`,
+      `page:${params?.page ?? 1}`,
+      `limit:${params?.limit ?? "default"}`,
+      `sort:${params?.sort ?? ""}`,
+    ].join(":"),
   );
-  const items = (res.data ?? []).map(normaliseListingImages);
-  return { listings: items, total: res.pagination?.total ?? items.length };
+
+  return withCache(
+    cacheKey,
+    async () => {
+      const res = await apiRequest<{ success: boolean; data: ListingItem[]; pagination?: { total: number } }>(
+        `/api/services/listings${qs ? `?${qs}` : ""}`,
+      );
+      const items = (res.data ?? []).map(normaliseListingImages);
+      seedListingsBatch(
+        items.map((listing) => ({ category: "services", listing })),
+        120_000,
+      );
+      return { listings: items, total: res.pagination?.total ?? items.length };
+    },
+    60_000,
+  );
 }
 
 // ── Image Moderation ──────────────────────────────────────────────────────────

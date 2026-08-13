@@ -50,7 +50,7 @@ import {
 //   FEATURED_ARTISTS,
 //   type FeaturedArtistItem,
 // } from "@/features/home/data/featured-mock-data";
-import { fetchUpcomingEvents } from "@/features/events/services/events-api";
+import { fetchUpcomingEventsReliable } from "@/features/events/services/events-api";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { normalizeListingItem } from "@/features/listing/services/listing-api";
 import {
@@ -205,7 +205,7 @@ export function EventsListingScreen() {
         countryCode: isoCountryCode,
         locationLabel,
       });
-      const res = await fetchUpcomingEvents(queryParams, { force });
+      const res = await fetchUpcomingEventsReliable(queryParams, { force });
       let listings = res.listings ?? [];
       if (needsClientSideFilter(allFilterId)) {
         listings = listings.filter((listing) =>
@@ -218,7 +218,16 @@ export function EventsListingScreen() {
       setApiListings(listings);
       lastFetchAtRef.current = Date.now();
     } catch {
-      setApiListings([]);
+      try {
+        const fallback = await fetchUpcomingEventsReliable(
+          { limit: 50, sort: "newest" },
+          { force: true },
+        );
+        setApiListings(fallback.listings ?? []);
+        lastFetchAtRef.current = Date.now();
+      } catch {
+        setApiListings([]);
+      }
     } finally {
       setEventsLoading(false);
     }

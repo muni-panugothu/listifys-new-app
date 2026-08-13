@@ -29,7 +29,7 @@ import {
 import { showAuthGate } from "@/store/slices/auth-gate-slice";
 import { GooglePlacesInput, type PlacesSelectResult } from "@/components/google-places-input";
 import { clearLocation, setLocationDirect, setProfileFallbackLocation, selectLocationLabel } from "@/store/slices/location-slice";
-import { LOCATION_STORAGE_KEY, saveStoredLocation } from "@/lib/location-service";
+import { clearAllPersistedLocations, saveStoredLocation } from "@/lib/location-service";
 import { useLocale, CALLING_CODE } from "@/providers/locale-provider";
 import { selectLocationCoords } from "@/store/slices/location-slice";
 
@@ -207,7 +207,7 @@ export function ProfileDetailsEditScreen() {
         // User cleared their address — wipe the global location slice and the
         // persisted location so the app no longer shows the stale value.
         dispatch(clearLocation());
-        await AsyncStorage.removeItem(LOCATION_STORAGE_KEY).catch(() => {});
+        await clearAllPersistedLocations().catch(() => {});
       }
       handleBack();
     } else {

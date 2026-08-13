@@ -115,8 +115,8 @@ function buildBanner(kind: BannerKind): BannerConfig {
       return {
         kind,
         icon: "cloud-sync",
-        title: "Can't Reach Server",
-        message: "You're online, but the app can't connect to Listifys right now.",
+        title: "Server temporarily unavailable",
+        message: "We're having trouble reaching Listifys. Your connection is fine — we'll retry automatically.",
         gradientColors: ["#78350F", "#92400E"],
         iconBackgroundColor: "rgba(255,255,255,0.18)",
         iconColor: "#FDE68A",

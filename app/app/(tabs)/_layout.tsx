@@ -12,9 +12,16 @@ export default function MainTabsLayout() {
         headerShown: false,
         animation: "fade",
         lazy: true,
-        sceneStyle: { backgroundColor: colors.background },
-        // Disabled so inactive tabs still re-render when the theme context changes.
-        freezeOnBlur: false,
+        sceneStyle: { backgroundColor: colors.tabCanvas },
+        tabBarStyle: {
+          position: "absolute",
+          backgroundColor: colors.tabCanvas,
+          borderTopWidth: 0,
+          elevation: 0,
+          shadowOpacity: 0,
+        },
+        // Freeze inactive tabs to avoid background re-renders during tab switches.
+        freezeOnBlur: true,
       }}
     >
       <Tabs.Screen name="home-feed-root" />

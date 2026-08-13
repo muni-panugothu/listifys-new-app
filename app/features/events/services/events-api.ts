@@ -73,7 +73,23 @@ export async function fetchEventCalendarSummary(
   );
 }
 
-export async function fetchUpcomingEvents(
+function normalizeUpcomingResponse(
+  response: UpcomingEventsResponse,
+): UpcomingEventsResponse {
+  const listings = (response.listings ?? []).map((item) =>
+    normalizeListingItem(item as ListingItem),
+  );
+  seedListingsBatch(
+    listings.map((listing) => ({ category: "events", listing })),
+    120_000,
+  );
+  return {
+    ...response,
+    listings,
+  };
+}
+
+async function fetchUpcomingEventsOnce(
   params: EventsQueryParams = {},
   opts: { force?: boolean } = {},
 ): Promise<UpcomingEventsResponse> {
@@ -90,20 +106,57 @@ export async function fetchUpcomingEvents(
       const response = await requestJson<UpcomingEventsResponse>(
         `/api/events/upcoming${qs ? `?${qs}` : ""}`,
       );
-      const listings = (response.listings ?? []).map((item) =>
-        normalizeListingItem(item as ListingItem),
-      );
-      seedListingsBatch(
-        listings.map((listing) => ({ category: "events", listing })),
-        120_000,
-      );
-      return {
-        ...response,
-        listings,
-      };
+      return normalizeUpcomingResponse(response);
     },
     30_000,
   );
+}
+
+function hasRestrictiveEventFilters(params: EventsQueryParams): boolean {
+  return Boolean(
+    params.location ||
+      params.lat != null ||
+      params.lng != null ||
+      params.date ||
+      params.weekend ||
+      (params.subcategory && params.subcategory !== "All"),
+  );
+}
+
+function buildBroadEventsParams(params: EventsQueryParams): EventsQueryParams {
+  return {
+    limit: params.limit ?? 50,
+    sort: "newest",
+    page: params.page,
+  };
+}
+
+export async function fetchUpcomingEvents(
+  params: EventsQueryParams = {},
+  opts: { force?: boolean } = {},
+): Promise<UpcomingEventsResponse> {
+  return fetchUpcomingEventsOnce(params, opts);
+}
+
+/** Tries the requested filters, then falls back to a global upcoming list. */
+export async function fetchUpcomingEventsReliable(
+  params: EventsQueryParams = {},
+  opts: { force?: boolean } = {},
+): Promise<UpcomingEventsResponse> {
+  try {
+    const primary = await fetchUpcomingEventsOnce(params, opts);
+    if ((primary.listings?.length ?? 0) > 0 || !hasRestrictiveEventFilters(params)) {
+      return primary;
+    }
+  } catch {
+    if (!hasRestrictiveEventFilters(params)) {
+      return fetchUpcomingEventsOnce(buildBroadEventsParams(params), {
+        force: true,
+      });
+    }
+  }
+
+  return fetchUpcomingEventsOnce(buildBroadEventsParams(params), { force: true });
 }
 
 /** Prefetch adjacent dates for snappy date-strip navigation. */

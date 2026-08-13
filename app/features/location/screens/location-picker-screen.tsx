@@ -14,6 +14,7 @@
 
 import { MaterialIcons } from "@expo/vector-icons";
 import { type Href, useRouter } from "@/lib/safe-router";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   useCallback,
   useEffect,
@@ -57,10 +58,14 @@ import {
   type RecentLocation,
 } from "@/lib/google-places.service";
 import { reverseGeocodeDetails, saveStoredLocation } from "@/lib/location-service";
+import { invalidateCache } from "@/lib/cache";
 import { showErrorToast } from "@/lib/toast";
 import { usePlacesAutocomplete } from "@/hooks/usePlacesAutocomplete";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
+  clearActiveLocation,
+  reconcileLocationPermission,
+  selectLocationMode,
   setLocationDirect,
   useCurrentDeviceLocation,
 } from "@/store/slices/location-slice";
@@ -171,8 +176,18 @@ export function LocationPickerScreen() {
 
   const locationLat = useAppSelector((s) => s.location.lat);
   const locationLng = useAppSelector((s) => s.location.lng);
-  const currentLabel = useAppSelector((s) => s.location.label);
+  const locationMode = useAppSelector(selectLocationMode);
   const locationStatus = useAppSelector((s) => s.location.status);
+  const activeLocationLabel = useAppSelector((s) => s.location.label);
+
+  const hasActiveLocation = locationMode !== "none";
+  const locationSubtitle = hasActiveLocation ? activeLocationLabel : null;
+
+  useFocusEffect(
+    useCallback(() => {
+      void dispatch(reconcileLocationPermission());
+    }, [dispatch]),
+  );
 
   const [query, setQuery] = useState("");
   const [selecting, setSelecting] = useState(false);
@@ -455,6 +470,17 @@ export function LocationPickerScreen() {
     setPermissionSheet((s) => ({ ...s, visible: false }));
   }, []);
 
+  const handleClearLocation = useCallback(async () => {
+    Keyboard.dismiss();
+    try {
+      await dispatch(clearActiveLocation()).unwrap();
+      invalidateCache("feed:");
+      invalidateCache("events:");
+    } catch {
+      showErrorToast("Could not clear location", "Please try again.");
+    }
+  }, [dispatch]);
+
   // ── List data ────────────────────────────────────────────────────────────────
 
   const listData = useMemo((): ListRow[] => {
@@ -661,20 +687,14 @@ export function LocationPickerScreen() {
       <View style={{ flex: 1 }}>
         {/* Use current location row */}
         {!isQueryActive ? (
-          <Pressable
-            onPress={() => void handleUseCurrentLocation()}
-            disabled={gpsLoading}
-            android_ripple={{ color: colors.primarySoft }}
-            style={({ pressed }) => ({
+          <View
+            style={{
               flexDirection: "row",
               alignItems: "center",
-              paddingHorizontal: 20,
-              paddingVertical: 15,
-              backgroundColor: pressed ? colors.surfaceMuted : colors.surface,
               marginHorizontal: 16,
               marginTop: 6,
+              backgroundColor: colors.surface,
               borderRadius: 14,
-              gap: 13,
               borderWidth: 1,
               borderColor: colors.border,
               shadowColor: "#000",
@@ -683,62 +703,107 @@ export function LocationPickerScreen() {
               shadowRadius: 4,
               elevation: 1,
               opacity: gpsLoading ? 0.7 : 1,
-            })}
+            }}
           >
-            <View
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 19,
-                backgroundColor: colors.primarySoftStrong,
+            <Pressable
+              onPress={() => void handleUseCurrentLocation()}
+              disabled={gpsLoading}
+              android_ripple={{ color: colors.primarySoft }}
+              style={({ pressed }) => ({
+                flex: 1,
+                flexDirection: "row",
                 alignItems: "center",
-                justifyContent: "center",
-              }}
+                paddingHorizontal: 20,
+                paddingVertical: 15,
+                gap: 13,
+                backgroundColor: pressed ? colors.surfaceMuted : "transparent",
+                borderTopLeftRadius: 14,
+                borderBottomLeftRadius: 14,
+              })}
             >
-              {gpsLoading ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <MaterialIcons name="my-location" size={19} color={colors.primary} />
-              )}
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text
+              <View
                 style={{
-                  fontSize: 14.5,
-                  fontFamily: ListifyFonts.semiBold,
-                  color: colors.primary,
-                  lineHeight: 20,
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: colors.primarySoftStrong,
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                Use current location
-              </Text>
-              {currentLabel && currentLabel !== "Set location" ? (
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    fontFamily: ListifyFonts.regular,
-                    lineHeight: 17,
-                  }}
-                >
-                  {currentLabel}
-                </Text>
-              ) : (
+                {gpsLoading ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <MaterialIcons name="my-location" size={19} color={colors.primary} />
+                )}
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text
                   style={{
-                    fontSize: 12,
-                    color: colors.textTertiary,
-                    fontFamily: ListifyFonts.regular,
-                    lineHeight: 17,
+                    fontSize: 14.5,
+                    fontFamily: ListifyFonts.semiBold,
+                    color: colors.primary,
+                    lineHeight: 20,
                   }}
                 >
-                  Detect my device location
+                  Use current location
                 </Text>
-              )}
-            </View>
-            <MaterialIcons name="chevron-right" size={20} color={colors.primary} />
-          </Pressable>
+                {locationSubtitle ? (
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      fontSize: 12,
+                      color: colors.textSecondary,
+                      fontFamily: ListifyFonts.regular,
+                      lineHeight: 17,
+                    }}
+                  >
+                    {locationSubtitle}
+                  </Text>
+                ) : (
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: colors.textTertiary,
+                      fontFamily: ListifyFonts.regular,
+                      lineHeight: 17,
+                    }}
+                  >
+                    Detect my device location
+                  </Text>
+                )}
+              </View>
+            </Pressable>
+            {hasActiveLocation ? (
+              <Pressable
+                onPress={() => void handleClearLocation()}
+                hitSlop={10}
+                disabled={gpsLoading}
+                style={({ pressed }) => ({
+                  width: 44,
+                  height: 44,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: 6,
+                  opacity: pressed ? 0.65 : 1,
+                })}
+                accessibilityLabel="Clear selected location"
+              >
+                <View
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 14,
+                    backgroundColor: colors.surfaceMuted,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <MaterialIcons name="close" size={18} color={colors.textSecondary} />
+                </View>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
 
         {/* Suggestion list */}

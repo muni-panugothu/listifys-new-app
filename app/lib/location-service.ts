@@ -3,6 +3,28 @@ import * as Location from "expo-location";
 import { Platform } from "react-native";
 
 export const LOCATION_STORAGE_KEY = "@listify/app_location";
+/** Persisted manual city pick — survives GPS permission denial. */
+export const LOCATION_MANUAL_KEY = "@listify/location_manual";
+/** Persisted device GPS fix — cleared when permission is revoked. */
+export const LOCATION_DEVICE_KEY = "@listify/location_device";
+/** Set after the home feed shows the OS location prompt once (allow or deny). */
+export const LOCATION_PROMPT_SEEN_KEY = "@listify/location_prompt_seen";
+
+export async function hasSeenLocationPrompt(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(LOCATION_PROMPT_SEEN_KEY)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export async function markLocationPromptSeen(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(LOCATION_PROMPT_SEEN_KEY, "1");
+  } catch {
+    // best-effort
+  }
+}
 
 /** Min time between automatic GPS refreshes (home tab, etc.). */
 export const LOCATION_AUTO_REFRESH_MS = 30 * 60 * 1000;
@@ -254,11 +276,9 @@ function pickConsistentLabel(results: Location.LocationGeocodedAddress[]): strin
   return scored[0]?.label ?? candidates[0];
 }
 
-export async function loadStoredLocation(): Promise<StoredAppLocation | null> {
+function parseStoredLocation(raw: string): StoredAppLocation | null {
   try {
-    const raw = await AsyncStorage.getItem(LOCATION_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredAppLocation;
+    const parsed = JSON.parse(raw) as StoredAppLocation & { source?: string };
     if (
       typeof parsed.label !== "string" ||
       typeof parsed.lat !== "number" ||
@@ -266,14 +286,132 @@ export async function loadStoredLocation(): Promise<StoredAppLocation | null> {
     ) {
       return null;
     }
-    return parsed;
+    const source: StoredAppLocation["source"] =
+      parsed.source === "manual" ? "manual" : "gps";
+    return {
+      label: parsed.label,
+      lat: parsed.lat,
+      lng: parsed.lng,
+      isoCountryCode: parsed.isoCountryCode ?? null,
+      source,
+      updatedAt: parsed.updatedAt ?? Date.now(),
+    };
   } catch {
     return null;
   }
 }
 
+export async function loadManualLocation(): Promise<StoredAppLocation | null> {
+  try {
+    const raw = await AsyncStorage.getItem(LOCATION_MANUAL_KEY);
+    if (!raw) return null;
+    const parsed = parseStoredLocation(raw);
+    return parsed ? { ...parsed, source: "manual" } : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadDeviceLocation(): Promise<StoredAppLocation | null> {
+  try {
+    const raw = await AsyncStorage.getItem(LOCATION_DEVICE_KEY);
+    if (!raw) return null;
+    const parsed = parseStoredLocation(raw);
+    return parsed ? { ...parsed, source: "gps" } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** @deprecated Use loadManualLocation / loadDeviceLocation */
+export async function loadStoredLocation(): Promise<StoredAppLocation | null> {
+  const manual = await loadManualLocation();
+  if (manual) return manual;
+  return loadDeviceLocation();
+}
+
+export async function saveManualLocation(location: StoredAppLocation) {
+  const entry: StoredAppLocation = {
+    ...location,
+    source: "manual",
+    updatedAt: Date.now(),
+  };
+  await AsyncStorage.setItem(LOCATION_MANUAL_KEY, JSON.stringify(entry));
+}
+
+export async function saveDeviceLocation(location: StoredAppLocation) {
+  const entry: StoredAppLocation = {
+    ...location,
+    source: "gps",
+    updatedAt: Date.now(),
+  };
+  await AsyncStorage.setItem(LOCATION_DEVICE_KEY, JSON.stringify(entry));
+}
+
+export async function clearDeviceLocation() {
+  await AsyncStorage.removeItem(LOCATION_DEVICE_KEY);
+}
+
+export async function clearManualLocation() {
+  await AsyncStorage.removeItem(LOCATION_MANUAL_KEY);
+}
+
+export async function clearAllPersistedLocations() {
+  await Promise.all([
+    AsyncStorage.removeItem(LOCATION_MANUAL_KEY),
+    AsyncStorage.removeItem(LOCATION_DEVICE_KEY),
+    AsyncStorage.removeItem(LOCATION_STORAGE_KEY),
+  ]);
+}
+
+/** One-time migration from the legacy single-key store. */
+export async function migrateLegacyLocationStorage(): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(LOCATION_STORAGE_KEY);
+    if (!raw) return;
+
+    const parsed = parseStoredLocation(raw);
+    if (!parsed) {
+      await AsyncStorage.removeItem(LOCATION_STORAGE_KEY);
+      return;
+    }
+
+    if (parsed.source === "manual") {
+      await saveManualLocation(parsed);
+    } else {
+      await saveDeviceLocation(parsed);
+    }
+    await AsyncStorage.removeItem(LOCATION_STORAGE_KEY);
+  } catch {
+    await AsyncStorage.removeItem(LOCATION_STORAGE_KEY).catch(() => {});
+  }
+}
+
+/**
+ * Resolve which location should be active based on storage + permission.
+ * Manual always wins. Device coords only when permission is granted.
+ */
+export async function resolveActiveLocationFromStorage(): Promise<StoredAppLocation | null> {
+  await migrateLegacyLocationStorage();
+
+  const manual = await loadManualLocation();
+  if (manual) return manual;
+
+  const permitted = await hasLocationPermission();
+  if (!permitted) {
+    await clearDeviceLocation();
+    return null;
+  }
+
+  return loadDeviceLocation();
+}
+
 export async function saveStoredLocation(location: StoredAppLocation) {
-  await AsyncStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify(location));
+  if (location.source === "manual") {
+    await saveManualLocation(location);
+    return;
+  }
+  await saveDeviceLocation(location);
 }
 
 /** On Android, prompt to turn on device location (network/GPS) when services are off. */

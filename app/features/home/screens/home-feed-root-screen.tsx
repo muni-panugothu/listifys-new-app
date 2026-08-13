@@ -36,16 +36,19 @@ import {
   type FeaturedArtistItem,
 } from "@/features/home/data/featured-mock-data";
 import { listingToExploreNearYouItem } from "@/features/home/utils/nearby-events";
-import { fetchUpcomingEvents } from "@/features/events/services/events-api";
+import { fetchUpcomingEventsReliable } from "@/features/events/services/events-api";
 import { buildEventDetailParams } from "@/features/events/utils/event-detail-helpers";
 import { HOME_EXPLORE_CATEGORIES } from "@/features/home/data/home-explore-categories";
 import { ListifyFonts, ListifyTypography } from "@/constants/typography";
-import { getUnreadCount as getNotificationUnreadCount } from "@/features/auth/services/auth-api";
-import { subscribeNotificationUnreadAdjust } from "@/lib/notification-unread-bus";
-import { getUnreadCount as getChatUnreadCount } from "@/features/messaging/services/chat-api";
+import {
+  HomeHorizontalSectionSkeleton,
+  HomeJobSectionSkeleton,
+  HomeServiceSectionSkeleton,
+  HomeSpotlightSkeleton,
+} from "@/features/home/components/home-section-skeletons";
 import {
   fetchCategoryListings,
-  fetchHomeFeed,
+  fetchHomeFeedReliable,
   fetchServiceListings,
   getCachedHomeFeed,
   getRecentlyViewed,
@@ -66,24 +69,27 @@ import { showErrorToast } from "@/lib/toast";
 import { useProtectedNavigation } from "@/lib/use-protected-navigation";
 import { formatPrice } from "@/lib/currency";
 import { resolveListingDistanceKm, getListingDistanceLabel } from "@/lib/listing-distance";
+import { invalidateCache } from "@/lib/cache";
+import { buildLocationQueryParams } from "@/lib/location-query-params";
 import {
   ensureDeviceLocationAccess,
-  extractCityFromLocationLabel,
+  hasLocationPermission,
+  hasSeenLocationPrompt,
+  markLocationPromptSeen,
 } from "@/lib/location-service";
 import { useTabNavigation } from "@/lib/use-tab-navigation";
 import { HORIZONTAL_CAROUSEL_PROPS } from "@/lib/performance/horizontal-list-config";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { selectIsAppOffline } from "@/store/selectors";
+import { selectAuthUser, selectIsAuthenticated, selectIsAppOffline, selectSessionHydrated } from "@/store/selectors";
 import { fetchProfile } from "@/store/slices/auth-slice";
 import {
-  refreshDeviceLocation,
+  reconcileLocationPermission,
   useCurrentDeviceLocation,
   selectLocationCoords,
-  selectLocationLabel,
-  selectIsoCountryCode,
+  selectLocationQueryState,
+  selectHasActionableLocation,
   selectCanShowDistanceOnCards,
-  selectLocationSource,
-  setProfileFallbackLocation,
+  selectHomeLocationHeader,
 } from "@/store/slices/location-slice";
 import { clearSlowRequestSignal, reportSlowRequest } from "@/store/slices/network-slice";
 
@@ -105,6 +111,7 @@ const SERVICE_CARD_WIDTH = Math.round(SCREEN_WIDTH * 0.86);
 const SERVICE_CARD_GAP = 14;
 const JOB_CARD_WIDTH = Math.round(SCREEN_WIDTH * 0.86);
 const JOB_CARD_GAP = 14;
+type SectionLoadState = "idle" | "loading" | "success" | "empty" | "error";
 /** Two-row horizontal Explore — marketplace categories. */
 const EXPLORE_CARD_W = Math.round(SCREEN_WIDTH * 0.28);
 /** Card body only — icon overflow sits above this. */
@@ -116,24 +123,6 @@ function chunkExploreColumns<T>(items: T[], rows = 2): T[][] {
     columns.push(items.slice(i, i + rows));
   }
   return columns;
-}
-
-function splitHomeLocationLabel(label: string) {
-  const trimmed = label?.trim() || "Set location";
-  if (trimmed === "Set location" || trimmed.startsWith("Detecting")) {
-    return { primary: trimmed, secondary: "" };
-  }
-  const parts = trimmed
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.length <= 1) {
-    return { primary: parts[0] ?? trimmed, secondary: "" };
-  }
-  return {
-    primary: parts[0],
-    secondary: parts.slice(1).join(", "),
-  };
 }
 
 type FreshRecommendationItem = {
@@ -172,33 +161,32 @@ export function HomeFeedRootScreen() {
   const dispatch = useAppDispatch();
   const { colors, isDark } = useTheme();
   const { isoCountryCode: localeCountryCode } = useLocale();
-  const user = useAppSelector((s) => s.auth.user);
-  const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
-  const sessionHydrated = useAppSelector((s) => s.auth.sessionHydrated);
+  const user = useAppSelector(selectAuthUser);
+  const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const sessionHydrated = useAppSelector(selectSessionHydrated);
   const isOffline = useAppSelector(selectIsAppOffline);
-  const displayLocation = useAppSelector(selectLocationLabel);
+  const locationQueryState = useAppSelector(selectLocationQueryState);
   const locationCoords = useAppSelector(selectLocationCoords);
-  const isoCountryCode = useAppSelector(selectIsoCountryCode);
-  const locationSource = useAppSelector(selectLocationSource);
+  const hasActionableLocation = useAppSelector(selectHasActionableLocation);
   const locationHydrated = useAppSelector((s) => s.location.hydrated);
   const [feedData, setFeedData] = useState<FeedResponse | null>(null);
   const [isUsingCachedFeed, setIsUsingCachedFeed] = useState(false);
   const [recentlyViewed, setRecentlyViewed] = useState<RecentlyViewedItem[]>([]);
-  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
-  const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [nearbyMusicEvents, setNearbyMusicEvents] = useState<ListingItem[]>([]);
   const [nearbyServices, setNearbyServices] = useState<ListingItem[]>([]);
   const [nearbyJobs, setNearbyJobs] = useState<ListingItem[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
+  const [feedLoadState, setFeedLoadState] = useState<SectionLoadState>("loading");
+  const [eventsLoadState, setEventsLoadState] = useState<SectionLoadState>("loading");
+  const [servicesLoadState, setServicesLoadState] = useState<SectionLoadState>("loading");
+  const [jobsLoadState, setJobsLoadState] = useState<SectionLoadState>("loading");
   const [showLoginSheet, setShowLoginSheet] = useState(false);
   const { navigateProtected } = useProtectedNavigation();
   const locationPromptAttempted = useRef(false);
-   // Apply location filter when user has a valid location (GPS/manual) or when the user is in the US.
-   const hasValidLocation = locationCoords.lat != null && locationCoords.lng != null;
-   const effectiveCountryCode = (isoCountryCode ?? localeCountryCode ?? null)?.toUpperCase() ?? null;
-   const shouldApplyLocationFilter = hasValidLocation || effectiveCountryCode === "US";
+  const isoCountryCode = locationQueryState.isoCountryCode;
   const canShowDistanceOnCards = useAppSelector(selectCanShowDistanceOnCards);
+  const displayCountryCode = (isoCountryCode ?? localeCountryCode ?? null)?.toUpperCase() ?? null;
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -244,30 +232,13 @@ export function HomeFeedRootScreen() {
   const loadFeed = useCallback(
     async (options?: { allowCacheFallback?: boolean }) => {
       const startedAt = Date.now();
+      setFeedLoadState((prev) => (prev === "success" ? prev : "loading"));
       try {
-        let feedParams: any = { limit: 12 };
-        if (shouldApplyLocationFilter) {
-          const hasCoords = locationCoords.lat != null && locationCoords.lng != null;
-          const isRealLabel =
-            Boolean(locationCoords.label) &&
-            locationCoords.label !== "Set location" &&
-            !locationCoords.label.startsWith("Detecting");
-          const locationText = !hasCoords && isRealLabel
-            ? extractCityFromLocationLabel(locationCoords.label) ?? locationCoords.label
-            : undefined;
-          feedParams = {
-            ...feedParams,
-            lat: hasCoords ? locationCoords.lat : undefined,
-            lng: hasCoords ? locationCoords.lng : undefined,
-            radius: hasCoords ? 100 : undefined,
-            location: locationText,
-            countryCode: effectiveCountryCode ?? undefined,
-          };
-        } else {
-          // No location picked � show listings from all countries (price tags only).
-          feedParams = { limit: 12 };
-        }
-        const res = await fetchHomeFeed(feedParams);
+        const feedParams = {
+          limit: 12,
+          ...buildLocationQueryParams(locationQueryState, { radius: 100 }),
+        };
+        const res = await fetchHomeFeedReliable(feedParams);
         const duration = Date.now() - startedAt;
         if (duration >= SLOW_HOME_FEED_MS) {
           dispatch(reportSlowRequest(duration));
@@ -275,6 +246,11 @@ export function HomeFeedRootScreen() {
           dispatch(clearSlowRequestSignal());
         }
         applyFeedSnapshot(res, { source: "live" });
+        const count = Object.values(res.categories ?? {}).reduce(
+          (sum, bucket) => sum + (bucket?.listings?.length ?? 0),
+          0,
+        );
+        setFeedLoadState(count > 0 ? "success" : "empty");
       } catch {
         const duration = Date.now() - startedAt;
         if (duration >= SLOW_HOME_FEED_MS) {
@@ -283,77 +259,80 @@ export function HomeFeedRootScreen() {
           dispatch(clearSlowRequestSignal());
         }
         if (options?.allowCacheFallback === false) {
+          setFeedLoadState((prev) => (prev === "success" ? "success" : "error"));
           return;
         }
         const cached = await getCachedHomeFeed();
         if (cached) {
           applyFeedSnapshot(cached.data, { source: "cache" });
+          const count = Object.values(cached.data.categories ?? {}).reduce(
+            (sum, bucket) => sum + (bucket?.listings?.length ?? 0),
+            0,
+          );
+          setFeedLoadState(count > 0 ? "success" : "empty");
+        } else {
+          setFeedLoadState("error");
         }
       }
     },
     [
       applyFeedSnapshot,
       dispatch,
-      effectiveCountryCode,
-      locationCoords.label,
-      locationCoords.lat,
-      locationCoords.lng,
-      shouldApplyLocationFilter,
+      locationQueryState,
     ]
   );
 
   const loadNearbyMusicEvents = useCallback(async (opts?: { force?: boolean }) => {
     if (isOffline) return;
+    setEventsLoadState((prev) => (prev === "success" && !opts?.force ? prev : "loading"));
     try {
-      const hasCoords =
-        locationCoords.lat != null && locationCoords.lng != null;
-      const res = await fetchUpcomingEvents(
+      const geoParams = buildLocationQueryParams(locationQueryState, { radius: 50 });
+      const hasCoords = geoParams.lat != null && geoParams.lng != null;
+      const res = await fetchUpcomingEventsReliable(
         {
           limit: 12,
           sort: hasCoords ? "nearest" : "newest",
-          countryCode: effectiveCountryCode ?? undefined,
-          ...(hasCoords
-            ? {
-                lat: locationCoords.lat ?? undefined,
-                lng: locationCoords.lng ?? undefined,
-                radius: 50,
-              }
-            : {}),
-          ...(locationCoords.label &&
-          locationCoords.label !== "Set location" &&
-          !locationCoords.label.startsWith("Detecting")
-            ? { location: extractCityFromLocationLabel(locationCoords.label) ?? locationCoords.label }
-            : {}),
+          ...geoParams,
         },
         { force: opts?.force },
       );
-      setNearbyMusicEvents(
-        filterOutOwnListings(res.listings ?? [], user?.id),
-      );
+      const items = filterOutOwnListings(res.listings ?? [], user?.id);
+      setNearbyMusicEvents(items);
+      setEventsLoadState(items.length > 0 ? "success" : "empty");
     } catch {
-      setNearbyMusicEvents([]);
+      try {
+        const fallback = await fetchUpcomingEventsReliable(
+          { limit: 12, sort: "newest" },
+          { force: true },
+        );
+        const items = filterOutOwnListings(fallback.listings ?? [], user?.id);
+        setNearbyMusicEvents(items);
+        setEventsLoadState(items.length > 0 ? "success" : "empty");
+      } catch {
+        setNearbyMusicEvents([]);
+        setEventsLoadState("error");
+      }
     }
-  }, [
-    effectiveCountryCode,
-    isOffline,
-    locationCoords.label,
-    locationCoords.lat,
-    locationCoords.lng,
-    user?.id,
-  ]);
+  }, [isOffline, locationQueryState, user?.id]);
 
-  const loadNearbyServices = useCallback(async () => {
+  const loadNearbyServices = useCallback(async (opts?: { force?: boolean }) => {
     if (isOffline) return;
+
+    const feedServices = feedData?.categories?.services?.listings ?? [];
+    const feedItems = filterOutOwnListings(feedServices, user?.id).slice(
+      0,
+      HOME_SERVICES_LIMIT,
+    );
+    if (!opts?.force && feedItems.length >= HOME_SERVICES_LIMIT) {
+      setNearbyServices(feedItems);
+      setServicesLoadState("success");
+      return;
+    }
+
+    setServicesLoadState((prev) => (prev === "success" && !opts?.force ? prev : "loading"));
     try {
-      const hasCoords =
-        locationCoords.lat != null && locationCoords.lng != null;
-      const locationText =
-        locationCoords.label &&
-        locationCoords.label !== "Set location" &&
-        !locationCoords.label.startsWith("Detecting")
-          ? extractCityFromLocationLabel(locationCoords.label) ??
-            locationCoords.label
-          : undefined;
+      const geoParams = buildLocationQueryParams(locationQueryState, { radius: 100 });
+      const hasCoords = geoParams.lat != null && geoParams.lng != null;
 
       const pickItems = (listings: ListingItem[]) =>
         filterOutOwnListings(listings ?? [], user?.id).slice(
@@ -367,23 +346,9 @@ export function HomeFeedRootScreen() {
         const geoRes = await fetchServiceListings({
           limit: HOME_SERVICES_LIMIT,
           sort: "-createdAt",
-          countryCode: effectiveCountryCode ?? undefined,
-          lat: locationCoords.lat ?? undefined,
-          lng: locationCoords.lng ?? undefined,
-          radius: 100,
-          location: locationText,
+          ...geoParams,
         });
         items = pickItems(geoRes.listings);
-      }
-
-      if (items.length === 0) {
-        const scopedRes = await fetchServiceListings({
-          limit: HOME_SERVICES_LIMIT,
-          sort: "-createdAt",
-          countryCode: effectiveCountryCode ?? undefined,
-          location: locationText,
-        });
-        items = pickItems(scopedRes.listings);
       }
 
       if (items.length === 0) {
@@ -395,30 +360,38 @@ export function HomeFeedRootScreen() {
       }
 
       setNearbyServices(items);
+      setServicesLoadState(items.length > 0 ? "success" : "empty");
     } catch {
       setNearbyServices([]);
+      setServicesLoadState("error");
     }
-  }, [
-    effectiveCountryCode,
-    isOffline,
-    locationCoords.label,
-    locationCoords.lat,
-    locationCoords.lng,
-    user?.id,
-  ]);
+  }, [feedData?.categories?.services?.listings, isOffline, locationQueryState, user?.id]);
 
-  const loadNearbyJobs = useCallback(async () => {
+  const loadNearbyJobs = useCallback(async (opts?: { force?: boolean }) => {
     if (isOffline) return;
+
+    const feedJobs = feedData?.categories?.jobs?.listings ?? [];
+    const feedItems = filterOutOwnListings(feedJobs, user?.id).slice(
+      0,
+      HOME_JOBS_LIMIT,
+    );
+    if (!opts?.force && feedItems.length >= HOME_JOBS_LIMIT) {
+      setNearbyJobs(feedItems);
+      setJobsLoadState("success");
+      if (user?.id) {
+        const saved = new Set<string>();
+        for (const item of feedItems) {
+          if (item.savedBy?.includes(user.id)) saved.add(item._id);
+        }
+        setSavedJobIds(saved);
+      }
+      return;
+    }
+
+    setJobsLoadState((prev) => (prev === "success" && !opts?.force ? prev : "loading"));
     try {
-      const hasCoords =
-        locationCoords.lat != null && locationCoords.lng != null;
-      const locationText =
-        locationCoords.label &&
-        locationCoords.label !== "Set location" &&
-        !locationCoords.label.startsWith("Detecting")
-          ? extractCityFromLocationLabel(locationCoords.label) ??
-            locationCoords.label
-          : undefined;
+      const geoParams = buildLocationQueryParams(locationQueryState, { radius: 100 });
+      const hasCoords = geoParams.lat != null && geoParams.lng != null;
 
       const pickItems = (listings: ListingItem[]) =>
         filterOutOwnListings(listings ?? [], user?.id).slice(
@@ -432,23 +405,9 @@ export function HomeFeedRootScreen() {
         const geoRes = await fetchCategoryListings("jobs", {
           limit: HOME_JOBS_LIMIT,
           sort: "newest",
-          countryCode: effectiveCountryCode ?? undefined,
-          lat: locationCoords.lat ?? undefined,
-          lng: locationCoords.lng ?? undefined,
-          radius: 100,
-          location: locationText,
+          ...geoParams,
         });
         items = pickItems(geoRes.listings);
-      }
-
-      if (items.length === 0) {
-        const scopedRes = await fetchCategoryListings("jobs", {
-          limit: HOME_JOBS_LIMIT,
-          sort: "newest",
-          countryCode: effectiveCountryCode ?? undefined,
-          location: locationText,
-        });
-        items = pickItems(scopedRes.listings);
       }
 
       if (items.length === 0) {
@@ -460,6 +419,7 @@ export function HomeFeedRootScreen() {
       }
 
       setNearbyJobs(items);
+      setJobsLoadState(items.length > 0 ? "success" : "empty");
       if (user?.id) {
         const saved = new Set<string>();
         for (const item of items) {
@@ -469,23 +429,61 @@ export function HomeFeedRootScreen() {
       }
     } catch {
       setNearbyJobs([]);
+      setJobsLoadState("error");
     }
-  }, [
-    effectiveCountryCode,
-    isOffline,
-    locationCoords.label,
-    locationCoords.lat,
-    locationCoords.lng,
-    user?.id,
-  ]);
+  }, [feedData?.categories?.jobs?.listings, isOffline, locationQueryState, user?.id]);
+
+  const homeDataLoadedAtRef = useRef(0);
 
   useEffect(() => {
-    if (!sessionHydrated || isOffline) return;
-    void loadNearbyMusicEvents();
-    void loadNearbyServices();
-    void loadNearbyJobs();
-  }, [isOffline, loadNearbyJobs, loadNearbyMusicEvents, loadNearbyServices, sessionHydrated]);
+    if (!sessionHydrated) return;
 
+    let cancelled = false;
+    homeDataLoadedAtRef.current = Date.now();
+
+    (async () => {
+      const cached = await getCachedHomeFeed().catch(() => null);
+      if (cancelled) return;
+
+      if (cached) {
+        applyFeedSnapshot(cached.data, { source: "cache" });
+        const count = Object.values(cached.data.categories ?? {}).reduce(
+          (sum, bucket) => sum + (bucket?.listings?.length ?? 0),
+          0,
+        );
+        if (count > 0) setFeedLoadState("success");
+      }
+
+      await loadFeed({ allowCacheFallback: !cached });
+      if (cancelled) return;
+
+      if (!isOffline) {
+        await Promise.all([
+          loadNearbyMusicEvents(),
+          loadNearbyServices(),
+          loadNearbyJobs(),
+        ]);
+      }
+    })().catch(() => {});
+
+    getRecentlyViewed(hasActionableLocation ? isoCountryCode : null)
+      .then(setRecentlyViewed)
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    applyFeedSnapshot,
+    hasActionableLocation,
+    isOffline,
+    isoCountryCode,
+    loadFeed,
+    loadNearbyJobs,
+    loadNearbyMusicEvents,
+    loadNearbyServices,
+    sessionHydrated,
+  ]);
   const lastNearbyFetchAtRef = useRef(0);
   const lastNearbyServicesFetchAtRef = useRef(0);
   const lastNearbyJobsFetchAtRef = useRef(0);
@@ -494,6 +492,7 @@ export function HomeFeedRootScreen() {
     useCallback(() => {
       if (isOffline) return;
       const now = Date.now();
+      if (now - homeDataLoadedAtRef.current < NEARBY_EVENTS_STALE_MS) return;
       if (now - lastNearbyFetchAtRef.current >= NEARBY_EVENTS_STALE_MS) {
         lastNearbyFetchAtRef.current = now;
         void loadNearbyMusicEvents();
@@ -509,72 +508,46 @@ export function HomeFeedRootScreen() {
     }, [isOffline, loadNearbyJobs, loadNearbyMusicEvents, loadNearbyServices]),
   );
 
-  useEffect(() => {
-    if (user?.address?.trim()) {
-      dispatch(setProfileFallbackLocation(user.address.trim()));
-    }
-  }, [dispatch, user?.address]);
 
-  // Ask for location only after the user reaches the home feed — not on install.
-  // Instant-first strategy: useCurrentDeviceLocation dispatches applyInstantCoords
-  // from last-known (< 50 ms) before geocoding completes, so the UI updates immediately.
+  // Reconcile storage ↔ permission whenever home mounts or permission may change.
+  useEffect(() => {
+    if (!sessionHydrated || !locationHydrated) return;
+    void dispatch(reconcileLocationPermission());
+  }, [dispatch, locationHydrated, sessionHydrated]);
+
+  // Ask for location once after reconcile — never reuse stale GPS when denied.
   useEffect(() => {
     if (!sessionHydrated || !locationHydrated || locationPromptAttempted.current) return;
 
     locationPromptAttempted.current = true;
 
     const askAndRefreshLocation = async () => {
-      // Run permission/services check and location fetch concurrently where possible.
-      // ensureDeviceLocationAccess shows the system dialog; once the user taps
-      // "Turn on", we immediately dispatch useCurrentDeviceLocation which will
-      // return last-known coords in < 50 ms via applyInstantCoords.
-      const access = await ensureDeviceLocationAccess();
-      if (!access.ok) {
-        if (access.reason === "permission_denied") {
-          void dispatch(refreshDeviceLocation({ force: true }));
-        }
+      const permitted = await hasLocationPermission();
+
+      if (!permitted) {
+        await dispatch(reconcileLocationPermission()).unwrap().catch(() => {});
         return;
       }
 
-      // useCurrentDeviceLocation calls detectDeviceLocation which fires
-      // onInstantCoords as soon as last-known is available — UI updates then,
-      // not after the full GPS + geocoding chain finishes.
+      const alreadySeen = await hasSeenLocationPrompt();
+      if (alreadySeen) {
+        void dispatch(useCurrentDeviceLocation());
+        return;
+      }
+
+      await markLocationPromptSeen();
+
+      const access = await ensureDeviceLocationAccess();
+      if (!access.ok) {
+        await dispatch(reconcileLocationPermission()).unwrap().catch(() => {});
+        return;
+      }
+
       void dispatch(useCurrentDeviceLocation());
-      // Do NOT await — let it run in background. Feed refresh is driven by
-      // the locationCoords useEffect which triggers when coords change.
     };
 
     void askAndRefreshLocation().catch(() => {});
   }, [dispatch, locationHydrated, sessionHydrated]);
-
-  useEffect(() => {
-    if (!sessionHydrated) return;
-
-    (async () => {
-      const cached = await getCachedHomeFeed().catch(() => null);
-      if (cached) {
-        applyFeedSnapshot(cached.data, { source: "cache" });
-      }
-
-      await loadFeed({ allowCacheFallback: !cached });
-    })().catch(() => {});
-
-    getRecentlyViewed(shouldApplyLocationFilter ? effectiveCountryCode : null).then(setRecentlyViewed).catch(() => {});
-    if (isAuthenticated) {
-      getNotificationUnreadCount()
-        .then((r) => setNotificationUnreadCount(r.unreadCount ?? 0))
-        .catch(() => {});
-      getChatUnreadCount()
-        .then((r) => setChatUnreadCount(r.unreadCount ?? 0))
-        .catch(() => {});
-    }
-  }, [
-    applyFeedSnapshot,
-    effectiveCountryCode,
-    isAuthenticated,
-    loadFeed,
-    sessionHydrated,
-  ]);
 
   // Cooldown so the multiple triggers below (location change, app foreground,
   // focus, online recovery) collapse into at most one real fetch every 30s.
@@ -589,12 +562,17 @@ export function HomeFeedRootScreen() {
 
   useEffect(() => {
     if (!locationHydrated) return;
+    invalidateCache("feed:");
+    invalidateCache("events:");
     const timer = setTimeout(() => {
       lastFeedFetchAtRef.current = Date.now();
-      loadFeed({ allowCacheFallback: false }).catch(() => {});
-      void loadNearbyMusicEvents();
-      void loadNearbyServices();
-      void loadNearbyJobs();
+      homeDataLoadedAtRef.current = Date.now();
+      void Promise.all([
+        loadFeed({ allowCacheFallback: false }),
+        loadNearbyMusicEvents({ force: true }),
+        loadNearbyServices({ force: true }),
+        loadNearbyJobs({ force: true }),
+      ]);
     }, 400);
     return () => clearTimeout(timer);
   }, [locationHydrated, locationCoords.lat, locationCoords.lng, loadFeed, loadNearbyJobs, loadNearbyMusicEvents, loadNearbyServices]);
@@ -602,10 +580,13 @@ export function HomeFeedRootScreen() {
   useEffect(() => {
     if (!sessionHydrated) return;
     const sub = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active") maybeRefetchFeed();
+      if (nextState === "active") {
+        void dispatch(reconcileLocationPermission());
+        maybeRefetchFeed();
+      }
     });
     return () => sub.remove();
-  }, [maybeRefetchFeed, sessionHydrated]);
+  }, [dispatch, maybeRefetchFeed, sessionHydrated]);
 
   useEffect(() => {
     if (!isOffline && isUsingCachedFeed) {
@@ -615,46 +596,27 @@ export function HomeFeedRootScreen() {
     }
   }, [isOffline, isUsingCachedFeed, loadFeed]);
 
-  // On focus we ALWAYS refresh side data (recently viewed, unread counts)
-  // but the feed itself respects the cooldown.
+  // On focus refresh feed (with cooldown) and recently viewed — skip duplicate nearby fetches.
   useFocusEffect(
     useCallback(() => {
       maybeRefetchFeed();
-      getRecentlyViewed(shouldApplyLocationFilter ? effectiveCountryCode : null).then(setRecentlyViewed).catch(() => {});
-      getNotificationUnreadCount()
-        .then((r) => setNotificationUnreadCount(r.unreadCount ?? 0))
-        .catch(() => {});
-      getChatUnreadCount()
-        .then((r) => setChatUnreadCount(r.unreadCount ?? 0))
-        .catch(() => {});
-    }, [effectiveCountryCode, maybeRefetchFeed, shouldApplyLocationFilter]),
+      getRecentlyViewed(hasActionableLocation ? isoCountryCode : null).then(setRecentlyViewed).catch(() => {});
+    }, [hasActionableLocation, isoCountryCode, maybeRefetchFeed]),
   );
 
   const handleRefresh = useCallback(async () => {
+    homeDataLoadedAtRef.current = Date.now();
     await Promise.all([
       dispatch(fetchProfile()).unwrap().catch(() => {}),
       loadFeed(),
       loadNearbyMusicEvents({ force: true }),
-      loadNearbyServices(),
-      loadNearbyJobs(),
-      getRecentlyViewed(shouldApplyLocationFilter ? effectiveCountryCode : null).then(setRecentlyViewed).catch(() => {}),
-      getNotificationUnreadCount()
-        .then((r) => setNotificationUnreadCount(r.unreadCount ?? 0))
-        .catch(() => {}),
-      getChatUnreadCount()
-        .then((r) => setChatUnreadCount(r.unreadCount ?? 0))
-        .catch(() => {}),
+      loadNearbyServices({ force: true }),
+      loadNearbyJobs({ force: true }),
+      getRecentlyViewed(hasActionableLocation ? isoCountryCode : null).then(setRecentlyViewed).catch(() => {}),
     ]);
-  }, [dispatch, effectiveCountryCode, loadFeed, loadNearbyJobs, loadNearbyMusicEvents, loadNearbyServices, shouldApplyLocationFilter]);
+  }, [dispatch, hasActionableLocation, isoCountryCode, loadFeed, loadNearbyJobs, loadNearbyMusicEvents, loadNearbyServices]);
 
   const { refreshing, onRefresh } = usePullToRefresh(handleRefresh);
-
-  useEffect(() => {
-    const unsub = subscribeNotificationUnreadAdjust((delta) => {
-      setNotificationUnreadCount((count) => Math.max(0, count + delta));
-    });
-    return () => { unsub(); };
-  }, []);
 
   const handleBottomTabPress = useTabNavigation(() => setShowLoginSheet(true));
 
@@ -686,6 +648,17 @@ export function HomeFeedRootScreen() {
     }
   }, [isOffline]);
 
+  const savedIdsRef = useRef(savedIds);
+  savedIdsRef.current = savedIds;
+  const savedJobIdsRef = useRef(savedJobIds);
+  savedJobIdsRef.current = savedJobIds;
+  const allListingsRef = useRef(allListings);
+  allListingsRef.current = allListings;
+  const nearbyMusicEventsRef = useRef(nearbyMusicEvents);
+  nearbyMusicEventsRef.current = nearbyMusicEvents;
+  const userIdRef = useRef(user?.id);
+  userIdRef.current = user?.id;
+
   const recentKeyExtractor = useCallback(
     (item: RecentlyViewedItem) => item._id,
     [],
@@ -709,7 +682,7 @@ export function HomeFeedRootScreen() {
   // Stable renderItem for recently viewed
   const renderRecentItem = useCallback(
     ({ item }: { item: RecentlyViewedItem }) => {
-      const feedListing = allListings.find((l) => l._id === item._id);
+      const feedListing = allListingsRef.current.find((l) => l._id === item._id);
       const userLatLng =
         canShowDistanceOnCards &&
         locationCoords.lat != null &&
@@ -755,16 +728,16 @@ export function HomeFeedRootScreen() {
           image={item.images?.[0]}
           createdAt={item.createdAt}
           distanceLabel={distanceLabel}
-          isSaved={savedIds.has(item._id)}
+          isSaved={savedIdsRef.current.has(item._id)}
           onPress={() => pushToDetail(item.category, item._id)}
           onToggleSave={() => {
-            const listing = allListings.find((l) => l._id === item._id);
+            const listing = allListingsRef.current.find((l) => l._id === item._id);
             if (listing) void handleToggleSave(listing);
           }}
         />
       );
     },
-    [allListings, canShowDistanceOnCards, handleToggleSave, isoCountryCode, locationCoords.lat, locationCoords.lng, pushToDetail, savedIds],
+    [canShowDistanceOnCards, handleToggleSave, isoCountryCode, locationCoords.lat, locationCoords.lng, pushToDetail],
   );
 
   // ============================================================
@@ -773,6 +746,8 @@ export function HomeFeedRootScreen() {
   // ============================================================
   const [savedArtistIds, setSavedArtistIds] = useState<Set<string>>(new Set());
   const [savedExploreIds, setSavedExploreIds] = useState<Set<string>>(new Set());
+  const savedExploreIdsRef = useRef(savedExploreIds);
+  savedExploreIdsRef.current = savedExploreIds;
 
   const featuredCardWidth = SCREEN_WIDTH * 0.48;
   const exploreCardWidth = SCREEN_WIDTH * 0.5;
@@ -996,13 +971,13 @@ export function HomeFeedRootScreen() {
       <HomeServiceDetailCard
         item={item}
         cardWidth={serviceCardWidth}
-        isoCountryCode={effectiveCountryCode}
+        isoCountryCode={displayCountryCode}
         onPress={() => openServiceDetail(item._id)}
         onMessage={() => handleServiceMessage(item)}
       />
     ),
     [
-      effectiveCountryCode,
+      displayCountryCode,
       handleServiceMessage,
       openServiceDetail,
       serviceCardWidth,
@@ -1016,8 +991,8 @@ export function HomeFeedRootScreen() {
       <View style={{ width: jobCardWidth }}>
         <JobListingCard
           job={item as JobListingExtras}
-          isoCountryCode={effectiveCountryCode}
-          isSaved={savedJobIds.has(item._id) || savedIds.has(item._id)}
+          isoCountryCode={displayCountryCode}
+          isSaved={savedJobIdsRef.current.has(item._id) || savedIdsRef.current.has(item._id)}
           onPress={() => openJobDetail(item._id)}
           onToggleSave={() => {
             void handleToggleJobSave(item._id);
@@ -1026,12 +1001,10 @@ export function HomeFeedRootScreen() {
       </View>
     ),
     [
-      effectiveCountryCode,
+      displayCountryCode,
       handleToggleJobSave,
       jobCardWidth,
       openJobDetail,
-      savedIds,
-      savedJobIds,
     ],
   );
 
@@ -1055,10 +1028,10 @@ export function HomeFeedRootScreen() {
 
   const renderExploreItem = useCallback(
     ({ item, index }: { item: ExploreNearYouItem; index: number }) => {
-      const listing = nearbyMusicEvents[index];
+      const listing = nearbyMusicEventsRef.current[index];
       const isSaved =
-        savedExploreIds.has(item.id) ||
-        Boolean(user?.id && listing?.savedBy?.includes(user.id));
+        savedExploreIdsRef.current.has(item.id) ||
+        Boolean(userIdRef.current && listing?.savedBy?.includes(userIdRef.current));
 
       return (
         <ExploreNearYouCard
@@ -1077,18 +1050,12 @@ export function HomeFeedRootScreen() {
     [
       exploreCardWidth,
       handleToggleExploreSave,
-      nearbyMusicEvents,
       openNearbyMusicEvent,
-      savedExploreIds,
-      user?.id,
     ],
   );
 
   const topBarHeight = insets.top + 64;
-  const locationParts = useMemo(
-    () => splitHomeLocationLabel(displayLocation),
-    [displayLocation],
-  );
+  const locationParts = useAppSelector(selectHomeLocationHeader);
 
   const freshRecommendations = useMemo((): FreshRecommendationItem[] => {
     const userLatLng = canShowDistanceOnCards
@@ -1161,7 +1128,7 @@ export function HomeFeedRootScreen() {
   }, [freshRecommendations, isoCountryCode, savedIds]);
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.background }}>
+    <View className="flex-1" style={{ backgroundColor: colors.tabCanvas }}>
       {/* ===== TOP APP BAR — location + profile (reference layout) ===== */}
       <View
         style={{
@@ -1380,7 +1347,9 @@ export function HomeFeedRootScreen() {
 
         {/* Fresh recommendation carousel */}
         {!isOffline ? (
-          spotlightItems.length > 0 ? (
+          feedLoadState === "loading" && spotlightItems.length === 0 ? (
+            <HomeSpotlightSkeleton />
+          ) : spotlightItems.length > 0 ? (
             <View className="mb-6 mt-5">
               <HomeSpotlightCarousel
                 items={spotlightItems}
@@ -1392,25 +1361,27 @@ export function HomeFeedRootScreen() {
                     params: {
                       q: "",
                       title: "Fresh recommendation",
-                      countryCode: effectiveCountryCode ?? "",
+                      ...(hasActionableLocation && displayCountryCode
+                        ? { countryCode: displayCountryCode }
+                        : {}),
                     },
                   } as Href)
                 }
               />
             </View>
-          ) : (
+          ) : feedLoadState === "empty" ? (
             <View className="mb-6 mt-5 mx-4 items-center rounded-2xl px-6 py-10" style={{ backgroundColor: colors.surface }}>
               <MaterialIcons name="location-on" size={36} color={colors.iconMuted} />
               <Text
                 className="mt-3 text-center text-[14px]"
                 style={{ ...ListifyTypography.label, color: colors.textSecondary }}
               >
-                {displayLocation && displayLocation !== "Set location"
-                  ? `No listings found near ${displayLocation}`
-                  : "Set your location to see nearby listings"}
+                {hasActionableLocation && locationQueryState.label
+                  ? `No listings found near ${locationQueryState.label.split(",")[0]}`
+                  : "No listings available right now"}
               </Text>
             </View>
-          )
+          ) : null
         ) : null}
 
         {/* ===== Featured Profiles — "Artists in your City" (hidden) ===== */}
@@ -1461,6 +1432,9 @@ export function HomeFeedRootScreen() {
         ) : null} */}
 
         {/* ===== Explore Near You — image cards ===== */}
+        {!isOffline && eventsLoadState === "loading" && nearbyMusicExploreItems.length === 0 ? (
+          <HomeHorizontalSectionSkeleton titleWidth={230} />
+        ) : null}
         {!isOffline && nearbyMusicExploreItems.length > 0 ? (
           <View className="mb-8">
             <View className="mb-4 flex-row items-center justify-between px-4">
@@ -1486,6 +1460,7 @@ export function HomeFeedRootScreen() {
               data={nearbyMusicExploreItems}
               keyExtractor={exploreKeyExtractor}
               renderItem={renderExploreItem}
+              extraData={savedExploreIds}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{
                 paddingHorizontal: 16,
@@ -1501,6 +1476,9 @@ export function HomeFeedRootScreen() {
         ) : null}
 
         {/* ===== Service details — professional marketplace cards ===== */}
+        {!isOffline && servicesLoadState === "loading" && homeServiceItems.length === 0 ? (
+          <HomeServiceSectionSkeleton />
+        ) : null}
         {!isOffline && homeServiceItems.length > 0 ? (
           <View className="mb-8">
             <View className="mb-4 flex-row items-center justify-between px-4">
@@ -1541,6 +1519,9 @@ export function HomeFeedRootScreen() {
         ) : null}
 
         {/* ===== Jobs near you — horizontal job cards ===== */}
+        {!isOffline && jobsLoadState === "loading" && homeJobItems.length === 0 ? (
+          <HomeJobSectionSkeleton />
+        ) : null}
         {!isOffline && homeJobItems.length > 0 ? (
           <View className="mb-8">
             <View className="mb-4 flex-row items-center justify-between px-4">
@@ -1566,6 +1547,7 @@ export function HomeFeedRootScreen() {
               data={homeJobItems}
               keyExtractor={jobKeyExtractor}
               renderItem={renderJobItem}
+              extraData={[savedJobIds, savedIds]}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{
                 paddingHorizontal: 16,
@@ -1609,6 +1591,7 @@ export function HomeFeedRootScreen() {
               data={filteredRecentlyViewed}
               keyExtractor={recentKeyExtractor}
               renderItem={renderRecentItem}
+              extraData={savedIds}
               showsHorizontalScrollIndicator={false}
               nestedScrollEnabled
               style={{ minHeight: RECENTLY_VIEWED_ROW_HEIGHT, overflow: "visible" }}

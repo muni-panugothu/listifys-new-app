@@ -54,14 +54,14 @@ function getCardGradient(mode: ResolvedThemeMode): readonly [string, string] {
   return ["#E8FAF5", "#F5F3FF"];
 }
 
-function getNextStepTitle(
-  completion: ProfileCompletion,
-  user: AuthUser | null,
-  fallback: string,
-): string {
-  if (completion.nextStep?.label) return completion.nextStep.label;
+
+function getPrimaryNameLine(user: AuthUser | null): string {
   if (hasMeaningfulName(user)) return user!.name.trim();
-  return fallback;
+  return "Add your name";
+}
+
+function shouldShowNameAsPlaceholder(user: AuthUser | null): boolean {
+  return !hasMeaningfulName(user);
 }
 
 export function ProfileCompletionSection({
@@ -74,7 +74,10 @@ export function ProfileCompletionSection({
   const { isSelfOnline } = useOnlinePresence();
   const displayName = getProfileDisplayName(user, true);
   const contactLine = getContactLine(user);
-  const headline = getNextStepTitle(completion, user, displayName);
+  const primaryName = getPrimaryNameLine(user);
+  const nameIsPlaceholder = shouldShowNameAsPlaceholder(user);
+  const nextStepLabel = completion.nextStep?.label ?? null;
+  const incompleteCount = completion.totalCount - completion.completedCount;
 
   const ringProgress =
     completion.totalCount > 0
@@ -135,37 +138,78 @@ export function ProfileCompletionSection({
           ) : null}
 
             <View className="min-h-[58px] flex-1 justify-center">
-              <Pressable onPress={navigateToNext} className="self-start">
-                <Text
-                  className="text-[17px] leading-[22px]"
-                  style={{
-                    fontFamily: ListifyFonts.bold,
-                    color: colors.textPrimary,
-                    borderBottomWidth: 1,
-                    borderStyle: "dotted",
-                    borderBottomColor:
-                      resolvedMode === "dark" ? colors.primary : colors.textPrimary,
-                    paddingBottom: 2,
-                  }}
-                  numberOfLines={2}
-                >
-                  {headline}
-                </Text>
-              </Pressable>
+              {/* Row 1 — name left, next step right */}
+              <View className="flex-row items-start justify-between gap-3">
+                <Pressable onPress={navigateToEditProfile} className="max-w-[55%] shrink">
+                  <Text
+                    className="text-[17px] leading-[22px]"
+                    style={{
+                      fontFamily: ListifyFonts.bold,
+                      color: colors.textPrimary,
+                      borderBottomWidth: nameIsPlaceholder ? 1 : 0,
+                      borderStyle: "dotted",
+                      borderBottomColor:
+                        resolvedMode === "dark" ? colors.primary : colors.textPrimary,
+                      paddingBottom: nameIsPlaceholder ? 2 : 0,
+                    }}
+                    numberOfLines={2}
+                  >
+                    {primaryName}
+                  </Text>
+                </Pressable>
 
-              {contactLine ? (
-                <Text
-                  className="mt-1 text-[13px]"
-                  style={{
-                    fontFamily: ListifyFonts.regular,
-                    color: colors.textSecondary,
-                  }}
-                  numberOfLines={1}
-                >
-                  {contactLine}
-                </Text>
-              ) : null}
+                {nextStepLabel ? (
+                  <Pressable
+                    onPress={navigateToNext}
+                    className="max-w-[45%] shrink-0 items-end"
+                  >
+                    <Text
+                      className="text-right text-[13px] leading-[18px]"
+                      style={{
+                        fontFamily: ListifyFonts.semiBold,
+                        color: colors.primary,
+                        borderBottomWidth: 1,
+                        borderStyle: "dotted",
+                        borderBottomColor: colors.primary,
+                        paddingBottom: 2,
+                      }}
+                      numberOfLines={2}
+                    >
+                      {nextStepLabel}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
 
+              {/* Row 2 — steps left, contact right */}
+              <View className="mt-2 flex-row items-center justify-between gap-3">
+                {incompleteCount > 0 ? (
+                  <Text
+                    className="flex-1 text-[12px]"
+                    style={{
+                      fontFamily: ListifyFonts.medium,
+                      color: colors.textTertiary,
+                    }}
+                  >
+                    {incompleteCount}/{completion.totalCount} steps incomplete
+                  </Text>
+                ) : (
+                  <View className="flex-1" />
+                )}
+
+                {contactLine ? (
+                  <Text
+                    className="shrink-0 text-right text-[13px]"
+                    style={{
+                      fontFamily: ListifyFonts.regular,
+                      color: colors.textSecondary,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {contactLine}
+                  </Text>
+                ) : null}
+              </View>
             </View>
           </View>
 

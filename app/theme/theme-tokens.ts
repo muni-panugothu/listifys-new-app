@@ -89,6 +89,13 @@ export type ThemeColors = {
   bubbleThem: string;
   bubbleTextMe: string;
   bubbleTextThem: string;
+  /** Tab scenes + safe area — always matches `background`. */
+  tabCanvas: string;
+  /** Floating bottom navigation pill. */
+  floatingNav: string;
+  floatingNavBorder: string;
+  floatingNavActivePill: string;
+  floatingNavActiveBorder: string;
 };
 
 export type Theme = {
@@ -121,7 +128,7 @@ const LIGHT: ThemeColors = {
   danger: BRAND.danger,
   warning: BRAND.warning,
   success: BRAND.success,
-  statusBarBackground: "#FFFFFF",
+  statusBarBackground: "#F6F7F8",
   statusBarStyle: "dark",
   icon: "#161D1A",
   iconMuted: "#9CA3AF",
@@ -132,6 +139,11 @@ const LIGHT: ThemeColors = {
   bubbleThem: "#F1F2F4",
   bubbleTextMe: "#FFFFFF",
   bubbleTextThem: "#161D1A",
+  tabCanvas: "#F6F7F8",
+  floatingNav: "#FFFFFF",
+  floatingNavBorder: "rgba(0,0,0,0.12)",
+  floatingNavActivePill: "#E5E7EB",
+  floatingNavActiveBorder: "rgba(0,0,0,0.10)",
 };
 
 const DARK: ThemeColors = {
@@ -171,6 +183,11 @@ const DARK: ThemeColors = {
   bubbleThem: "#22282F",
   bubbleTextMe: "#FFFFFF",
   bubbleTextThem: "#F5F7FA",
+  tabCanvas: "#0D0F12",
+  floatingNav: "#1E232A",
+  floatingNavBorder: "rgba(255,255,255,0.16)",
+  floatingNavActivePill: "rgba(255,255,255,0.14)",
+  floatingNavActiveBorder: "rgba(255,255,255,0.22)",
 };
 
 export const LightTheme: Theme = { mode: "light", colors: LIGHT };
