@@ -421,9 +421,10 @@ async function getActiveHold(holdId, userId) {
   return hold;
 }
 
-async function buildPayuPaymentExtras(order, userId) {
+async function buildPayuPaymentExtras(order, userId, apiBase) {
   const user = await User.findById(userId).select("name email phone").lean();
   const productinfo = `${order.ticketTypeName} x ${order.quantity}`.slice(0, 100);
+  const checkoutToken = createCheckoutToken(order._id, userId);
   const paymentSession = payuService.buildPaymentSession({
     orderId: order._id,
     txnid: order.bookingId,
@@ -435,24 +436,28 @@ async function buildPayuPaymentExtras(order, userId) {
       (user?.phone || "9999999999").replace(/\D/g, "").slice(-10) || "9999999999",
   });
 
+  const launchBase = (apiBase || payuService.getCallbackBaseUrl()).replace(/\/$/, "");
+  const launchUrl = `${launchBase}/api/event-tickets/checkout/${order._id}/page?token=${encodeURIComponent(checkoutToken)}`;
+
   return {
     paymentProvider: "payu",
     razorpayKeyId: payuService.getMerchantKey(),
     razorpayOrderId: order.bookingId,
     amountPaise: order.totalAmountPaise,
-    checkoutToken: createCheckoutToken(order._id, userId),
+    checkoutToken,
     paymentSession,
+    launchUrl,
   };
 }
 
-async function createCheckoutOrder({ userId, holdId, idempotencyKey }) {
+async function createCheckoutOrder({ userId, holdId, idempotencyKey, apiBase }) {
   if (idempotencyKey) {
     const existing = await EventOrder.findOne({ idempotencyKey });
     if (existing) {
       const pending =
         existing.totalAmountPaise > 0 && existing.status === "PAYMENT_PROCESSING";
       if (pending && (existing.paymentProvider || getActivePaymentProvider()) === "payu") {
-        return formatOrderResponse(existing, await buildPayuPaymentExtras(existing, userId));
+        return formatOrderResponse(existing, await buildPayuPaymentExtras(existing, userId, apiBase));
       }
       return formatOrderResponse(existing, pending
         ? {
@@ -538,7 +543,7 @@ async function createCheckoutOrder({ userId, holdId, idempotencyKey }) {
   }
 
   if (paymentProvider === "payu") {
-    return formatOrderResponse(order, await buildPayuPaymentExtras(order, userId));
+    return formatOrderResponse(order, await buildPayuPaymentExtras(order, userId, apiBase));
   }
 
   return formatOrderResponse(order, {
@@ -750,6 +755,7 @@ function formatOrderResponse(order, extras = {}) {
           amountPaise: extras.amountPaise,
           checkoutToken: extras.checkoutToken,
           session: extras.paymentSession || null,
+          launchUrl: extras.launchUrl || null,
         }
       : null,
   };

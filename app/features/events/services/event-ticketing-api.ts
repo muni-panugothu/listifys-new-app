@@ -92,6 +92,7 @@ export type CheckoutOrderResponse = {
       actionUrl: string;
       fields: Record<string, string>;
     } | null;
+    launchUrl?: string | null;
   } | null;
 };
 

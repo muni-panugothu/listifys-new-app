@@ -173,8 +173,8 @@ export function EventCheckoutScreen() {
       }
 
       const session = checkout.payment?.session;
-      const checkoutToken = checkout.payment?.checkoutToken;
-      if (!session || !checkoutToken || checkout.payment?.provider !== "payu") {
+      const launchUrl = checkout.payment?.launchUrl;
+      if (!session || !launchUrl || checkout.payment?.provider !== "payu") {
         showErrorToast("Payment unavailable", "Payment gateway is not configured.");
         setPaymentPhase("idle");
         payLockRef.current = false;
@@ -190,7 +190,7 @@ export function EventCheckoutScreen() {
       }
 
       setPaymentPhase("checkout");
-      const browserOutcome = await openPayuCheckoutBrowser(order.id, checkoutToken);
+      const browserOutcome = await openPayuCheckoutBrowser(launchUrl, order.id);
       if (browserOutcome.status === "success") {
         await finalizePayment(order.id, browserOutcome.result);
         return;

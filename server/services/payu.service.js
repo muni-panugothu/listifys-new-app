@@ -228,13 +228,30 @@ function buildHostedCheckoutHtml(params) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PayU</title>
+  <title>PayU Checkout</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f6f7f8; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .card { background: #fff; border-radius: 16px; padding: 28px 24px; max-width: 360px; width: 90%; text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,.08); }
+    h1 { font-size: 18px; margin: 0 0 8px; color: #111; }
+    p { font-size: 14px; color: #666; margin: 0 0 20px; line-height: 1.5; }
+    button { width: 100%; background: #27BB97; color: #fff; border: 0; border-radius: 999px; padding: 14px 16px; font-size: 16px; font-weight: 600; cursor: pointer; }
+  </style>
 </head>
-<body style="margin:0;background:#fff">
-  <form id="payuForm" method="post" action="${escapeHtml(session.actionUrl)}">
-    ${inputs}
-  </form>
-  <script>document.getElementById("payuForm").submit();<\/script>
+<body>
+  <div class="card">
+    <h1>Continue to PayU</h1>
+    <p>Secure payment for your Listifys ticket booking.</p>
+    <form id="payuForm" method="post" action="${escapeHtml(session.actionUrl)}">
+      ${inputs}
+      <button type="submit">Pay with PayU</button>
+    </form>
+  </div>
+  <script>
+    setTimeout(function () {
+      var form = document.getElementById("payuForm");
+      if (form) form.submit();
+    }, 400);
+  <\/script>
 </body>
 </html>`;
 }

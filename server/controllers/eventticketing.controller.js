@@ -13,6 +13,18 @@ function handleError(res, err) {
   });
 }
 
+/** Same host that created the checkout token (must match JWT signing server). */
+function resolveRequestApiBase(req) {
+  const forwardedProto = req.headers["x-forwarded-proto"];
+  const forwardedHost = req.headers["x-forwarded-host"];
+  const proto = forwardedProto ? String(forwardedProto).split(",")[0].trim() : req.protocol;
+  const host = forwardedHost ? String(forwardedHost).split(",")[0].trim() : req.get("host");
+  if (host) {
+    return `${proto}://${host}`.replace(/\/$/, "");
+  }
+  return null;
+}
+
 exports.getAvailability = async (req, res) => {
   try {
     const data = await ticketing.getAvailability(req.params.eventId);
@@ -45,6 +57,7 @@ exports.createOrder = async (req, res) => {
       userId: req.user._id,
       holdId,
       idempotencyKey,
+      apiBase: resolveRequestApiBase(req),
     });
     return res.status(201).json({ success: true, data });
   } catch (err) {

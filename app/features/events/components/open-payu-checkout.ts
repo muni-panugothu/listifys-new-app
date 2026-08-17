@@ -1,7 +1,6 @@
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 
-import { getPayuLaunchBaseUrl } from "@/constants/payment";
 import type { PayuCheckoutReturn } from "@/features/events/utils/payu-checkout-html";
 
 export type PayuCheckoutOutcome =
@@ -10,18 +9,16 @@ export type PayuCheckoutOutcome =
   | { status: "error"; message: string };
 
 /**
- * Fallback when react-native-webview is not in the dev client binary.
- * Opens PayU via HTTPS Render launch page (not LAN / backend IP).
+ * Browser fallback when react-native-webview is not in the dev client yet.
+ * Uses the launchUrl returned by the same backend that created the order.
  */
 export async function openPayuCheckoutBrowser(
+  launchUrl: string,
   orderId: string,
-  checkoutToken: string,
 ): Promise<PayuCheckoutOutcome> {
-  const launchBase = getPayuLaunchBaseUrl();
-  const checkoutUrl = `${launchBase}/api/event-tickets/checkout/${orderId}/page?token=${encodeURIComponent(checkoutToken)}`;
   const redirectUrl = Linking.createURL("event-payment");
 
-  const session = await WebBrowser.openAuthSessionAsync(checkoutUrl, redirectUrl, {
+  const session = await WebBrowser.openAuthSessionAsync(launchUrl, redirectUrl, {
     showInRecents: false,
     preferEphemeralSession: true,
   });
