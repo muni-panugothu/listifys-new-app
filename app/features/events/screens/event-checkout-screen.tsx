@@ -17,8 +17,6 @@ import {
   createCheckoutOrder,
   createTicketHold,
   fetchEventAvailability,
-  verifyEventPayment,
-  verifyInAppPayuOrder,
   type EventAvailability,
   type TicketHoldResponse,
 } from "@/features/events/services/event-ticketing-api";
@@ -26,6 +24,7 @@ import type {
   PayuCheckoutReturn,
   PayuPaymentSession,
 } from "@/features/events/utils/payu-checkout-html";
+import { setPendingTicketPreview, patchPendingTicketPayment } from "@/features/events/utils/pending-ticket-preview";
 import { ListifyFonts } from "@/constants/typography";
 import { formatPrice } from "@/lib/currency";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
@@ -116,74 +115,22 @@ export function EventCheckoutScreen() {
     }
   }, [eventId, quantity, selectedTypeId]);
 
-  const finalizeInAppPayment = useCallback(
-    async (orderId: string) => {
+  const goToPendingTicket = useCallback(
+    (orderId: string) => {
       setPayuSession(null);
-      setPaymentPhase("verifying");
-      try {
-        let confirmed = null;
-        let lastError: Error | null = null;
-        for (let attempt = 0; attempt < 4; attempt += 1) {
-          try {
-            confirmed = await verifyInAppPayuOrder(orderId);
-            break;
-          } catch (e) {
-            lastError = e instanceof Error ? e : new Error("Verification failed");
-            if (attempt < 3) {
-              await new Promise((resolve) => setTimeout(resolve, 2500));
-            }
-          }
-        }
-        if (!confirmed) {
-          throw lastError ?? new Error("Verification failed");
-        }
-        showSuccessToast("Payment successful", "Your ticket is ready");
-        const ticketId = confirmed.ticket?.id;
-        if (ticketId) {
-          router.replace(`/event-ticket?ticketId=${ticketId}` as Href);
-        }
-      } catch (e) {
-        showErrorToast(
-          "Verification failed",
-          e instanceof Error ? e.message : "Please contact support",
-        );
-      } finally {
-        activeOrderIdRef.current = null;
-        setPaymentPhase("idle");
-        payLockRef.current = false;
-      }
+      activeOrderIdRef.current = null;
+      setPaymentPhase("idle");
+      payLockRef.current = false;
+      router.replace(`/event-ticket?orderId=${orderId}&pending=1` as Href);
     },
     [router],
   );
 
-  const finalizePayment = useCallback(
-    async (orderId: string, result: PayuCheckoutReturn) => {
-      setPaymentPhase("verifying");
-      try {
-        const confirmed = await verifyEventPayment({
-          orderId,
-          razorpayOrderId: result.razorpay_order_id,
-          razorpayPaymentId: result.razorpay_payment_id,
-          razorpaySignature: result.razorpay_signature,
-        });
-        showSuccessToast("Payment successful", "Your ticket is ready");
-        const ticketId = confirmed.ticket?.id;
-        if (ticketId) {
-          router.replace(`/event-ticket?ticketId=${ticketId}` as Href);
-        }
-      } catch (e) {
-        showErrorToast(
-          "Verification failed",
-          e instanceof Error ? e.message : "Please contact support",
-        );
-      } finally {
-        setPayuSession(null);
-        activeOrderIdRef.current = null;
-        setPaymentPhase("idle");
-        payLockRef.current = false;
-      }
+  const finalizeInAppPayment = useCallback(
+    (orderId: string) => {
+      goToPendingTicket(orderId);
     },
-    [router],
+    [goToPendingTicket],
   );
 
   const handlePay = useCallback(async () => {
@@ -219,6 +166,26 @@ export function EventCheckoutScreen() {
       }
 
       activeOrderIdRef.current = order.id;
+      setPendingTicketPreview({
+        orderId: order.id,
+        bookingId: order.bookingId,
+        quantity: order.quantity,
+        ticketTypeName: order.ticketTypeName,
+        totalAmount: order.totalAmount,
+        currency: order.currency,
+        event: order.eventSnapshot ?? {
+          title: availability?.event.title ?? "Event",
+          venue: availability?.event.venue,
+          location: availability?.event.location,
+          eventDate: availability?.event.eventDate,
+          eventTime: availability?.event.eventTime,
+          image: availability?.event.image ?? undefined,
+        },
+        cancellationPolicy: activeHold.cancellationPolicy,
+        payment: {
+          razorpayOrderId: order.bookingId,
+        },
+      });
       setPayuSession(session);
       setPaymentPhase("checkout");
       return;
@@ -233,13 +200,14 @@ export function EventCheckoutScreen() {
   const onPayuSuccess = useCallback(
     (result: PayuCheckoutReturn) => {
       const orderId = activeOrderIdRef.current || result.orderId;
-      setPayuSession(null);
-      setPaymentPhase("verifying");
-      setTimeout(() => {
-        void finalizePayment(orderId, result);
-      }, 400);
+      patchPendingTicketPayment(orderId, {
+        razorpayOrderId: result.razorpay_order_id,
+        razorpayPaymentId: result.razorpay_payment_id,
+        razorpaySignature: result.razorpay_signature,
+      });
+      goToPendingTicket(orderId);
     },
-    [finalizePayment],
+    [goToPendingTicket],
   );
 
   const onPayuCancel = useCallback((message?: string) => {

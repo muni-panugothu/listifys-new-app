@@ -145,9 +145,72 @@ export function isPayu3dsChallengeUrl(url: string) {
   );
 }
 
+/** Parse PayU params when they appear on the surl/furl URL (GET redirect). */
+export function parsePayuBridgeReturnUrl(
+  url: string,
+): PayuCheckoutReturn | "cancelled" | null {
+  if (!isPayuReturnBridgeUrl(url)) return null;
+  if (isPayuFailureBridgeUrl(url)) return "cancelled";
+
+  try {
+    const query = url.includes("?") ? url.slice(url.indexOf("?") + 1) : "";
+    if (!query) return null;
+    const params = new URLSearchParams(query);
+    const status = (params.get("status") || "").toLowerCase();
+    if (status && status !== "success") return "cancelled";
+
+    const orderId = params.get("udf1");
+    const paymentId = params.get("mihpayid");
+    const txnId = params.get("txnid");
+    const signature = params.get("hash");
+
+    if (orderId && paymentId && txnId && signature) {
+      return {
+        orderId,
+        razorpay_payment_id: paymentId,
+        razorpay_order_id: txnId,
+        razorpay_signature: signature,
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+/**
+ * Runs before page JS — intercepts listifyapp:// redirects so Android never
+ * launches an external intent (which kills the app inside WebView).
+ */
+export function buildPayuDeepLinkGuardScript() {
+  return `(function(){
+    function capture(url){
+      if (typeof url!=="string"||url.indexOf("listifyapp://event-payment")!==0) return false;
+      var q=url.indexOf("?")>=0?url.slice(url.indexOf("?")+1):"";
+      try{if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage(JSON.stringify({type:"payu-return",query:q}));}}catch(e){}
+      return true;
+    }
+    try{
+      var rep=window.location.replace.bind(window.location);
+      var asn=window.location.assign.bind(window.location);
+      window.location.replace=function(u){if(capture(u))return;return rep(u);};
+      window.location.assign=function(u){if(capture(u))return;return asn(u);};
+      var desc=Object.getOwnPropertyDescriptor(window.location.__proto__,"href");
+      if(desc&&desc.set){
+        Object.defineProperty(window.location,"href",{
+          set:function(u){if(capture(u))return;return desc.set.call(window.location,u);},
+          get:function(){return desc.get.call(window.location);}
+        });
+      }
+    }catch(e){}
+  })();true;`;
+}
+
 /** Injected into PayU WebView — fills test OTP 123456 and taps Pay on 3DS simulator. */
 export function buildPayuTestOtpAutoSubmitScript() {
-  return `(function(){var OTP="123456",runs=0,timer=null;function looksLikeOtp(){try{var t=(document.title||"").toUpperCase();var b=(document.body&&document.body.innerText||"").toUpperCase();return t.indexOf("3DS")>=0||b.indexOf("3DS2")>=0||b.indexOf("CYBER")>=0||b.indexOf("ENTER THE OTP")>=0||b.indexOf("PLEASE ENTER THE OTP")>=0;}catch(e){return false;}}function notify(){try{if(looksLikeOtp()&&window.ReactNativeWebView){window.ReactNativeWebView.postMessage("payu-otp-challenge");}}catch(e){}}function run(){runs+=1;if(runs>40&&timer){clearInterval(timer);timer=null;return;}notify();if(!looksLikeOtp())return;var inputs=document.querySelectorAll("input");for(var i=0;i<inputs.length;i++){var el=inputs[i];var type=(el.type||"text").toLowerCase();if(type==="hidden"||type==="submit"||type==="button")continue;el.value=OTP;el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));}var nodes=document.querySelectorAll("button,input[type=submit],a");for(var j=0;j<nodes.length;j++){var btn=nodes[j];var label=(btn.innerText||btn.value||"").trim().toUpperCase();if(label==="PAY"||label.indexOf("SUBMIT")>=0){btn.click();break;}}}run();timer=setInterval(run,450);})();true;`;
+  return `(function(){var OTP="123456",attempt=0;function looksLikeOtp(){try{var t=(document.title||"").toUpperCase();var b=(document.body&&document.body.innerText||"").toUpperCase();return t.indexOf("3DS")>=0||b.indexOf("3DS2")>=0||b.indexOf("CYBER")>=0||b.indexOf("SIMULATOR")>=0||b.indexOf("ENTER THE OTP")>=0||b.indexOf("PLEASE ENTER THE OTP")>=0;}catch(e){return false;}}function notify(){try{if(looksLikeOtp()&&window.ReactNativeWebView){window.ReactNativeWebView.postMessage("payu-otp-challenge");}}catch(e){}}function submitted(){try{if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage("payu-otp-submitted");}}catch(e){}}function run(){attempt+=1;if(attempt>30)return;notify();if(looksLikeOtp()){var inputs=document.querySelectorAll("input");for(var i=0;i<inputs.length;i++){var el=inputs[i];var type=(el.type||"text").toLowerCase();if(type==="hidden"||type==="submit"||type==="button")continue;el.value=OTP;el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));}var nodes=document.querySelectorAll("button,input[type=submit],a");for(var j=0;j<nodes.length;j++){var btn=nodes[j];var label=(btn.innerText||btn.value||"").trim().toUpperCase();if(label==="PAY"||label.indexOf("SUBMIT")>=0){submitted();btn.click();return;}}}setTimeout(run,300);}run();})();true;`;
 }
 
 export const PAYU_WEBVIEW_OTP_CHALLENGE_MESSAGE = "payu-otp-challenge";
+export const PAYU_WEBVIEW_OTP_SUBMITTED_MESSAGE = "payu-otp-submitted";

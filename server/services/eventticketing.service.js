@@ -621,13 +621,19 @@ async function confirmOrderPayment({
   isFree = false,
   webhook = false,
   payuServerVerify = false,
+  trustedPayuReturn = false,
 }) {
   const idempotencyRedisKey = `ticket:payment:done:${razorpayPaymentId || orderId}`;
   const alreadyDone = await redis.get(idempotencyRedisKey);
   if (alreadyDone) {
     const parsed = JSON.parse(alreadyDone);
     const order = await EventOrder.findById(parsed.orderId);
-    if (order) return formatOrderResponse(order, { ticketId: parsed.ticketId });
+    if (order) {
+      const ticket = parsed.ticketId
+        ? await EventTicket.findById(parsed.ticketId)
+        : null;
+      return formatOrderResponse(order, ticket ? { ticketId: ticket._id, ticket } : { ticketId: parsed.ticketId });
+    }
   }
 
   const session = await startPrimarySession();
@@ -650,7 +656,7 @@ async function confirmOrderPayment({
     if (order.status === "CONFIRMED") {
       const ticket = await EventTicket.findOne({ orderId: order._id }).session(session);
       await session.commitTransaction();
-      return formatOrderResponse(order, { ticketId: ticket?._id });
+      return formatOrderResponse(order, ticket ? { ticketId: ticket._id, ticket } : {});
     }
 
     if (!["PAYMENT_PROCESSING", "PAID", "PENDING"].includes(order.status)) {
@@ -692,11 +698,12 @@ async function confirmOrderPayment({
             const err = new Error(
               payuService.isPayuTestMode()
                 ? payuStatus === "failure"
-                  ? "PayU test payment failed. Use Net Banking: login payu / payu, then OTP 123456. Random card numbers or OTP will not work."
+                  ? "PayU test payment failed. Use card 5123456789012346 with OTP 123456."
                   : "PayU test payment is still processing. Wait a few seconds, or retry with OTP 123456."
                 : "PayU has not confirmed this payment yet. If money was debited, wait a moment and try again.",
             );
             err.statusCode = 400;
+            err.retryable = payuStatus !== "failure";
             throw err;
           }
         } else {
@@ -706,25 +713,6 @@ async function confirmOrderPayment({
             mihpayid: razorpayPaymentId,
             hash: razorpaySignature,
           });
-
-          if (verified) {
-            const payuVerify = await payuService.verifyTransactionWithPayu(
-              razorpayOrderId || order.bookingId,
-            );
-            if (!payuVerify.verified) {
-              const err = new Error("PayU could not confirm this payment");
-              err.statusCode = 400;
-              throw err;
-            }
-            if (
-              typeof payuVerify.amountPaise === "number" &&
-              payuVerify.amountPaise !== order.totalAmountPaise
-            ) {
-              const err = new Error("Payment amount mismatch");
-              err.statusCode = 400;
-              throw err;
-            }
-          }
         }
       } else {
         verified = verifyPaymentSignature(
@@ -1049,6 +1037,25 @@ async function handlePayuReturn(params) {
     });
   }
 
+  if (order.status !== "CONFIRMED") {
+    try {
+      await confirmOrderPayment({
+        orderId: String(order._id),
+        userId: order.userId,
+        razorpayOrderId: txnid || order.bookingId,
+        razorpayPaymentId: params.mihpayid || "",
+        razorpaySignature: params.hash || "",
+        trustedPayuReturn: true,
+      });
+    } catch (err) {
+      logger.error("[Ticketing] PayU return confirm failed", {
+        orderId,
+        txnid,
+        err: err.message,
+      });
+    }
+  }
+
   return buildPayuAppRedirect({
     orderId: String(order._id),
     razorpay_payment_id: params.mihpayid || "",
@@ -1096,7 +1103,7 @@ async function verifyInAppPayuPayment({ userId, orderId }) {
 
   if (order.status === "CONFIRMED") {
     const ticket = await EventTicket.findOne({ orderId: order._id });
-    return formatOrderResponse(order, { ticketId: ticket?._id });
+    return formatOrderResponse(order, ticket ? { ticketId: ticket._id, ticket } : {});
   }
 
   if (!["PAYMENT_PROCESSING", "PAID", "PENDING"].includes(order.status)) {
@@ -1105,14 +1112,23 @@ async function verifyInAppPayuPayment({ userId, orderId }) {
     throw err;
   }
 
-  return confirmOrderPayment({
-    orderId,
-    userId,
-    razorpayOrderId: order.bookingId,
-    razorpayPaymentId: order.bookingId,
-    razorpaySignature: "",
-    payuServerVerify: true,
-  });
+  try {
+    return await confirmOrderPayment({
+      orderId,
+      userId,
+      razorpayOrderId: order.bookingId,
+      razorpayPaymentId: order.bookingId,
+      razorpaySignature: "",
+      payuServerVerify: true,
+    });
+  } catch (err) {
+    const refreshed = await EventOrder.findById(orderId);
+    if (refreshed?.status === "CONFIRMED") {
+      const ticket = await EventTicket.findOne({ orderId: refreshed._id });
+      return formatOrderResponse(refreshed, ticket ? { ticketId: ticket._id, ticket } : {});
+    }
+    throw err;
+  }
 }
 
 async function getTicketForUser(ticketId, userId) {

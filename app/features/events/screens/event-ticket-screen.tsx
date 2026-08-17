@@ -18,8 +18,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   cancelEventTicket,
   fetchTicketDetail,
+  verifyEventPayment,
+  verifyInAppPayuOrder,
+  type CheckoutOrderResponse,
   type TicketDetail,
 } from "@/features/events/services/event-ticketing-api";
+import {
+  buildTicketDetailFromCheckout,
+  buildTicketDetailFromPreview,
+  getPendingTicketPreview,
+  type PendingTicketPreview,
+} from "@/features/events/utils/pending-ticket-preview";
 import { ListifyFonts } from "@/constants/typography";
 import { resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
 import { formatPrice } from "@/lib/currency";
@@ -48,7 +57,11 @@ function TicketNotch({ side, color }: { side: "left" | "right"; color: string })
 }
 
 export function EventTicketScreen() {
-  const { ticketId } = useLocalSearchParams<{ ticketId: string }>();
+  const { ticketId, orderId, pending } = useLocalSearchParams<{
+    ticketId?: string;
+    orderId?: string;
+    pending?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
@@ -56,10 +69,46 @@ export function EventTicketScreen() {
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<TicketDetail | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [pendingPreview, setPendingPreview] = useState<PendingTicketPreview | null>(null);
+  const isPending = pending === "1" && Boolean(orderId) && !ticketId;
 
   const pageBg = isDark ? "#2A2A2A" : "#D8D8DC";
   const ticketSurface = isDark ? colors.surfaceElevated : "#FFFFFF";
   const divider = isDark ? "rgba(255,255,255,0.08)" : "#ECECEC";
+
+  const applyConfirmedTicket = useCallback(
+    async (confirmed: CheckoutOrderResponse, preview: PendingTicketPreview | null) => {
+      const fromCheckout = buildTicketDetailFromCheckout(confirmed, preview);
+      if (fromCheckout) {
+        setDetail(fromCheckout);
+        setQrLoading(false);
+        setPendingPreview(null);
+        return;
+      }
+
+      const confirmedTicketId = confirmed.ticket?.id;
+      if (!confirmedTicketId) return;
+
+      const data = await fetchTicketDetail(confirmedTicketId);
+      setDetail(data);
+      setQrLoading(false);
+      setPendingPreview(null);
+    },
+    [],
+  );
+
+  const isRetryableVerifyError = useCallback((error: unknown, attempt: number) => {
+    if (attempt < 10) return true;
+    if (!(error instanceof Error)) return true;
+    const message = error.message.toLowerCase();
+    if (message.includes("still processing")) return true;
+    if (message.includes("not confirmed")) return true;
+    if (message.includes("wait a moment")) return true;
+    if (message.includes("wait a few seconds")) return true;
+    if (message.includes("could not confirm")) return true;
+    return false;
+  }, []);
 
   const load = useCallback(async () => {
     if (!ticketId) return;
@@ -74,9 +123,75 @@ export function EventTicketScreen() {
     }
   }, [ticketId]);
 
+  const confirmPendingOrder = useCallback(async () => {
+    if (!orderId) return;
+
+    const preview = getPendingTicketPreview(orderId);
+    if (preview) {
+      setPendingPreview(preview);
+      setDetail(buildTicketDetailFromPreview(preview));
+      setLoading(false);
+      setQrLoading(true);
+    }
+
+    const hasPaymentProof = Boolean(
+      preview?.payment?.razorpayPaymentId && preview?.payment?.razorpaySignature,
+    );
+
+    if (!hasPaymentProof) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        const livePreview = getPendingTicketPreview(orderId) ?? preview;
+        const payment = livePreview?.payment;
+        const canVerifyWithHash = Boolean(
+          payment?.razorpayPaymentId &&
+            payment?.razorpaySignature &&
+            payment?.razorpayOrderId,
+        );
+
+        const confirmed = canVerifyWithHash
+          ? await verifyEventPayment({
+              orderId,
+              razorpayOrderId: payment!.razorpayOrderId,
+              razorpayPaymentId: payment!.razorpayPaymentId!,
+              razorpaySignature: payment!.razorpaySignature!,
+            })
+          : await verifyInAppPayuOrder(orderId);
+
+        if (confirmed.order?.status === "CONFIRMED" || confirmed.ticket?.id) {
+          await applyConfirmedTicket(confirmed, livePreview);
+          return;
+        }
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error("Verification failed");
+        if (!isRetryableVerifyError(e, attempt)) break;
+        if (attempt < 19) {
+          await new Promise((resolve) => setTimeout(resolve, 600 + attempt * 300));
+        }
+      }
+    }
+
+    showErrorToast(
+      "Ticket not ready",
+      lastError?.message?.includes("payment failed")
+        ? "Payment was not completed. Enter OTP 123456 on the PayU screen and tap PAY, then try booking again."
+        : lastError?.message ?? "Payment is still processing. Check My Tickets shortly.",
+    );
+    setQrLoading(false);
+    router.back();
+  }, [applyConfirmedTicket, isRetryableVerifyError, orderId, router]);
+
   useEffect(() => {
+    if (isPending) {
+      void confirmPendingOrder();
+      return;
+    }
     void load();
-  }, [load]);
+  }, [confirmPendingOrder, isPending, load]);
 
   const handleShare = useCallback(async () => {
     if (!detail) return;
@@ -172,10 +287,18 @@ export function EventTicketScreen() {
   }
 
   const { ticket, event, order } = detail;
+  const cancellationPolicy = detail.cancellationPolicy ?? pendingPreview?.cancellationPolicy;
   const coverUrl = resolveAbsoluteMediaUrl(event?.image) ?? event?.image ?? "";
   const isInvalid = ["CANCELLED", "REFUNDED", "EXPIRED"].includes(ticket.status);
   const isCheckedIn = ticket.status === "CHECKED_IN";
-  const statusLabel = isCheckedIn ? "CHECKED IN" : isInvalid ? ticket.status : "CONFIRMED";
+  const statusLabel = qrLoading
+    ? "CONFIRMING"
+    : isCheckedIn
+      ? "CHECKED IN"
+      : isInvalid
+        ? ticket.status
+        : "CONFIRMED";
+  const showQr = Boolean(ticket.qrPayload) && !qrLoading;
 
   return (
     <Modal visible animationType="slide" transparent onRequestClose={() => router.back()}>
@@ -273,13 +396,21 @@ export function EventTicketScreen() {
             <View style={{ flexDirection: "row", padding: 16, gap: 16, alignItems: "center" }}>
               <View
                 style={{
+                  width: 140,
+                  height: 140,
                   padding: 10,
                   backgroundColor: "#FFFFFF",
                   borderRadius: 8,
+                  alignItems: "center",
+                  justifyContent: "center",
                   opacity: isInvalid ? 0.35 : 1,
                 }}
               >
-                <TicketQrCode value={ticket.qrPayload} size={120} />
+                {showQr ? (
+                  <TicketQrCode value={ticket.qrPayload} size={120} />
+                ) : (
+                  <ActivityIndicator size="large" color={colors.primary} />
+                )}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontFamily: ListifyFonts.regular, fontSize: 12, color: colors.textSecondary }}>
@@ -305,8 +436,8 @@ export function EventTicketScreen() {
             {/* Cancellation banner */}
             <View style={{ paddingVertical: 12, paddingHorizontal: 16, backgroundColor: isDark ? "rgba(255,255,255,0.04)" : "#F3F4F6", borderTopWidth: 1, borderTopColor: divider }}>
               <Text style={{ textAlign: "center", fontFamily: ListifyFonts.medium, fontSize: 13, color: colors.textSecondary }}>
-                {detail.cancellationPolicy?.allowed
-                  ? `Cancellation allowed · ${detail.cancellationPolicy.refundPercentage}% refund`
+                {cancellationPolicy?.allowed
+                  ? `Cancellation allowed · ${cancellationPolicy.refundPercentage}% refund`
                   : "Cancellation not available for this venue."}
               </Text>
             </View>
@@ -356,7 +487,7 @@ export function EventTicketScreen() {
               <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 15, color: colors.textPrimary }}>Share on WhatsApp</Text>
             </Pressable>
 
-            {detail.cancellationPolicy?.allowed && ticket.status === "ACTIVE" ? (
+            {cancellationPolicy?.allowed && ticket.status === "ACTIVE" && !qrLoading ? (
               <Pressable
                 onPress={handleCancel}
                 disabled={cancelling}

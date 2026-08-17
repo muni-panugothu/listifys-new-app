@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   BackHandler,
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -13,13 +12,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  buildPayuDeepLinkGuardScript,
   buildPayuLaunchHtml,
-  buildPayuTestOtpAutoSubmitScript,
-  isPayu3dsChallengeUrl,
   isPayuFailureBridgeUrl,
   isPayuHostedUrl,
-  isPayuReturnInProgress,
-  PAYU_WEBVIEW_OTP_CHALLENGE_MESSAGE,
+  isPayuSuccessBridgeUrl,
+  parsePayuBridgeReturnUrl,
   parsePayuReturnUrl,
   parsePayuWebViewReturnMessage,
   shouldBlockWebViewNavigation,
@@ -47,14 +45,13 @@ export function PayuCheckoutModal({
   onCancel,
 }: PayuCheckoutModalProps) {
   const insets = useSafeAreaInsets();
-  const [connecting, setConnecting] = useState(true);
-  const [connectingText, setConnectingText] = useState("Loading PayU checkout…");
+  const [bootLoading, setBootLoading] = useState(true);
+  const [confirming, setConfirming] = useState(false);
+  const [statusText, setStatusText] = useState("Loading PayU checkout…");
   const handledRef = useRef(false);
   const paymentStartedRef = useRef(false);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const webViewRef = useRef<{ injectJavaScript: (script: string) => void } | null>(null);
-  const [hideChallengeUi, setHideChallengeUi] = useState(false);
-  const [overrideUri, setOverrideUri] = useState<string | null>(null);
+  const webViewRef = useRef<{ injectJavaScript: (script: string) => void; stopLoading?: () => void } | null>(null);
   const hasNativeWebView = isWebViewNativeAvailable();
   const WebViewComponent = useMemo(
     () => (visible && hasNativeWebView ? getLazyWebViewModule()?.WebView ?? null : null),
@@ -66,22 +63,16 @@ export function PayuCheckoutModal({
     [session],
   );
 
-  const webSource = useMemo(() => {
-    if (overrideUri) return { uri: overrideUri };
-    if (html && session) return { html, baseUrl: session.actionUrl };
-    return null;
-  }, [overrideUri, html, session]);
-
   const resolvedOrderId = _orderId || session?.fields?.udf1 || null;
+  const deepLinkGuardScript = useMemo(() => buildPayuDeepLinkGuardScript(), []);
 
   useEffect(() => {
     if (!visible) {
       handledRef.current = false;
       paymentStartedRef.current = false;
-      setConnecting(true);
-      setConnectingText("Loading PayU checkout…");
-      setHideChallengeUi(false);
-      setOverrideUri(null);
+      setBootLoading(true);
+      setConfirming(false);
+      setStatusText("Loading PayU checkout…");
       if (fallbackTimerRef.current) {
         clearTimeout(fallbackTimerRef.current);
         fallbackTimerRef.current = null;
@@ -114,25 +105,28 @@ export function PayuCheckoutModal({
         fallbackTimerRef.current = null;
       }
       if (result === "cancelled") {
+        webViewRef.current?.stopLoading?.();
         onCancel(message);
         return;
       }
+      setConfirming(true);
+      setStatusText("Generating your ticket…");
       onSuccess(result);
     },
     [onCancel, onSuccess],
   );
 
-  const scheduleServerVerifyFallback = useCallback(
+  const scheduleLateFallback = useCallback(
     (targetOrderId: string) => {
-      if (handledRef.current || fallbackTimerRef.current) return;
+      if (handledRef.current || fallbackTimerRef.current || !targetOrderId) return;
       fallbackTimerRef.current = setTimeout(() => {
         fallbackTimerRef.current = null;
-        if (handledRef.current || !targetOrderId) return;
+        if (handledRef.current) return;
         handledRef.current = true;
-        setConnecting(true);
-        setConnectingText("Confirming payment…");
+        setConfirming(true);
+        setStatusText("Generating your ticket…");
         onInAppVerified(targetOrderId);
-      }, 8_000);
+      }, 20_000);
     },
     [onInAppVerified],
   );
@@ -147,9 +141,19 @@ export function PayuCheckoutModal({
         finish(
           "cancelled",
           session?.testMode
-            ? "Payment failed. In test mode use login payu / payu and OTP 123456."
+            ? "Payment failed. Use card 5123456789012346, then enter OTP 123456 on the next screen."
             : "Payment failed or was cancelled",
         );
+        return;
+      }
+
+      const bridgeParsed = parsePayuBridgeReturnUrl(url);
+      if (bridgeParsed === "cancelled") {
+        finish("cancelled");
+        return;
+      }
+      if (bridgeParsed) {
+        finish(bridgeParsed);
         return;
       }
 
@@ -165,198 +169,177 @@ export function PayuCheckoutModal({
     [finish, session?.testMode],
   );
 
-  const maybeAutoCompleteTestOtp = useCallback(
-    (url: string) => {
-      if (!session?.testAutoOtp) return;
-      if (isPayu3dsChallengeUrl(url)) {
-        setHideChallengeUi(true);
-        setConnecting(true);
-        setConnectingText("Completing payment…");
-        webViewRef.current?.injectJavaScript(buildPayuTestOtpAutoSubmitScript());
-      } else if (isPayuHostedUrl(url) && !isPayuReturnInProgress(url, paymentStartedRef.current)) {
-        setHideChallengeUi(false);
-      }
-    },
-    [session?.testAutoOtp],
-  );
-
   const notePayuActivity = useCallback(
     (url: string) => {
       if (isPayuHostedUrl(url)) {
         paymentStartedRef.current = true;
-        setConnecting(false);
+        setBootLoading(false);
       }
-      maybeAutoCompleteTestOtp(url);
-      if (isPayuReturnInProgress(url, paymentStartedRef.current)) {
-        setHideChallengeUi(true);
-        setConnecting(true);
-        setConnectingText("Confirming payment…");
+
+      if (isPayuSuccessBridgeUrl(url) && paymentStartedRef.current) {
+        setConfirming(true);
+        setStatusText("Confirming payment…");
         if (resolvedOrderId) {
-          scheduleServerVerifyFallback(resolvedOrderId);
+          scheduleLateFallback(resolvedOrderId);
         }
       }
+
       inspectUrl(url);
     },
-    [inspectUrl, maybeAutoCompleteTestOtp, resolvedOrderId, scheduleServerVerifyFallback],
+    [inspectUrl, resolvedOrderId, scheduleLateFallback],
   );
 
   const handleWebViewMessage = useCallback(
     (event: { nativeEvent: { data: string } }) => {
-      const data = event.nativeEvent.data;
-
-      if (session?.testAutoOtp && data === PAYU_WEBVIEW_OTP_CHALLENGE_MESSAGE) {
-        setHideChallengeUi(true);
-        setConnecting(true);
-        setConnectingText("Completing payment…");
-        return;
-      }
-
-      const parsed = parsePayuWebViewReturnMessage(data);
+      const parsed = parsePayuWebViewReturnMessage(event.nativeEvent.data);
       if (parsed === "cancelled") {
         finish("cancelled");
         return;
       }
       if (parsed) {
+        if (fallbackTimerRef.current) {
+          clearTimeout(fallbackTimerRef.current);
+          fallbackTimerRef.current = null;
+        }
         finish(parsed);
       }
     },
-    [finish, session?.testAutoOtp],
+    [finish],
   );
 
-  const handleOpenWindow = useCallback(
-    (event: { nativeEvent: { targetUrl?: string } }) => {
-      const targetUrl = event.nativeEvent?.targetUrl;
-      if (!targetUrl) return;
-      setOverrideUri(targetUrl);
-      maybeAutoCompleteTestOtp(targetUrl);
-    },
-    [maybeAutoCompleteTestOtp],
-  );
+  const handleOpenWindow = useCallback((event: { nativeEvent: { targetUrl?: string } }) => {
+    const targetUrl = event.nativeEvent?.targetUrl;
+    if (!targetUrl) return;
+    webViewRef.current?.injectJavaScript(
+      `window.location.href=${JSON.stringify(targetUrl)};true;`,
+    );
+  }, []);
 
   const handleRenderProcessGone = useCallback(() => {
-    if (handledRef.current || !resolvedOrderId) return;
-    handledRef.current = true;
-    if (fallbackTimerRef.current) {
-      clearTimeout(fallbackTimerRef.current);
-      fallbackTimerRef.current = null;
+    if (resolvedOrderId) {
+      scheduleLateFallback(resolvedOrderId);
     }
-    setConnecting(true);
-    setConnectingText("Confirming payment…");
-    onInAppVerified(resolvedOrderId);
-  }, [onInAppVerified, resolvedOrderId]);
+  }, [resolvedOrderId, scheduleLateFallback]);
 
   if (!visible || !session) return null;
 
-  if (!hasNativeWebView || !WebViewComponent || !webSource) {
+  if (!hasNativeWebView || !WebViewComponent || !html) {
     return (
-      <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={() => onCancel()}>
-        <View style={[styles.container, { paddingTop: insets.top, paddingHorizontal: 24 }]}>
-          <View style={styles.header}>
-            <Pressable onPress={() => onCancel()} hitSlop={12} style={styles.closeBtn}>
-              <MaterialIcons name="close" size={22} color="#1A1A1A" />
-            </Pressable>
-            <Text style={styles.headerTitle}>Secure Payment</Text>
-            <View style={styles.closeBtn} />
-          </View>
-          <View style={styles.setupBody}>
-            <MaterialIcons name="phone-android" size={48} color="#27BB97" />
-            <Text style={styles.setupTitle}>In-app checkout needs one rebuild</Text>
-            <Text style={styles.setupText}>
-              BookMyShow-style payment stays inside Listifys using a secure in-app WebView. Run this once on your PC, then reopen the app:
-            </Text>
-            <Text style={styles.setupCode}>cd app{"\n"}npm run android</Text>
-            <Text style={styles.setupHint}>Install the new build on your phone, then tap Pay securely again.</Text>
-          </View>
+      <View style={[styles.overlay, { paddingTop: insets.top, paddingHorizontal: 24 }]}>
+        <View style={styles.header}>
+          <Pressable onPress={() => onCancel()} hitSlop={12} style={styles.closeBtn}>
+            <MaterialIcons name="close" size={22} color="#1A1A1A" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Secure Payment</Text>
+          <View style={styles.closeBtn} />
         </View>
-      </Modal>
+        <View style={styles.setupBody}>
+          <MaterialIcons name="phone-android" size={48} color="#27BB97" />
+          <Text style={styles.setupTitle}>In-app checkout needs one rebuild</Text>
+          <Text style={styles.setupText}>
+            Run once on your PC, then reopen the app:
+          </Text>
+          <Text style={styles.setupCode}>cd app{"\n"}npm run android</Text>
+        </View>
+      </View>
     );
   }
 
   const WebView = WebViewComponent;
-  const showProcessingOverlay = connecting || hideChallengeUi;
+  const showOverlay = bootLoading || confirming;
 
   return (
-    <Modal
-      visible
-      animationType="slide"
-      presentationStyle="fullScreen"
-      onRequestClose={() => finish("cancelled")}
-    >
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => finish("cancelled")}
-            hitSlop={12}
-            style={styles.closeBtn}
-            accessibilityLabel="Close payment"
-          >
-            <MaterialIcons name="close" size={22} color="#1A1A1A" />
-          </Pressable>
-          <View style={styles.headerCenter}>
-            <MaterialIcons name="lock" size={16} color="#27BB97" />
-            <Text style={styles.headerTitle}>Secure Payment</Text>
-          </View>
-          <View style={styles.closeBtn} />
+    <View style={[styles.overlay, { paddingTop: insets.top }]}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => finish("cancelled")}
+          hitSlop={12}
+          style={styles.closeBtn}
+          accessibilityLabel="Close payment"
+        >
+          <MaterialIcons name="close" size={22} color="#1A1A1A" />
+        </Pressable>
+        <View style={styles.headerCenter}>
+          <MaterialIcons name="lock" size={16} color="#27BB97" />
+          <Text style={styles.headerTitle}>Secure Payment</Text>
         </View>
-
-        {session.testMode && session.testGuide ? (
-          <View style={styles.testBanner}>
-            <Text style={styles.testBannerTitle}>{session.testGuide.title}</Text>
-            {session.testGuide.steps.map((step) => (
-              <Text key={step} style={styles.testBannerStep}>
-                • {step}
-              </Text>
-            ))}
-          </View>
-        ) : null}
-
-        {showProcessingOverlay ? (
-          <View style={styles.connecting}>
-            <ActivityIndicator size="large" color="#27BB97" />
-            <Text style={styles.connectingText}>{connectingText}</Text>
-          </View>
-        ) : null}
-
-        <WebView
-          ref={webViewRef}
-          source={webSource}
-          originWhitelist={["https://*", "http://*", "listifyapp://*"]}
-          onMessage={handleWebViewMessage}
-          onShouldStartLoadWithRequest={(request: { url: string }) => {
-            notePayuActivity(request.url);
-            return !shouldBlockWebViewNavigation(request.url);
-          }}
-          onNavigationStateChange={(nav: { url: string }) => {
-            notePayuActivity(nav.url);
-          }}
-          onLoadEnd={(event: { nativeEvent: { url: string } }) => {
-            const url = event.nativeEvent.url;
-            notePayuActivity(url);
-            if (session.testAutoOtp && isPayu3dsChallengeUrl(url)) {
-              webViewRef.current?.injectJavaScript(buildPayuTestOtpAutoSubmitScript());
-            }
-          }}
-          onOpenWindow={Platform.OS === "android" ? handleOpenWindow : undefined}
-          onRenderProcessGone={
-            Platform.OS === "android" ? handleRenderProcessGone : undefined
-          }
-          javaScriptEnabled
-          domStorageEnabled
-          sharedCookiesEnabled
-          thirdPartyCookiesEnabled
-          setSupportMultipleWindows={Platform.OS === "android"}
-          allowsBackForwardNavigationGestures={false}
-          startInLoadingState={false}
-          style={[styles.webview, hideChallengeUi && styles.webviewHidden]}
-        />
+        <View style={styles.closeBtn} />
       </View>
-    </Modal>
+
+      {session.testMode && session.testGuide ? (
+        <View style={styles.testBanner}>
+          <Text style={styles.testBannerTitle}>{session.testGuide.title}</Text>
+          {session.testGuide.steps.map((step) => (
+            <Text key={step} style={styles.testBannerStep}>
+              • {step}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
+      {showOverlay ? (
+        <View style={styles.connecting}>
+          <ActivityIndicator size="large" color="#27BB97" />
+          <Text style={styles.connectingText}>{statusText}</Text>
+        </View>
+      ) : null}
+
+      <WebView
+        ref={webViewRef}
+        source={{ html, baseUrl: session.actionUrl }}
+        originWhitelist={["https://*", "http://*"]}
+        injectedJavaScriptBeforeContentLoaded={deepLinkGuardScript}
+        onMessage={handleWebViewMessage}
+        onShouldStartLoadWithRequest={(request: { url: string }) => {
+          const url = request.url;
+          if (url.startsWith("listifyapp://")) {
+            inspectUrl(url);
+            return false;
+          }
+          notePayuActivity(url);
+          return !shouldBlockWebViewNavigation(url);
+        }}
+        onNavigationStateChange={(nav: { url: string }) => {
+          notePayuActivity(nav.url);
+        }}
+        onLoadEnd={(event: { nativeEvent: { url: string } }) => {
+          const url = event.nativeEvent.url;
+          if (isPayuSuccessBridgeUrl(url)) {
+            webViewRef.current?.injectJavaScript(`
+              (function(){
+                try{
+                  var q=window.location.search?window.location.search.slice(1):"";
+                  if(q&&window.ReactNativeWebView){
+                    window.ReactNativeWebView.postMessage(JSON.stringify({type:"payu-return",query:q}));
+                  }
+                }catch(e){}
+              })();true;
+            `);
+          }
+        }}
+        onOpenWindow={Platform.OS === "android" ? handleOpenWindow : undefined}
+        onRenderProcessGone={Platform.OS === "android" ? handleRenderProcessGone : undefined}
+        onContentProcessDidTerminate={Platform.OS === "ios" ? handleRenderProcessGone : undefined}
+        javaScriptEnabled
+        domStorageEnabled
+        sharedCookiesEnabled
+        thirdPartyCookiesEnabled
+        setSupportMultipleWindows={Platform.OS === "android"}
+        allowsBackForwardNavigationGestures={false}
+        startInLoadingState={false}
+        overScrollMode="never"
+        setBuiltInZoomControls={false}
+        style={styles.webview}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10000,
+    elevation: 10000,
     backgroundColor: "#FFFFFF",
   },
   header: {
@@ -390,7 +373,7 @@ const styles = StyleSheet.create({
     top: 56,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "rgba(255,255,255,0.92)",
     zIndex: 2,
     gap: 12,
   },
@@ -424,10 +407,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FFFFFF",
   },
-  webviewHidden: {
-    opacity: 0,
-    pointerEvents: "none",
-  },
   setupBody: {
     flex: 1,
     alignItems: "center",
@@ -457,12 +436,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 10,
     overflow: "hidden",
-    textAlign: "center",
-  },
-  setupHint: {
-    fontFamily: ListifyFonts.regular,
-    fontSize: 13,
-    color: "#888",
     textAlign: "center",
   },
 });

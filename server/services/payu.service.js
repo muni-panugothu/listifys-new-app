@@ -69,7 +69,7 @@ function getTestPaymentGuide() {
     steps: [
       "Card: 5123 4567 8901 2346",
       "Expiry: 05/30  ·  CVV: 123",
-      "OTP: 123456 (required — random OTP fails)",
+      "On OTP screen enter 1234 or 123456, then tap PAY",
     ],
   };
 }
@@ -117,13 +117,13 @@ function buildPaymentSession({
     fields.bankcode = "TESTPGNB";
   }
 
-  const testGuide = shouldUseTestNetBanking() ? getTestPaymentGuide() : null;
+  const testGuide = isPayuTestMode() ? getTestPaymentGuide() : null;
   return {
     provider: "payu",
     actionUrl: getPayuPaymentUrl(),
     fields,
-    testMode: isPayuTestMode() && shouldUseTestNetBanking(),
-    testAutoOtp: isPayuTestMode(),
+    testMode: isPayuTestMode(),
+    testAutoOtp: false,
     testGuide,
   };
 }
