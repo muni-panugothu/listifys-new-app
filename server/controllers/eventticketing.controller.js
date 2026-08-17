@@ -88,6 +88,24 @@ exports.verifyPayment = async (req, res) => {
   }
 };
 
+exports.verifyInAppPayment = async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) {
+      return res.status(400).json({ success: false, message: "orderId is required" });
+    }
+
+    const data = await ticketing.verifyInAppPayuPayment({
+      userId: req.user._id,
+      orderId,
+    });
+
+    return res.json({ success: true, data });
+  } catch (err) {
+    return handleError(res, err);
+  }
+};
+
 exports.getMyTickets = async (req, res) => {
   try {
     const tab = req.query.tab || "upcoming";

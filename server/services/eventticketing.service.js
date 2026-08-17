@@ -563,8 +563,9 @@ async function confirmOrderPayment({
   razorpaySignature,
   isFree = false,
   webhook = false,
+  payuServerVerify = false,
 }) {
-  const idempotencyRedisKey = `ticket:payment:done:${razorpayPaymentId}`;
+  const idempotencyRedisKey = `ticket:payment:done:${razorpayPaymentId || orderId}`;
   const alreadyDone = await redis.get(idempotencyRedisKey);
   if (alreadyDone) {
     const parsed = JSON.parse(alreadyDone);
@@ -606,29 +607,55 @@ async function confirmOrderPayment({
       let verified = false;
 
       if (provider === "payu") {
-        const user = await User.findById(order.userId).select("name email phone").lean();
-        verified = payuService.verifyPaymentForOrder(order, user, {
-          txnid: razorpayOrderId || order.razorpayOrderId || order.bookingId,
-          mihpayid: razorpayPaymentId,
-          hash: razorpaySignature,
-        });
-
-        if (verified) {
-          const payuVerify = await payuService.verifyTransactionWithPayu(
-            razorpayOrderId || order.bookingId,
-          );
-          if (!payuVerify.verified) {
-            const err = new Error("PayU could not confirm this payment");
-            err.statusCode = 400;
-            throw err;
+        if (payuServerVerify) {
+          let payuVerify = { verified: false };
+          const txnRef = razorpayOrderId || order.bookingId;
+          for (let attempt = 0; attempt < 5; attempt += 1) {
+            payuVerify = await payuService.verifyTransactionWithPayu(txnRef);
+            if (payuVerify.verified) break;
+            if (attempt < 4) {
+              await new Promise((resolve) => setTimeout(resolve, 1200));
+            }
           }
-          if (
-            typeof payuVerify.amountPaise === "number" &&
-            payuVerify.amountPaise !== order.totalAmountPaise
-          ) {
-            const err = new Error("Payment amount mismatch");
-            err.statusCode = 400;
-            throw err;
+          verified = payuVerify.verified;
+          if (verified) {
+            if (
+              typeof payuVerify.amountPaise === "number" &&
+              payuVerify.amountPaise !== order.totalAmountPaise
+            ) {
+              const err = new Error("Payment amount mismatch");
+              err.statusCode = 400;
+              throw err;
+            }
+            if (payuVerify.paymentId) {
+              razorpayPaymentId = payuVerify.paymentId;
+            }
+          }
+        } else {
+          const user = await User.findById(order.userId).select("name email phone").lean();
+          verified = payuService.verifyPaymentForOrder(order, user, {
+            txnid: razorpayOrderId || order.razorpayOrderId || order.bookingId,
+            mihpayid: razorpayPaymentId,
+            hash: razorpaySignature,
+          });
+
+          if (verified) {
+            const payuVerify = await payuService.verifyTransactionWithPayu(
+              razorpayOrderId || order.bookingId,
+            );
+            if (!payuVerify.verified) {
+              const err = new Error("PayU could not confirm this payment");
+              err.statusCode = 400;
+              throw err;
+            }
+            if (
+              typeof payuVerify.amountPaise === "number" &&
+              payuVerify.amountPaise !== order.totalAmountPaise
+            ) {
+              const err = new Error("Payment amount mismatch");
+              err.statusCode = 400;
+              throw err;
+            }
           }
         }
       } else {
@@ -971,6 +998,48 @@ async function verifyAndConfirmPayment({
     razorpayOrderId,
     razorpayPaymentId,
     razorpaySignature,
+  });
+}
+
+/** In-app PayU checkout: verify with PayU API only — never load callback URL in WebView. */
+async function verifyInAppPayuPayment({ userId, orderId }) {
+  const order = await EventOrder.findById(orderId);
+  if (!order) {
+    const err = new Error("Order not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (userId && String(order.userId) !== String(userId)) {
+    const err = new Error("Unauthorized");
+    err.statusCode = 403;
+    throw err;
+  }
+
+  if (order.paymentProvider !== "payu") {
+    const err = new Error("In-app verification is only supported for PayU orders");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (order.status === "CONFIRMED") {
+    const ticket = await EventTicket.findOne({ orderId: order._id });
+    return formatOrderResponse(order, { ticketId: ticket?._id });
+  }
+
+  if (!["PAYMENT_PROCESSING", "PAID", "PENDING"].includes(order.status)) {
+    const err = new Error(`Order cannot be confirmed (status: ${order.status})`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return confirmOrderPayment({
+    orderId,
+    userId,
+    razorpayOrderId: order.bookingId,
+    razorpayPaymentId: order.bookingId,
+    razorpaySignature: "",
+    payuServerVerify: true,
   });
 }
 
@@ -1327,6 +1396,7 @@ module.exports = {
   getCheckoutPage,
   handlePayuReturn,
   verifyAndConfirmPayment,
+  verifyInAppPayuPayment,
   getTicketForUser,
   listUserTickets,
   cancelTicket,

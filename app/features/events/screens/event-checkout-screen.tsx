@@ -12,12 +12,13 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PayuCheckoutModal } from "@/features/events/components/payu-checkout-modal";
-import { openPayuCheckoutBrowser } from "@/features/events/components/open-payu-checkout";
+
 import {
   createCheckoutOrder,
   createTicketHold,
   fetchEventAvailability,
   verifyEventPayment,
+  verifyInAppPayuOrder,
   type EventAvailability,
   type TicketHoldResponse,
 } from "@/features/events/services/event-ticketing-api";
@@ -29,11 +30,8 @@ import { ListifyFonts } from "@/constants/typography";
 import { formatPrice } from "@/lib/currency";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { useTheme } from "@/providers/theme-provider";
-import { isWebViewNativeAvailable } from "@/lib/webview-native";
 
 type PaymentPhase = "idle" | "initializing" | "checkout" | "verifying";
-
-const USE_IN_APP_PAYU_WEBVIEW = isWebViewNativeAvailable();
 
 export function EventCheckoutScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
@@ -118,6 +116,31 @@ export function EventCheckoutScreen() {
     }
   }, [eventId, quantity, selectedTypeId]);
 
+  const finalizeInAppPayment = useCallback(
+    async (orderId: string) => {
+      setPayuSession(null);
+      setPaymentPhase("verifying");
+      try {
+        const confirmed = await verifyInAppPayuOrder(orderId);
+        showSuccessToast("Payment successful", "Your ticket is ready");
+        const ticketId = confirmed.ticket?.id;
+        if (ticketId) {
+          router.replace(`/event-ticket?ticketId=${ticketId}` as Href);
+        }
+      } catch (e) {
+        showErrorToast(
+          "Verification failed",
+          e instanceof Error ? e.message : "Please contact support",
+        );
+      } finally {
+        activeOrderIdRef.current = null;
+        setPaymentPhase("idle");
+        payLockRef.current = false;
+      }
+    },
+    [router],
+  );
+
   const finalizePayment = useCallback(
     async (orderId: string, result: PayuCheckoutReturn) => {
       setPaymentPhase("verifying");
@@ -173,8 +196,7 @@ export function EventCheckoutScreen() {
       }
 
       const session = checkout.payment?.session;
-      const launchUrl = checkout.payment?.launchUrl;
-      if (!session || !launchUrl || checkout.payment?.provider !== "payu") {
+      if (!session || checkout.payment?.provider !== "payu") {
         showErrorToast("Payment unavailable", "Payment gateway is not configured.");
         setPaymentPhase("idle");
         payLockRef.current = false;
@@ -182,28 +204,8 @@ export function EventCheckoutScreen() {
       }
 
       activeOrderIdRef.current = order.id;
-
-      if (USE_IN_APP_PAYU_WEBVIEW) {
-        setPayuSession(session);
-        setPaymentPhase("checkout");
-        return;
-      }
-
+      setPayuSession(session);
       setPaymentPhase("checkout");
-      const browserOutcome = await openPayuCheckoutBrowser(launchUrl, order.id);
-      if (browserOutcome.status === "success") {
-        await finalizePayment(order.id, browserOutcome.result);
-        return;
-      }
-      if (browserOutcome.status === "cancelled") {
-        if (browserOutcome.message) {
-          showErrorToast("Payment cancelled", browserOutcome.message);
-        }
-      } else {
-        showErrorToast("Payment failed", browserOutcome.message);
-      }
-      setPaymentPhase("idle");
-      payLockRef.current = false;
       return;
     } catch (e) {
       showErrorToast("Checkout failed", e instanceof Error ? e.message : "Try again");
@@ -211,7 +213,7 @@ export function EventCheckoutScreen() {
 
     setPaymentPhase("idle");
     payLockRef.current = false;
-  }, [finalizePayment, hold, router, startHold]);
+  }, [hold, router, startHold]);
 
   const onPayuSuccess = useCallback(
     (result: PayuCheckoutReturn) => {
@@ -389,9 +391,11 @@ export function EventCheckoutScreen() {
       </View>
 
       <PayuCheckoutModal
-        visible={USE_IN_APP_PAYU_WEBVIEW && paymentPhase === "checkout" && Boolean(payuSession)}
+        visible={paymentPhase === "checkout" && Boolean(payuSession)}
         session={payuSession}
+        orderId={activeOrderIdRef.current}
         onSuccess={onPayuSuccess}
+        onInAppVerified={(orderId) => void finalizeInAppPayment(orderId)}
         onCancel={onPayuCancel}
       />
 

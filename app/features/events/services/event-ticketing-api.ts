@@ -201,6 +201,18 @@ export async function verifyEventPayment(payload: {
   return res.data;
 }
 
+/** Server-side PayU verify — used when WebView intercepts callback URL (no Render page load). */
+export async function verifyInAppPayuOrder(orderId: string) {
+  const res = await requestJson<{ success: boolean; data: CheckoutOrderResponse }>(
+    "/api/event-tickets/payments/verify-in-app",
+    {
+      method: "POST",
+      body: JSON.stringify({ orderId }),
+    },
+  );
+  return res.data;
+}
+
 export async function fetchMyTickets(tab: "upcoming" | "past" | "cancelled" = "upcoming") {
   const res = await requestJson<{ success: boolean; tickets: MyTicketItem[] }>(
     `/api/event-tickets/my-tickets?tab=${tab}`,

@@ -33,6 +33,7 @@ router.get("/events/:eventId/availability", controller.getAvailability);
 router.post("/events/:eventId/holds", protect, bookingLimiter, controller.createHold);
 router.post("/orders", protect, paymentLimiter, controller.createOrder);
 router.post("/payments/verify", protect, paymentLimiter, controller.verifyPayment);
+router.post("/payments/verify-in-app", protect, paymentLimiter, controller.verifyInAppPayment);
 
 router.get("/my-tickets", protect, controller.getMyTickets);
 router.get("/tickets/:ticketId", protect, controller.getTicket);

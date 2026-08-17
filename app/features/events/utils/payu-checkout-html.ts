@@ -12,7 +12,7 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;");
 }
 
-/** In-app bootstrap page — posts directly to PayU, never hits Listifys backend URL. */
+/** In-app bootstrap — posts directly to PayU (no Listifys backend URL visible). */
 export function buildPayuLaunchHtml(session: PayuPaymentSession) {
   const inputs = Object.entries(session.fields)
     .map(
@@ -25,7 +25,7 @@ export function buildPayuLaunchHtml(session: PayuPaymentSession) {
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 </head>
 <body style="margin:0;background:#ffffff">
   <form id="payu" method="post" action="${escapeHtml(session.actionUrl)}">
@@ -79,4 +79,18 @@ export function isPayuHostedUrl(url: string) {
 
 export function isPayuReturnBridgeUrl(url: string) {
   return url.includes("/api/event-tickets/payu/return/");
+}
+
+/** Block backend callback / Render host after PayU — verify in-app instead of loading the page. */
+export function shouldInterceptPostPaymentUrl(url: string, paymentStarted: boolean) {
+  if (parsePayuReturnUrl(url)) return true;
+  if (isPayuReturnBridgeUrl(url)) return true;
+  if (!paymentStarted) return false;
+  try {
+    const { hostname } = new URL(url);
+    if (hostname.includes("onrender.com")) return true;
+  } catch {
+    return false;
+  }
+  return false;
 }
