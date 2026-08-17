@@ -39,6 +39,10 @@ function getCallbackBaseUrl() {
   return `http://localhost:${port}`;
 }
 
+function getPublicApiBaseUrl() {
+  return getCallbackBaseUrl();
+}
+
 function shouldUseTestNetBanking() {
   if (!isPayuTestMode()) return false;
   const mode = (process.env.PAYU_TEST_CHECKOUT || "netbanking").trim().toLowerCase();
