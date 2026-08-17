@@ -21,6 +21,7 @@ import {
   type TicketDetail,
 } from "@/features/events/services/event-ticketing-api";
 import { ListifyFonts } from "@/constants/typography";
+import { resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
 import { formatPrice } from "@/lib/currency";
 import { Image } from "@/lib/nativewind-interop";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
@@ -171,6 +172,7 @@ export function EventTicketScreen() {
   }
 
   const { ticket, event, order } = detail;
+  const coverUrl = resolveAbsoluteMediaUrl(event?.image) ?? event?.image ?? "";
   const isInvalid = ["CANCELLED", "REFUNDED", "EXPIRED"].includes(ticket.status);
   const isCheckedIn = ticket.status === "CHECKED_IN";
   const statusLabel = isCheckedIn ? "CHECKED IN" : isInvalid ? ticket.status : "CONFIRMED";
@@ -226,8 +228,8 @@ export function EventTicketScreen() {
             {/* Event hero row */}
             <View style={{ flexDirection: "row", padding: 16, gap: 12 }}>
               <View style={{ width: 88, height: 120, borderRadius: 10, overflow: "hidden", backgroundColor: colors.surfaceMuted }}>
-                {event?.image ? (
-                  <Image source={event.image} contentFit="cover" style={{ width: "100%", height: "100%" }} />
+                {coverUrl ? (
+                  <Image source={{ uri: coverUrl }} contentFit="cover" style={{ width: "100%", height: "100%" }} />
                 ) : (
                   <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
                     <MaterialIcons name="event" size={32} color={colors.iconMuted} />

@@ -45,8 +45,8 @@ function getPublicApiBaseUrl() {
 
 function shouldUseTestNetBanking() {
   if (!isPayuTestMode()) return false;
-  const mode = (process.env.PAYU_TEST_CHECKOUT || "netbanking").trim().toLowerCase();
-  return mode !== "cards";
+  const mode = (process.env.PAYU_TEST_CHECKOUT || "cards").trim().toLowerCase();
+  return mode === "netbanking";
 }
 
 function getTestPaymentGuide() {
@@ -117,12 +117,12 @@ function buildPaymentSession({
     fields.bankcode = "TESTPGNB";
   }
 
-  const testGuide = getTestPaymentGuide();
+  const testGuide = shouldUseTestNetBanking() ? getTestPaymentGuide() : null;
   return {
     provider: "payu",
     actionUrl: getPayuPaymentUrl(),
     fields,
-    testMode: isPayuTestMode(),
+    testMode: isPayuTestMode() && shouldUseTestNetBanking(),
     testGuide,
   };
 }

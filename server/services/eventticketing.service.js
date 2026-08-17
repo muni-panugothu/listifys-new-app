@@ -21,6 +21,7 @@ const {
   isRazorpayConfigured,
 } = razorpayService;
 const { createRefund } = require("./razorpay.service");
+const s3Service = require("./s3.service");
 
 const CHECKOUT_APP_SCHEME = "listifyapp://event-payment";
 const HOLD_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -140,6 +141,33 @@ async function getEventForBooking(eventId) {
   return event;
 }
 
+function pickEventCoverUrl(event) {
+  const images = event?.images || [];
+  for (const raw of images) {
+    if (raw) {
+      const proxied = s3Service.toProxyUrl(String(raw));
+      if (proxied) return proxied;
+    }
+  }
+
+  const videos = event?.videos || [];
+  for (const entry of videos) {
+    if (!entry) continue;
+    if (typeof entry === "object") {
+      const thumb = entry.thumbnailUrl || entry.posterUrl || entry.url;
+      if (thumb) {
+        const proxied = s3Service.toProxyUrl(String(thumb));
+        if (proxied) return proxied;
+      }
+    } else if (typeof entry === "string" && entry.trim()) {
+      const proxied = s3Service.toProxyUrl(entry.trim());
+      if (proxied) return proxied;
+    }
+  }
+
+  return "";
+}
+
 function buildEventSnapshot(event) {
   return {
     title: event.title,
@@ -147,9 +175,30 @@ function buildEventSnapshot(event) {
     location: event.location || "",
     eventDate: event.eventDate || "",
     eventTime: event.eventTime || "",
-    image: event.images?.[0] || "",
+    image: pickEventCoverUrl(event),
     subcategory: event.subcategory || "",
   };
+}
+
+async function resolveTicketEventSnapshot(order) {
+  if (!order) return null;
+
+  let snapshot = order.eventSnapshot ? { ...order.eventSnapshot } : null;
+  if (order.eventId) {
+    const live = await Event.findById(order.eventId)
+      .select("title venue location eventDate eventTime images videos subcategory")
+      .lean();
+    if (live) {
+      const fresh = buildEventSnapshot(live);
+      snapshot = { ...(snapshot || {}), ...fresh, image: fresh.image || snapshot?.image || "" };
+    }
+  }
+
+  if (snapshot?.image) {
+    snapshot.image = s3Service.toProxyUrl(snapshot.image) || snapshot.image;
+  }
+
+  return snapshot;
 }
 
 function calculateOrderAmounts(ticketType, quantity) {
@@ -1081,6 +1130,7 @@ async function getTicketForUser(ticketId, userId) {
 
   const order = await EventOrder.findById(ticket.orderId);
   const ticketType = await EventTicketType.findById(ticket.ticketTypeId);
+  const eventSnapshot = await resolveTicketEventSnapshot(order);
 
   return {
     ticket: {
@@ -1102,7 +1152,7 @@ async function getTicketForUser(ticketId, userId) {
           currency: order.currency,
         }
       : null,
-    event: order?.eventSnapshot || null,
+    event: eventSnapshot,
     cancellationPolicy: ticketType
       ? {
           allowed: ticketType.cancellationAllowed,
@@ -1122,9 +1172,8 @@ async function listUserTickets(userId, { tab = "upcoming" } = {}) {
   const orders = await EventOrder.find({ _id: { $in: orderIds } });
   const orderMap = new Map(orders.map((o) => [String(o._id), o]));
 
-  const now = new Date();
-  const items = tickets
-    .map((t) => {
+  const items = await Promise.all(
+    tickets.map(async (t) => {
       const order = orderMap.get(String(t.orderId));
       return {
         id: t._id,
@@ -1132,12 +1181,14 @@ async function listUserTickets(userId, { tab = "upcoming" } = {}) {
         status: t.status,
         quantity: t.quantity,
         ticketTypeName: t.ticketTypeName,
-        event: order?.eventSnapshot || null,
+        event: await resolveTicketEventSnapshot(order),
         totalAmount: order ? paiseToRupees(order.totalAmountPaise) : 0,
         createdAt: t.createdAt,
       };
-    })
-    .filter((item) => {
+    }),
+  );
+
+  return items.filter((item) => {
       if (tab === "cancelled") {
         return ["CANCELLED", "REFUNDED"].includes(item.status);
       }

@@ -5,6 +5,7 @@ import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native
 
 import { ProfileSubScreenLayout } from "@/components/profile-sub-screen-layout";
 import { ListifyFonts } from "@/constants/typography";
+import { resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
 import {
   fetchMyTickets,
   type MyTicketItem,
@@ -106,13 +107,17 @@ export function MyTicketsScreen() {
               }}
             >
               <View style={{ width: 64, height: 80, borderRadius: 8, overflow: "hidden", backgroundColor: colors.surfaceMuted }}>
-                {item.event?.image ? (
-                  <Image source={item.event.image} contentFit="cover" style={{ width: "100%", height: "100%" }} />
-                ) : (
-                  <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-                    <MaterialIcons name="event" size={24} color={colors.iconMuted} />
-                  </View>
-                )}
+                {(() => {
+                  const coverUrl =
+                    resolveAbsoluteMediaUrl(item.event?.image) ?? item.event?.image ?? "";
+                  return coverUrl ? (
+                    <Image source={{ uri: coverUrl }} contentFit="cover" style={{ width: "100%", height: "100%" }} />
+                  ) : (
+                    <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+                      <MaterialIcons name="event" size={24} color={colors.iconMuted} />
+                    </View>
+                  );
+                })()}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 15, color: colors.textPrimary }} numberOfLines={2}>
