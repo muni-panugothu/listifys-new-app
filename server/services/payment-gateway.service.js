@@ -19,6 +19,8 @@ function getPaymentConfigForClient() {
       configured: true,
       provider: "payu",
       keyId: payu.getMerchantKey(),
+      testMode: payu.isPayuTestMode(),
+      testGuide: payu.getTestPaymentGuide(),
     };
   }
   if (provider === "razorpay") {

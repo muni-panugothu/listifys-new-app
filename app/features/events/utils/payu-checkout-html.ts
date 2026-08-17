@@ -2,6 +2,12 @@ export type PayuPaymentSession = {
   provider: "payu";
   actionUrl: string;
   fields: Record<string, string>;
+  testMode?: boolean;
+  testGuide?: {
+    mode: "netbanking" | "card";
+    title: string;
+    steps: string[];
+  };
 };
 
 function escapeHtml(value: string) {
@@ -85,6 +91,10 @@ export function isPayuFailureBridgeUrl(url: string) {
   return url.includes("/api/event-tickets/payu/return/failure");
 }
 
+export function isPayuSuccessBridgeUrl(url: string) {
+  return url.includes("/api/event-tickets/payu/return/success");
+}
+
 /** Only block app deep-link returns — PayU surl/furl must load so PayU marks payment success. */
 export function shouldBlockWebViewNavigation(url: string) {
   return Boolean(parsePayuReturnUrl(url));
@@ -92,5 +102,5 @@ export function shouldBlockWebViewNavigation(url: string) {
 
 export function isPayuReturnInProgress(url: string, paymentStarted: boolean) {
   if (!paymentStarted) return false;
-  return isPayuReturnBridgeUrl(url) || url.startsWith(PAYU_CHECKOUT_RETURN_SCHEME);
+  return isPayuSuccessBridgeUrl(url) || url.startsWith(PAYU_CHECKOUT_RETURN_SCHEME);
 }

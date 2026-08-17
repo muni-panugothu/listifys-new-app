@@ -124,7 +124,16 @@ export function PayuCheckoutModal({
   const inspectUrl = useCallback(
     (url: string) => {
       if (isPayuFailureBridgeUrl(url)) {
-        finish("cancelled", "Payment failed or was cancelled");
+        if (fallbackTimerRef.current) {
+          clearTimeout(fallbackTimerRef.current);
+          fallbackTimerRef.current = null;
+        }
+        finish(
+          "cancelled",
+          session?.testMode
+            ? "Payment failed. In test mode use login payu / payu and OTP 123456."
+            : "Payment failed or was cancelled",
+        );
         return;
       }
 
@@ -137,7 +146,7 @@ export function PayuCheckoutModal({
         finish(parsed);
       }
     },
-    [finish],
+    [finish, session?.testMode],
   );
 
   const notePayuActivity = useCallback(
@@ -210,6 +219,17 @@ export function PayuCheckoutModal({
           </View>
           <View style={styles.closeBtn} />
         </View>
+
+        {session.testMode && session.testGuide ? (
+          <View style={styles.testBanner}>
+            <Text style={styles.testBannerTitle}>{session.testGuide.title}</Text>
+            {session.testGuide.steps.map((step) => (
+              <Text key={step} style={styles.testBannerStep}>
+                • {step}
+              </Text>
+            ))}
+          </View>
+        ) : null}
 
         {connecting ? (
           <View style={styles.connecting}>
@@ -292,6 +312,27 @@ const styles = StyleSheet.create({
     fontFamily: ListifyFonts.medium,
     fontSize: 14,
     color: "#6B7280",
+  },
+  testBanner: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "#ECFDF5",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#A7F3D0",
+    gap: 4,
+  },
+  testBannerTitle: {
+    fontFamily: ListifyFonts.semiBold,
+    fontSize: 13,
+    color: "#065F46",
+  },
+  testBannerStep: {
+    fontFamily: ListifyFonts.regular,
+    fontSize: 12,
+    color: "#047857",
+    lineHeight: 18,
   },
   webview: {
     flex: 1,

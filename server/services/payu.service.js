@@ -39,8 +39,35 @@ function getCallbackBaseUrl() {
   return `http://localhost:${port}`;
 }
 
-function getPublicApiBaseUrl() {
-  return getCallbackBaseUrl();
+function shouldUseTestNetBanking() {
+  if (!isPayuTestMode()) return false;
+  const mode = (process.env.PAYU_TEST_CHECKOUT || "netbanking").trim().toLowerCase();
+  return mode !== "cards";
+}
+
+function getTestPaymentGuide() {
+  if (!isPayuTestMode()) return null;
+  if (shouldUseTestNetBanking()) {
+    return {
+      mode: "netbanking",
+      title: "PayU test mode",
+      steps: [
+        "Use Net Banking (auto-selected in test)",
+        "Username: payu",
+        "Password: payu",
+        "OTP: 123456",
+      ],
+    };
+  }
+  return {
+    mode: "card",
+    title: "PayU test mode",
+    steps: [
+      "Card: 5123 4567 8901 2346",
+      "Expiry: 05/30  ·  CVV: 123",
+      "OTP: 123456 (required — random OTP fails)",
+    ],
+  };
 }
 
 function buildPaymentSession({
@@ -67,22 +94,32 @@ function buildPaymentSession({
   });
 
   const apiBase = (callbackBase || getCallbackBaseUrl()).replace(/\/$/, "");
+  const fields = {
+    key,
+    txnid,
+    amount,
+    productinfo,
+    firstname,
+    email,
+    phone,
+    surl: `${apiBase}/api/event-tickets/payu/return/success`,
+    furl: `${apiBase}/api/event-tickets/payu/return/failure`,
+    udf1,
+    hash,
+  };
+
+  if (shouldUseTestNetBanking()) {
+    fields.pg = "TESTPG";
+    fields.bankcode = "TESTPGNB";
+  }
+
+  const testGuide = getTestPaymentGuide();
   return {
     provider: "payu",
     actionUrl: getPayuPaymentUrl(),
-    fields: {
-      key,
-      txnid,
-      amount,
-      productinfo,
-      firstname,
-      email,
-      phone,
-      surl: `${apiBase}/api/event-tickets/payu/return/success`,
-      furl: `${apiBase}/api/event-tickets/payu/return/failure`,
-      udf1,
-      hash,
-    },
+    fields,
+    testMode: isPayuTestMode(),
+    testGuide,
   };
 }
 
@@ -275,6 +312,7 @@ module.exports = {
   getPayuPaymentUrl,
   paiseToPayuAmount,
   getPublicApiBaseUrl,
+  getTestPaymentGuide,
   generateRequestHash,
   verifyResponseHash,
   verifyPaymentForOrder,

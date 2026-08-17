@@ -638,6 +638,17 @@ async function confirmOrderPayment({
             if (payuVerify.paymentId) {
               razorpayPaymentId = payuVerify.paymentId;
             }
+          } else if (payuServerVerify) {
+            const payuStatus = String(payuVerify.status || payuVerify.reason || "").toLowerCase();
+            const err = new Error(
+              payuService.isPayuTestMode()
+                ? payuStatus === "failure"
+                  ? "PayU test payment failed. Use Net Banking: login payu / payu, then OTP 123456. Random card numbers or OTP will not work."
+                  : "PayU test payment is still processing. Wait a few seconds, or retry with OTP 123456."
+                : "PayU has not confirmed this payment yet. If money was debited, wait a moment and try again.",
+            );
+            err.statusCode = 400;
+            throw err;
           }
         } else {
           const user = await User.findById(order.userId).select("name email phone").lean();
@@ -676,8 +687,8 @@ async function confirmOrderPayment({
 
       if (!verified) {
         const err = new Error(
-          payuServerVerify && provider === "payu"
-            ? "PayU has not confirmed this payment yet. If money was debited, wait a moment and try again."
+          provider === "payu" && payuService.isPayuTestMode()
+            ? "Payment verification failed. In PayU test mode use Net Banking (payu / payu) or card 5123456789012346 with OTP 123456."
             : "Payment verification failed",
         );
         err.statusCode = 400;
