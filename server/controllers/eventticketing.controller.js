@@ -10,6 +10,7 @@ function handleError(res, err) {
     message: err.message || "Something went wrong",
     code: err.code,
     available: err.available,
+    ticketId: err.ticketId,
   });
 }
 
@@ -111,6 +112,18 @@ exports.getMyTickets = async (req, res) => {
     const tab = req.query.tab || "upcoming";
     const tickets = await ticketing.listUserTickets(req.user._id, { tab });
     return res.json({ success: true, tickets });
+  } catch (err) {
+    return handleError(res, err);
+  }
+};
+
+exports.getMyEventTicket = async (req, res) => {
+  try {
+    const data = await ticketing.getUserEventTicket({
+      userId: req.user._id,
+      eventId: req.params.eventId,
+    });
+    return res.json({ success: true, data });
   } catch (err) {
     return handleError(res, err);
   }

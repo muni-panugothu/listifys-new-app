@@ -332,6 +332,23 @@ async function createHold({ userId, eventId, ticketTypeId, quantity, idempotency
     throw err;
   }
 
+  const existingTicket = await EventTicket.findOne({
+    userId,
+    eventId: event._id,
+    status: { $in: ["ACTIVE", "CHECKED_IN"] },
+  }).sort({ createdAt: -1 });
+
+  if (existingTicket) {
+    const existingOrder = await EventOrder.findById(existingTicket.orderId);
+    if (existingOrder?.status === "CONFIRMED") {
+      const err = new Error("You already have a confirmed ticket for this event");
+      err.statusCode = 409;
+      err.code = "ALREADY_BOOKED";
+      err.ticketId = String(existingTicket._id);
+      throw err;
+    }
+  }
+
   const session = await startPrimarySession();
   session.startTransaction();
 
@@ -1131,6 +1148,35 @@ async function verifyInAppPayuPayment({ userId, orderId }) {
   }
 }
 
+async function getUserEventTicket({ userId, eventId }) {
+  const ticket = await EventTicket.findOne({
+    userId,
+    eventId,
+    status: { $in: ["ACTIVE", "CHECKED_IN"] },
+  }).sort({ createdAt: -1 });
+
+  if (!ticket) {
+    return { booked: false };
+  }
+
+  const order = await EventOrder.findById(ticket.orderId);
+  if (!order || order.status !== "CONFIRMED") {
+    return { booked: false };
+  }
+
+  const detail = await getTicketForUser(ticket._id, userId);
+  return {
+    booked: true,
+    ...detail,
+    order: detail.order
+      ? {
+          ...detail.order,
+          paymentStatus: "PAID",
+        }
+      : null,
+  };
+}
+
 async function getTicketForUser(ticketId, userId) {
   const ticket = await EventTicket.findById(ticketId);
   if (!ticket) {
@@ -1205,16 +1251,14 @@ async function listUserTickets(userId, { tab = "upcoming" } = {}) {
   );
 
   return items.filter((item) => {
-      if (tab === "cancelled") {
-        return ["CANCELLED", "REFUNDED"].includes(item.status);
-      }
-      if (tab === "past") {
-        return item.status === "CHECKED_IN";
-      }
-      return ["ACTIVE", "CHECKED_IN"].includes(item.status);
-    });
-
-  return items;
+    if (tab === "cancelled") {
+      return ["CANCELLED", "REFUNDED"].includes(item.status);
+    }
+    if (tab === "past") {
+      return item.status === "CHECKED_IN";
+    }
+    return ["ACTIVE", "CHECKED_IN"].includes(item.status);
+  });
 }
 
 async function cancelTicket({ ticketId, userId }) {
@@ -1488,6 +1532,7 @@ module.exports = {
   verifyAndConfirmPayment,
   verifyInAppPayuPayment,
   getTicketForUser,
+  getUserEventTicket,
   listUserTickets,
   cancelTicket,
   validateTicketScan,

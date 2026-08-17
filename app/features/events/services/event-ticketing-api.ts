@@ -141,6 +141,14 @@ export type MyTicketItem = {
   createdAt: string;
 };
 
+export type MyEventTicketResponse = {
+  booked: boolean;
+  ticket?: TicketDetail["ticket"];
+  order?: TicketDetail["order"] & { paymentStatus?: string };
+  event?: TicketDetail["event"];
+  cancellationPolicy?: TicketDetail["cancellationPolicy"];
+};
+
 function idempotencyKey(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -209,6 +217,13 @@ export async function verifyInAppPayuOrder(orderId: string) {
       method: "POST",
       body: JSON.stringify({ orderId }),
     },
+  );
+  return res.data;
+}
+
+export async function fetchMyEventTicket(eventId: string) {
+  const res = await requestJson<{ success: boolean; data: MyEventTicketResponse }>(
+    `/api/event-tickets/events/${eventId}/my-ticket`,
   );
   return res.data;
 }

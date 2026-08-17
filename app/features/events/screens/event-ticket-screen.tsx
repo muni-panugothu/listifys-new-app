@@ -8,7 +8,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  Share,
   Text,
   View,
 } from "react-native";
@@ -29,6 +28,7 @@ import {
   getPendingTicketPreview,
   type PendingTicketPreview,
 } from "@/features/events/utils/pending-ticket-preview";
+import { shareEventTicket } from "@/features/events/utils/ticket-share";
 import { ListifyFonts } from "@/constants/typography";
 import { resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
 import { formatPrice } from "@/lib/currency";
@@ -195,46 +195,13 @@ export function EventTicketScreen() {
 
   const handleShare = useCallback(async () => {
     if (!detail) return;
-    const event = detail.event;
-    const message = [
-      "🎟️ My Listifys Event Ticket",
-      "",
-      `Event: ${event?.title ?? "Event"}`,
-      event?.eventDate ? `Date: ${event.eventDate}${event.eventTime ? ` • ${event.eventTime}` : ""}` : "",
-      event?.venue || event?.location ? `Venue: ${[event.venue, event.location].filter(Boolean).join(", ")}` : "",
-      `Ticket: ${detail.ticket.ticketTypeName} × ${detail.ticket.quantity}`,
-      `Booking ID: ${detail.ticket.bookingId}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    await Share.share({ message, title: "Share ticket" });
+    await shareEventTicket(detail);
   }, [detail]);
 
   const handleWhatsApp = useCallback(async () => {
     if (!detail) return;
-    const event = detail.event;
-    const text = encodeURIComponent(
-      [
-        "🎟️ My Listifys Event Ticket",
-        "",
-        `Event: ${event?.title ?? "Event"}`,
-        event?.eventDate ? `Date: ${event.eventDate}${event.eventTime ? ` • ${event.eventTime}` : ""}` : "",
-        event?.venue ? `Venue: ${event.venue}` : "",
-        `Ticket: ${detail.ticket.ticketTypeName} × ${detail.ticket.quantity}`,
-        `Booking ID: ${detail.ticket.bookingId}`,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    );
-    const url = `whatsapp://send?text=${text}`;
-    const can = await Linking.canOpenURL(url);
-    if (can) {
-      await Linking.openURL(url);
-    } else {
-      await handleShare();
-    }
-  }, [detail, handleShare]);
+    await shareEventTicket(detail);
+  }, [detail]);
 
   const handleCancel = useCallback(() => {
     if (!detail?.ticket.id) return;

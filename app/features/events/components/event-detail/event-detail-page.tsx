@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { type Href, useRouter } from "@/lib/safe-router";
+import { type Href, useFocusEffect, useRouter } from "@/lib/safe-router";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Dimensions,
@@ -23,12 +23,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ListifyFonts } from "@/constants/typography";
 import { AUTH_API_BASE_URL } from "@/features/auth/services/auth-api";
 import { AuthGateBottomSheet } from "@/features/auth/components/auth-gate-bottom-sheet";
+import { EventBookedTicketCard } from "@/features/events/components/event-booked-ticket-card";
 import { FeaturedEventCard } from "@/features/events/components/featured-event-card";
 import { EventListingMedia } from "@/features/events/components/event-listing-media";
 import {
   getComedyCategoryLabel,
   getEventDurationLabel,
 } from "@/features/events/data/comedy-event-meta";
+import {
+  fetchMyEventTicket,
+  type TicketDetail,
+} from "@/features/events/services/event-ticketing-api";
 import {
   fetchSimilarEvents,
   prefetchSimilarEvents,
@@ -158,6 +163,48 @@ function EventDetailPageImpl({
   const [thingsExpanded, setThingsExpanded] = useState(false);
   const [authGateVisible, setAuthGateVisible] = useState(false);
   const [authGateAction, setAuthGateAction] = useState<"save" | "message">("save");
+  const [bookedTicket, setBookedTicket] = useState<TicketDetail | null>(null);
+  const [bookedTicketLoading, setBookedTicketLoading] = useState(false);
+
+  const loadBookedTicket = useCallback(async () => {
+    if (!user?.id || isDummy || !eventId) {
+      setBookedTicket(null);
+      return;
+    }
+    setBookedTicketLoading(true);
+    try {
+      const data = await fetchMyEventTicket(eventId);
+      if (data.booked && data.ticket) {
+        setBookedTicket({
+          ticket: data.ticket,
+          order: data.order ?? undefined,
+          event: data.event ?? undefined,
+          cancellationPolicy: data.cancellationPolicy ?? undefined,
+        });
+      } else {
+        setBookedTicket(null);
+      }
+    } catch {
+      setBookedTicket(null);
+    } finally {
+      setBookedTicketLoading(false);
+    }
+  }, [eventId, isDummy, user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isActive) return;
+      void loadBookedTicket();
+    }, [isActive, loadBookedTicket]),
+  );
+
+  useEffect(() => {
+    if (!isActive || !user?.id) {
+      if (!user?.id) setBookedTicket(null);
+      return;
+    }
+    void loadBookedTicket();
+  }, [isActive, loadBookedTicket, user?.id]);
 
   useEffect(() => {
     if (isDummy) {
@@ -326,10 +373,19 @@ function EventDetailPageImpl({
 
   const handleBook = useCallback(() => {
     if (!listing || isEventSoldOut(listing)) return;
+    if (bookedTicket?.ticket.id) {
+      router.push(`/event-ticket?ticketId=${bookedTicket.ticket.id}` as Href);
+      return;
+    }
     requireAuth("message", () => {
       router.push(`/event-checkout?eventId=${listing._id}` as Href);
     });
-  }, [listing, requireAuth, router]);
+  }, [bookedTicket?.ticket.id, listing, requireAuth, router]);
+
+  const handleViewTicket = useCallback(() => {
+    if (!bookedTicket?.ticket.id) return;
+    router.push(`/event-ticket?ticketId=${bookedTicket.ticket.id}` as Href);
+  }, [bookedTicket?.ticket.id, router]);
 
   const galleryMedia = useMemo(
     () => buildListingMediaGallery(listing ?? undefined),
@@ -402,7 +458,8 @@ function EventDetailPageImpl({
   const sellerId = getListingSellerId(listing);
   const isOwn = isOwnListing(listing, user?.id);
   const isSoldOut = isEventSoldOut(listing);
-  const ctaLabel = getEventBookCtaLabel(listing);
+  const isBooked = Boolean(bookedTicket?.ticket.id);
+  const ctaLabel = getEventBookCtaLabel(listing, isBooked);
 
   const sellerProfileImage = listing.seller?.profileImage
     ? listing.seller.profileImage.startsWith("http")
@@ -803,6 +860,27 @@ function EventDetailPageImpl({
             </View>
             <MaterialIcons name="chevron-right" size={22} color={detailTheme.secondaryText} />
           </Pressable>
+
+          {isBooked && bookedTicket ? (
+            <EventBookedTicketCard
+              detail={bookedTicket}
+              theme={detailTheme}
+              isDark={isDark}
+              onViewTicket={handleViewTicket}
+            />
+          ) : bookedTicketLoading && user?.id ? (
+            <View style={{ marginTop: 22, paddingVertical: 8 }}>
+              <Text
+                style={{
+                  fontFamily: ListifyFonts.regular,
+                  fontSize: 13,
+                  color: detailTheme.secondaryText,
+                }}
+              >
+                Checking your booking…
+              </Text>
+            </View>
+          ) : null}
 
           {comedyCategory ? (
             <>
@@ -1234,36 +1312,73 @@ function EventDetailPageImpl({
           }}
         >
           <View>
-            <Text
-              style={{
-                fontFamily: ListifyFonts.bold,
-                fontSize: 18,
-                color: detailTheme.titleText,
-              }}
-            >
-              {priceLabel}
-            </Text>
+            {isBooked ? (
+              <>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <MaterialIcons name="check-circle" size={18} color="#059669" />
+                  <Text
+                    style={{
+                      fontFamily: ListifyFonts.bold,
+                      fontSize: 16,
+                      color: "#059669",
+                    }}
+                  >
+                    Ticket booked
+                  </Text>
+                </View>
+                {bookedTicket?.ticket.bookingId ? (
+                  <Text
+                    style={{
+                      marginTop: 2,
+                      fontFamily: ListifyFonts.regular,
+                      fontSize: 12,
+                      color: detailTheme.secondaryText,
+                    }}
+                  >
+                    {bookedTicket.ticket.bookingId}
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <Text
+                style={{
+                  fontFamily: ListifyFonts.bold,
+                  fontSize: 18,
+                  color: detailTheme.titleText,
+                }}
+              >
+                {priceLabel}
+              </Text>
+            )}
           </View>
           <Pressable
             onPress={handleBook}
-            disabled={isSoldOut}
+            disabled={isSoldOut && !isBooked}
             style={({ pressed }) => ({
               borderRadius: 999,
-              backgroundColor: isSoldOut
+              backgroundColor: isSoldOut && !isBooked
                 ? isDark
                   ? "rgba(255,255,255,0.12)"
                   : "rgba(0,0,0,0.08)"
-                : detailTheme.ctaBg,
+                : isBooked
+                  ? isDark
+                    ? "rgba(5,150,105,0.22)"
+                    : "rgba(5,150,105,0.14)"
+                  : detailTheme.ctaBg,
               paddingHorizontal: 22,
               paddingVertical: 12,
-              opacity: isSoldOut ? 1 : pressed ? 0.88 : 1,
+              opacity: isSoldOut && !isBooked ? 1 : pressed ? 0.88 : 1,
             })}
           >
             <Text
               style={{
                 fontFamily: ListifyFonts.bold,
                 fontSize: 15,
-                color: isSoldOut ? detailTheme.secondaryText : detailTheme.ctaText,
+                color: isSoldOut && !isBooked
+                  ? detailTheme.secondaryText
+                  : isBooked
+                    ? "#059669"
+                    : detailTheme.ctaText,
               }}
             >
               {ctaLabel}

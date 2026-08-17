@@ -17,9 +17,11 @@ import {
   createCheckoutOrder,
   createTicketHold,
   fetchEventAvailability,
+  fetchMyEventTicket,
   type EventAvailability,
   type TicketHoldResponse,
 } from "@/features/events/services/event-ticketing-api";
+import { AuthApiError } from "@/features/auth/services/auth-api";
 import type {
   PayuCheckoutReturn,
   PayuPaymentSession,
@@ -79,6 +81,18 @@ export function EventCheckoutScreen() {
   }, [load]);
 
   useEffect(() => {
+    if (!eventId) return;
+    void fetchMyEventTicket(eventId)
+      .then((data) => {
+        if (data.booked && data.ticket?.id) {
+          showSuccessToast("Already booked", "You already have a ticket for this event");
+          router.replace(`/event-ticket?ticketId=${data.ticket.id}` as Href);
+        }
+      })
+      .catch(() => {});
+  }, [eventId, router]);
+
+  useEffect(() => {
     if (holdTimerRef.current) clearInterval(holdTimerRef.current);
     if (!hold) {
       setHoldSecondsLeft(0);
@@ -110,10 +124,18 @@ export function EventCheckoutScreen() {
       setHold(holdRes);
       return holdRes;
     } catch (e) {
+      if (e instanceof AuthApiError && e.status === 409) {
+        const details = e.details as { code?: string; ticketId?: string } | undefined;
+        if (details?.code === "ALREADY_BOOKED" && details.ticketId) {
+          showErrorToast("Already booked", "You already have a ticket for this event");
+          router.replace(`/event-ticket?ticketId=${details.ticketId}` as Href);
+          return null;
+        }
+      }
       showErrorToast("Not available", e instanceof Error ? e.message : "Could not reserve tickets");
       return null;
     }
-  }, [eventId, quantity, selectedTypeId]);
+  }, [eventId, quantity, router, selectedTypeId]);
 
   const goToPendingTicket = useCallback(
     (orderId: string) => {

@@ -35,6 +35,7 @@ router.post("/orders", protect, paymentLimiter, controller.createOrder);
 router.post("/payments/verify", protect, paymentLimiter, controller.verifyPayment);
 router.post("/payments/verify-in-app", protect, paymentLimiter, controller.verifyInAppPayment);
 
+router.get("/events/:eventId/my-ticket", protect, controller.getMyEventTicket);
 router.get("/my-tickets", protect, controller.getMyTickets);
 router.get("/tickets/:ticketId", protect, controller.getTicket);
 router.post("/tickets/:ticketId/cancel", protect, controller.cancelTicket);

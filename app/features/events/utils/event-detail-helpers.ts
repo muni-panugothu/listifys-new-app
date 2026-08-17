@@ -360,7 +360,8 @@ export function isEventSoldOut(listing: ListingItem): boolean {
   return !Number.isNaN(tickets) && tickets < 0;
 }
 
-export function getEventBookCtaLabel(listing: ListingItem): string {
+export function getEventBookCtaLabel(listing: ListingItem, booked?: boolean): string {
+  if (booked) return "View ticket";
   if (isEventSoldOut(listing)) return "Sold out";
   if (listing.price == null || listing.price === 0) return "Reserve spot";
   return "Book ticket";
