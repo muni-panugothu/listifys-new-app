@@ -123,6 +123,7 @@ function buildPaymentSession({
     actionUrl: getPayuPaymentUrl(),
     fields,
     testMode: isPayuTestMode() && shouldUseTestNetBanking(),
+    testAutoOtp: isPayuTestMode(),
     testGuide,
   };
 }

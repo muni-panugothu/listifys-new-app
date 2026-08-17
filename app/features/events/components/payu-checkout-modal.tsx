@@ -13,9 +13,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   buildPayuLaunchHtml,
+  buildPayuTestOtpAutoSubmitScript,
+  isPayu3dsChallengeUrl,
   isPayuFailureBridgeUrl,
   isPayuHostedUrl,
   isPayuReturnInProgress,
+  PAYU_WEBVIEW_OTP_CHALLENGE_MESSAGE,
   parsePayuReturnUrl,
   shouldBlockWebViewNavigation,
   type PayuCheckoutReturn,
@@ -47,6 +50,8 @@ export function PayuCheckoutModal({
   const handledRef = useRef(false);
   const paymentStartedRef = useRef(false);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const webViewRef = useRef<{ injectJavaScript: (script: string) => void } | null>(null);
+  const [hideChallengeUi, setHideChallengeUi] = useState(false);
   const hasNativeWebView = isWebViewNativeAvailable();
   const WebViewComponent = useMemo(
     () => (visible && hasNativeWebView ? getLazyWebViewModule()?.WebView ?? null : null),
@@ -66,6 +71,7 @@ export function PayuCheckoutModal({
       paymentStartedRef.current = false;
       setConnecting(true);
       setConnectingText("Loading PayU checkout…");
+      setHideChallengeUi(false);
       if (fallbackTimerRef.current) {
         clearTimeout(fallbackTimerRef.current);
         fallbackTimerRef.current = null;
@@ -149,13 +155,35 @@ export function PayuCheckoutModal({
     [finish, session?.testMode],
   );
 
+  const testOtpScript = useMemo(
+    () => (session?.testAutoOtp ? buildPayuTestOtpAutoSubmitScript() : undefined),
+    [session?.testAutoOtp],
+  );
+
+  const maybeAutoCompleteTestOtp = useCallback(
+    (url: string) => {
+      if (!session?.testAutoOtp) return;
+      if (isPayu3dsChallengeUrl(url)) {
+        setHideChallengeUi(true);
+        setConnecting(true);
+        setConnectingText("Completing payment…");
+        webViewRef.current?.injectJavaScript(buildPayuTestOtpAutoSubmitScript());
+      } else if (isPayuHostedUrl(url) && !isPayuReturnInProgress(url, paymentStartedRef.current)) {
+        setHideChallengeUi(false);
+      }
+    },
+    [session?.testAutoOtp],
+  );
+
   const notePayuActivity = useCallback(
     (url: string) => {
       if (isPayuHostedUrl(url)) {
         paymentStartedRef.current = true;
         setConnecting(false);
       }
+      maybeAutoCompleteTestOtp(url);
       if (isPayuReturnInProgress(url, paymentStartedRef.current)) {
+        setHideChallengeUi(true);
         setConnecting(true);
         setConnectingText("Confirming payment…");
         if (resolvedOrderId) {
@@ -164,7 +192,7 @@ export function PayuCheckoutModal({
       }
       inspectUrl(url);
     },
-    [inspectUrl, resolvedOrderId, scheduleServerVerifyFallback],
+    [inspectUrl, maybeAutoCompleteTestOtp, resolvedOrderId, scheduleServerVerifyFallback],
   );
 
   if (!visible || !session) return null;
@@ -195,6 +223,7 @@ export function PayuCheckoutModal({
   }
 
   const WebView = WebViewComponent;
+  const showProcessingOverlay = connecting || hideChallengeUi;
 
   return (
     <Modal
@@ -231,7 +260,7 @@ export function PayuCheckoutModal({
           </View>
         ) : null}
 
-        {connecting ? (
+        {showProcessingOverlay ? (
           <View style={styles.connecting}>
             <ActivityIndicator size="large" color="#27BB97" />
             <Text style={styles.connectingText}>{connectingText}</Text>
@@ -239,11 +268,24 @@ export function PayuCheckoutModal({
         ) : null}
 
         <WebView
+          ref={webViewRef}
           source={{
             html,
             baseUrl: session.actionUrl,
           }}
           originWhitelist={["https://*", "http://*", "listifyapp://*"]}
+          injectedJavaScript={testOtpScript}
+          injectedJavaScriptBeforeContentLoaded={testOtpScript}
+          onMessage={(event: { nativeEvent: { data: string } }) => {
+            if (
+              session.testAutoOtp &&
+              event.nativeEvent.data === PAYU_WEBVIEW_OTP_CHALLENGE_MESSAGE
+            ) {
+              setHideChallengeUi(true);
+              setConnecting(true);
+              setConnectingText("Completing payment…");
+            }
+          }}
           onShouldStartLoadWithRequest={(request: { url: string }) => {
             notePayuActivity(request.url);
             return !shouldBlockWebViewNavigation(request.url);
@@ -253,6 +295,9 @@ export function PayuCheckoutModal({
           }}
           onLoadEnd={(event: { nativeEvent: { url: string } }) => {
             notePayuActivity(event.nativeEvent.url);
+            if (session.testAutoOtp) {
+              webViewRef.current?.injectJavaScript(buildPayuTestOtpAutoSubmitScript());
+            }
           }}
           javaScriptEnabled
           domStorageEnabled
@@ -261,7 +306,7 @@ export function PayuCheckoutModal({
           setSupportMultipleWindows={false}
           allowsBackForwardNavigationGestures={false}
           startInLoadingState={false}
-          style={styles.webview}
+          style={[styles.webview, hideChallengeUi && styles.webviewHidden]}
         />
       </View>
     </Modal>
@@ -337,6 +382,10 @@ const styles = StyleSheet.create({
   webview: {
     flex: 1,
     backgroundColor: "#FFFFFF",
+  },
+  webviewHidden: {
+    opacity: 0,
+    height: 1,
   },
   setupBody: {
     flex: 1,
