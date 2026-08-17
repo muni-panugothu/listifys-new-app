@@ -257,6 +257,24 @@ app.use((req, res, next) => {
   next();
 });
 
+// Trigger server reload after payment gateway changes.
+// PayU + Razorpay ticketing webhooks registered below (before JSON body parser).
+// Razorpay webhook needs raw body for signature verification
+app.post(
+  "/api/event-tickets/webhooks/razorpay",
+  express.raw({ type: "application/json" }),
+  (req, _res, next) => {
+    req.rawBody = req.body;
+    try {
+      req.body = JSON.parse(req.body.toString("utf8"));
+    } catch {
+      req.body = {};
+    }
+    next();
+  },
+  require("./controllers/eventticketing.controller").razorpayWebhook,
+);
+
 // ============== BODY PARSERS ==============
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
@@ -648,7 +666,17 @@ const server = dbReadyPromise.then(() => httpServer.listen(PORT, "0.0.0.0", () =
 
   warmCache();
 
-  // â”€â”€ Start RabbitMQ workers (non-blocking: server runs even if queue is down)
+  try {
+    const { startHoldExpiryScheduler } = require("./services/eventticketing.service");
+    startHoldExpiryScheduler();
+    logger.info("[Ticketing] Hold expiry scheduler started");
+  } catch (ticketingErr) {
+    logger.warn("[Ticketing] Scheduler start failed (non-fatal)", {
+      error: ticketingErr.message,
+    });
+  }
+
+  // ── Start RabbitMQ workers (non-blocking: server runs even if queue is down)
   startWorkers().catch((err) => {
     logger.warn('[Server] RabbitMQ workers failed to start (non-fatal)', { error: err.message });
   });

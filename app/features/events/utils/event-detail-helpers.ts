@@ -274,7 +274,6 @@ export function buildThingsToKnow(listing: ListingItem): EventThingToKnow[] {
   const features = (listing.features as string[] | undefined) ?? [];
   const age = (listing.ageRestriction as string | undefined)?.trim();
   const dress = (listing.dressCode as string | undefined)?.trim();
-  const tickets = Number((listing.ticketsAvailable as number | undefined) ?? 0);
   const duration = getEventDurationLabel(listing as ListingItem & { eventDuration?: string });
 
   if (duration) {
@@ -323,7 +322,7 @@ export function buildThingsToKnow(listing: ListingItem): EventThingToKnow[] {
     items.push({ id: "dress-code", icon: "checkroom", text: dress });
   }
 
-  if (tickets === 0) {
+  if (isEventSoldOut(listing)) {
     items.push({
       id: "sold-out",
       icon: "local-activity",
@@ -347,6 +346,24 @@ export function buildOrganizerName(listing: ListingItem): string {
     listing.sellerName?.trim() ||
     "Organizer"
   );
+}
+
+/** Active listings with default DB ticket count (0) should still be bookable. */
+export function isEventSoldOut(listing: ListingItem): boolean {
+  const status = (listing.status as string | undefined)?.toLowerCase();
+  if (status === "sold" || status === "expired") return true;
+
+  const raw = listing.ticketsAvailable;
+  if (raw === undefined || raw === null || raw === "") return false;
+
+  const tickets = Number(raw);
+  return !Number.isNaN(tickets) && tickets < 0;
+}
+
+export function getEventBookCtaLabel(listing: ListingItem): string {
+  if (isEventSoldOut(listing)) return "Sold out";
+  if (listing.price == null || listing.price === 0) return "Reserve spot";
+  return "Book ticket";
 }
 
 export function parseEventIdsParam(raw?: string | string[]): string[] {

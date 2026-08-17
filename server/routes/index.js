@@ -27,6 +27,7 @@ const routeMap = [
   ["/api/vehicles", "./vehicles.routes"],
   ["/api/takecare", "./takecare.routes"],
   ["/api/events", "./events.routes"],
+  ["/api/event-tickets", "./eventticketing.routes"],
   ["/api/properties", "./properties.routes"],
   ["/api/forsale", "./forsale.routes"],
   ["/api/mobiles", "./mobiles.routes"],

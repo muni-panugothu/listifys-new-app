@@ -16,6 +16,7 @@ import { StatusBar, setStatusBarBackgroundColor, setStatusBarStyle, setStatusBar
 import * as SystemUI from "expo-system-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
+import * as WebBrowser from "expo-web-browser";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import "react-native-gesture-handler";
 import "react-native-reanimated";
@@ -42,6 +43,8 @@ import { MarketplaceHubHost } from "@/components/marketplace-hub-host";
 import { connectSocket, getSocket, disconnectSocket } from "@/features/messaging/services/socket-service";
 import { attachCallListeners } from "@/features/calling/services/call-socket-service";
 import { syncFcmTokenWithServer } from "@/lib/notifications/sync-fcm-token";
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function RootLayout() {
   return (

@@ -44,6 +44,8 @@ import {
   buildThingsToKnow,
   dummyToListingItem,
   findDummyFeaturedEvent,
+  getEventBookCtaLabel,
+  isEventSoldOut,
   type EventOrganizerStats,
 } from "@/features/events/utils/event-detail-helpers";
 import {
@@ -53,10 +55,9 @@ import {
   toggleSaveListing,
   type ListingItem,
 } from "@/features/listing/services/listing-api";
-import { buildListingChatHref } from "@/lib/listing-chat";
+import { getListingSellerId, isOwnListing } from "@/lib/is-own-listing";
 import { buildListingMediaGallery } from "@/lib/listing-media";
 import { cacheKeys, getCachedStale, seedListingDetail } from "@/lib/cache";
-import { getListingSellerId, isOwnListing } from "@/lib/is-own-listing";
 import { Image } from "@/lib/nativewind-interop";
 import { useSwrListing } from "@/lib/use-swr-listing";
 import { useEventsTheme } from "@/features/events/theme/events-theme";
@@ -324,25 +325,9 @@ function EventDetailPageImpl({
   }, [listing]);
 
   const handleBook = useCallback(() => {
-    if (!listing) return;
-    const tickets = Number((listing.ticketsAvailable as number | undefined) ?? 1);
-    const seller = getListingSellerId(listing);
-    if (tickets <= 0 || !seller) return;
-    const host = buildOrganizerName(listing);
+    if (!listing || isEventSoldOut(listing)) return;
     requireAuth("message", () => {
-      router.push(
-        buildListingChatHref({
-          recipientId: seller,
-          sellerId: seller,
-          name: host,
-          productId: listing._id,
-          productType: "events",
-          productTitle: listing.title,
-          productPrice: listing.price,
-          productImage: listing.images?.[0] ?? null,
-          currency: listing.currency ?? "₹",
-        }),
-      );
+      router.push(`/event-checkout?eventId=${listing._id}` as Href);
     });
   }, [listing, requireAuth, router]);
 
@@ -416,13 +401,8 @@ function EventDetailPageImpl({
   const organizerName = buildOrganizerName(listing);
   const sellerId = getListingSellerId(listing);
   const isOwn = isOwnListing(listing, user?.id);
-  const ticketsAvailable = Number((listing.ticketsAvailable as number | undefined) ?? 1);
-  const ctaLabel =
-    ticketsAvailable <= 0
-      ? "Sold out"
-      : listing.price == null || listing.price === 0
-        ? "Reserve spot"
-        : "Book tickets";
+  const isSoldOut = isEventSoldOut(listing);
+  const ctaLabel = getEventBookCtaLabel(listing);
 
   const sellerProfileImage = listing.seller?.profileImage
     ? listing.seller.profileImage.startsWith("http")
@@ -1266,20 +1246,24 @@ function EventDetailPageImpl({
           </View>
           <Pressable
             onPress={handleBook}
-            disabled={ticketsAvailable <= 0}
+            disabled={isSoldOut}
             style={({ pressed }) => ({
               borderRadius: 999,
-              backgroundColor: detailTheme.ctaBg,
+              backgroundColor: isSoldOut
+                ? isDark
+                  ? "rgba(255,255,255,0.12)"
+                  : "rgba(0,0,0,0.08)"
+                : detailTheme.ctaBg,
               paddingHorizontal: 22,
               paddingVertical: 12,
-              opacity: ticketsAvailable <= 0 ? 0.45 : pressed ? 0.88 : 1,
+              opacity: isSoldOut ? 1 : pressed ? 0.88 : 1,
             })}
           >
             <Text
               style={{
                 fontFamily: ListifyFonts.bold,
                 fontSize: 15,
-                color: detailTheme.ctaText,
+                color: isSoldOut ? detailTheme.secondaryText : detailTheme.ctaText,
               }}
             >
               {ctaLabel}

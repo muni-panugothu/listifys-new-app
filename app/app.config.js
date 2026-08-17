@@ -26,6 +26,10 @@ const apiBaseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ||
   "https://listifys-new-app.onrender.com";
 
+const payuLaunchBaseUrl =
+  process.env.EXPO_PUBLIC_PAYU_LAUNCH_BASE_URL?.trim() ||
+  "https://listifys-new-app.onrender.com";
+
 /** @type {import('expo/config').ExpoConfig} */
 module.exports = {
   ...appJson.expo,
@@ -38,6 +42,7 @@ module.exports = {
       packageName: GOOGLE_OAUTH_FALLBACK.packageName,
     },
     ...(apiBaseUrl ? { apiBaseUrl } : {}),
+    payuLaunchBaseUrl,
   },
   plugins: [
     "@react-native-firebase/app",

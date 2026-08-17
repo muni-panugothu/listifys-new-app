@@ -465,6 +465,14 @@ export function DashboardHomeScreen() {
           />
           <MenuRow
             colors={colors}
+            icon="confirmation-number"
+            iconBg="rgba(39,187,151,0.15)"
+            iconColor={colors.primary}
+            label="My tickets"
+            onPress={() => navigateProtected("/my-tickets" as Href)}
+          />
+          <MenuRow
+            colors={colors}
             icon="chat-bubble-outline"
             iconBg="rgba(59,130,246,0.15)"
             iconColor={colors.accentBlue}
