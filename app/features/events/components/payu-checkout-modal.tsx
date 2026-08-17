@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   BackHandler,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -20,6 +21,7 @@ import {
   isPayuReturnInProgress,
   PAYU_WEBVIEW_OTP_CHALLENGE_MESSAGE,
   parsePayuReturnUrl,
+  parsePayuWebViewReturnMessage,
   shouldBlockWebViewNavigation,
   type PayuCheckoutReturn,
   type PayuPaymentSession,
@@ -52,6 +54,7 @@ export function PayuCheckoutModal({
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const webViewRef = useRef<{ injectJavaScript: (script: string) => void } | null>(null);
   const [hideChallengeUi, setHideChallengeUi] = useState(false);
+  const [overrideUri, setOverrideUri] = useState<string | null>(null);
   const hasNativeWebView = isWebViewNativeAvailable();
   const WebViewComponent = useMemo(
     () => (visible && hasNativeWebView ? getLazyWebViewModule()?.WebView ?? null : null),
@@ -63,6 +66,12 @@ export function PayuCheckoutModal({
     [session],
   );
 
+  const webSource = useMemo(() => {
+    if (overrideUri) return { uri: overrideUri };
+    if (html && session) return { html, baseUrl: session.actionUrl };
+    return null;
+  }, [overrideUri, html, session]);
+
   const resolvedOrderId = _orderId || session?.fields?.udf1 || null;
 
   useEffect(() => {
@@ -72,6 +81,7 @@ export function PayuCheckoutModal({
       setConnecting(true);
       setConnectingText("Loading PayU checkout…");
       setHideChallengeUi(false);
+      setOverrideUri(null);
       if (fallbackTimerRef.current) {
         clearTimeout(fallbackTimerRef.current);
         fallbackTimerRef.current = null;
@@ -122,7 +132,7 @@ export function PayuCheckoutModal({
         setConnecting(true);
         setConnectingText("Confirming payment…");
         onInAppVerified(targetOrderId);
-      }, 12_000);
+      }, 8_000);
     },
     [onInAppVerified],
   );
@@ -153,11 +163,6 @@ export function PayuCheckoutModal({
       }
     },
     [finish, session?.testMode],
-  );
-
-  const testOtpScript = useMemo(
-    () => (session?.testAutoOtp ? buildPayuTestOtpAutoSubmitScript() : undefined),
-    [session?.testAutoOtp],
   );
 
   const maybeAutoCompleteTestOtp = useCallback(
@@ -195,9 +200,54 @@ export function PayuCheckoutModal({
     [inspectUrl, maybeAutoCompleteTestOtp, resolvedOrderId, scheduleServerVerifyFallback],
   );
 
+  const handleWebViewMessage = useCallback(
+    (event: { nativeEvent: { data: string } }) => {
+      const data = event.nativeEvent.data;
+
+      if (session?.testAutoOtp && data === PAYU_WEBVIEW_OTP_CHALLENGE_MESSAGE) {
+        setHideChallengeUi(true);
+        setConnecting(true);
+        setConnectingText("Completing payment…");
+        return;
+      }
+
+      const parsed = parsePayuWebViewReturnMessage(data);
+      if (parsed === "cancelled") {
+        finish("cancelled");
+        return;
+      }
+      if (parsed) {
+        finish(parsed);
+      }
+    },
+    [finish, session?.testAutoOtp],
+  );
+
+  const handleOpenWindow = useCallback(
+    (event: { nativeEvent: { targetUrl?: string } }) => {
+      const targetUrl = event.nativeEvent?.targetUrl;
+      if (!targetUrl) return;
+      setOverrideUri(targetUrl);
+      maybeAutoCompleteTestOtp(targetUrl);
+    },
+    [maybeAutoCompleteTestOtp],
+  );
+
+  const handleRenderProcessGone = useCallback(() => {
+    if (handledRef.current || !resolvedOrderId) return;
+    handledRef.current = true;
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+    setConnecting(true);
+    setConnectingText("Confirming payment…");
+    onInAppVerified(resolvedOrderId);
+  }, [onInAppVerified, resolvedOrderId]);
+
   if (!visible || !session) return null;
 
-  if (!hasNativeWebView || !WebViewComponent || !html) {
+  if (!hasNativeWebView || !WebViewComponent || !webSource) {
     return (
       <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={() => onCancel()}>
         <View style={[styles.container, { paddingTop: insets.top, paddingHorizontal: 24 }]}>
@@ -269,23 +319,9 @@ export function PayuCheckoutModal({
 
         <WebView
           ref={webViewRef}
-          source={{
-            html,
-            baseUrl: session.actionUrl,
-          }}
+          source={webSource}
           originWhitelist={["https://*", "http://*", "listifyapp://*"]}
-          injectedJavaScript={testOtpScript}
-          injectedJavaScriptBeforeContentLoaded={testOtpScript}
-          onMessage={(event: { nativeEvent: { data: string } }) => {
-            if (
-              session.testAutoOtp &&
-              event.nativeEvent.data === PAYU_WEBVIEW_OTP_CHALLENGE_MESSAGE
-            ) {
-              setHideChallengeUi(true);
-              setConnecting(true);
-              setConnectingText("Completing payment…");
-            }
-          }}
+          onMessage={handleWebViewMessage}
           onShouldStartLoadWithRequest={(request: { url: string }) => {
             notePayuActivity(request.url);
             return !shouldBlockWebViewNavigation(request.url);
@@ -294,16 +330,21 @@ export function PayuCheckoutModal({
             notePayuActivity(nav.url);
           }}
           onLoadEnd={(event: { nativeEvent: { url: string } }) => {
-            notePayuActivity(event.nativeEvent.url);
-            if (session.testAutoOtp) {
+            const url = event.nativeEvent.url;
+            notePayuActivity(url);
+            if (session.testAutoOtp && isPayu3dsChallengeUrl(url)) {
               webViewRef.current?.injectJavaScript(buildPayuTestOtpAutoSubmitScript());
             }
           }}
+          onOpenWindow={Platform.OS === "android" ? handleOpenWindow : undefined}
+          onRenderProcessGone={
+            Platform.OS === "android" ? handleRenderProcessGone : undefined
+          }
           javaScriptEnabled
           domStorageEnabled
           sharedCookiesEnabled
           thirdPartyCookiesEnabled
-          setSupportMultipleWindows={false}
+          setSupportMultipleWindows={Platform.OS === "android"}
           allowsBackForwardNavigationGestures={false}
           startInLoadingState={false}
           style={[styles.webview, hideChallengeUi && styles.webviewHidden]}
@@ -385,7 +426,7 @@ const styles = StyleSheet.create({
   },
   webviewHidden: {
     opacity: 0,
-    height: 1,
+    pointerEvents: "none",
   },
   setupBody: {
     flex: 1,

@@ -53,11 +53,10 @@ export type PayuCheckoutReturn = {
   razorpay_signature: string;
 };
 
-export function parsePayuReturnUrl(url: string): PayuCheckoutReturn | "cancelled" | null {
-  if (!url.startsWith(PAYU_CHECKOUT_RETURN_SCHEME)) return null;
-
+export function parsePayuReturnFromQuery(
+  query: string,
+): PayuCheckoutReturn | "cancelled" | null {
   try {
-    const query = url.includes("?") ? url.slice(url.indexOf("?") + 1) : "";
     const params = new URLSearchParams(query);
     if (params.get("cancelled") === "1") return "cancelled";
 
@@ -79,6 +78,29 @@ export function parsePayuReturnUrl(url: string): PayuCheckoutReturn | "cancelled
   }
 
   return null;
+}
+
+export function parsePayuReturnUrl(url: string): PayuCheckoutReturn | "cancelled" | null {
+  if (!url.startsWith(PAYU_CHECKOUT_RETURN_SCHEME)) return null;
+  const query = url.includes("?") ? url.slice(url.indexOf("?") + 1) : "";
+  return parsePayuReturnFromQuery(query);
+}
+
+export type PayuWebViewReturnMessage = {
+  type: "payu-return";
+  query: string;
+};
+
+export function parsePayuWebViewReturnMessage(
+  data: string,
+): PayuCheckoutReturn | "cancelled" | null {
+  try {
+    const parsed = JSON.parse(data) as PayuWebViewReturnMessage;
+    if (parsed?.type !== "payu-return" || typeof parsed.query !== "string") return null;
+    return parsePayuReturnFromQuery(parsed.query);
+  } catch {
+    return null;
+  }
 }
 
 export function isPayuHostedUrl(url: string) {
@@ -125,7 +147,7 @@ export function isPayu3dsChallengeUrl(url: string) {
 
 /** Injected into PayU WebView — fills test OTP 123456 and taps Pay on 3DS simulator. */
 export function buildPayuTestOtpAutoSubmitScript() {
-  return `(function(){var OTP="123456";function looksLikeOtp(){try{var t=(document.title||"").toUpperCase();var b=(document.body&&document.body.innerText||"").toUpperCase();return t.indexOf("3DS")>=0||b.indexOf("3DS2")>=0||b.indexOf("CYBER")>=0||b.indexOf("ENTER THE OTP")>=0||b.indexOf("PLEASE ENTER THE OTP")>=0;}catch(e){return false;}}function notify(){try{if(looksLikeOtp()&&window.ReactNativeWebView){window.ReactNativeWebView.postMessage("payu-otp-challenge");}}catch(e){}}function run(){notify();if(!looksLikeOtp())return;var inputs=document.querySelectorAll("input");for(var i=0;i<inputs.length;i++){var el=inputs[i];var type=(el.type||"text").toLowerCase();if(type==="hidden"||type==="submit"||type==="button")continue;el.value=OTP;el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));}var nodes=document.querySelectorAll("button,input[type=submit],a");for(var j=0;j<nodes.length;j++){var btn=nodes[j];var label=(btn.innerText||btn.value||"").trim().toUpperCase();if(label==="PAY"||label.indexOf("SUBMIT")>=0){btn.click();break;}}}run();setInterval(run,450);})();true;`;
+  return `(function(){var OTP="123456",runs=0,timer=null;function looksLikeOtp(){try{var t=(document.title||"").toUpperCase();var b=(document.body&&document.body.innerText||"").toUpperCase();return t.indexOf("3DS")>=0||b.indexOf("3DS2")>=0||b.indexOf("CYBER")>=0||b.indexOf("ENTER THE OTP")>=0||b.indexOf("PLEASE ENTER THE OTP")>=0;}catch(e){return false;}}function notify(){try{if(looksLikeOtp()&&window.ReactNativeWebView){window.ReactNativeWebView.postMessage("payu-otp-challenge");}}catch(e){}}function run(){runs+=1;if(runs>40&&timer){clearInterval(timer);timer=null;return;}notify();if(!looksLikeOtp())return;var inputs=document.querySelectorAll("input");for(var i=0;i<inputs.length;i++){var el=inputs[i];var type=(el.type||"text").toLowerCase();if(type==="hidden"||type==="submit"||type==="button")continue;el.value=OTP;el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));}var nodes=document.querySelectorAll("button,input[type=submit],a");for(var j=0;j<nodes.length;j++){var btn=nodes[j];var label=(btn.innerText||btn.value||"").trim().toUpperCase();if(label==="PAY"||label.indexOf("SUBMIT")>=0){btn.click();break;}}}run();timer=setInterval(run,450);})();true;`;
 }
 
 export const PAYU_WEBVIEW_OTP_CHALLENGE_MESSAGE = "payu-otp-challenge";

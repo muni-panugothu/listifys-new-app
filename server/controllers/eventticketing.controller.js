@@ -192,25 +192,38 @@ exports.renderCheckoutPage = async (req, res) => {
   }
 };
 
-exports.handlePayuReturn = async (req, res) => {
-  try {
-    const params = { ...req.query, ...req.body };
-    const redirectUrl = await ticketing.handlePayuReturn(params);
-    const safeUrl = String(redirectUrl).replace(/"/g, "&quot;");
-    const html = `<!DOCTYPE html>
+function buildPayuReturnBridgeHtml(redirectUrl) {
+  const query = redirectUrl.includes("?")
+    ? redirectUrl.slice(redirectUrl.indexOf("?") + 1)
+    : "";
+  return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="refresh" content="0;url=${safeUrl}">
   <title>Returning to Listifys</title>
 </head>
 <body style="margin:0;background:#fff;font-family:sans-serif;text-align:center;padding:48px 24px;color:#666">
   <p>Payment received. Returning to Listifys…</p>
-  <script>window.location.replace(${JSON.stringify(redirectUrl)});<\/script>
+  <script>
+(function(){
+  var payload = JSON.stringify({ type: "payu-return", query: ${JSON.stringify(query)} });
+  if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+    window.ReactNativeWebView.postMessage(payload);
+    return;
+  }
+  window.location.replace(${JSON.stringify(redirectUrl)});
+})();
+  <\/script>
 </body>
 </html>`;
-    return res.status(200).type("html").send(html);
+}
+
+exports.handlePayuReturn = async (req, res) => {
+  try {
+    const params = { ...req.query, ...req.body };
+    const redirectUrl = await ticketing.handlePayuReturn(params);
+    return res.status(200).type("html").send(buildPayuReturnBridgeHtml(redirectUrl));
   } catch (err) {
     logger.error("[Ticketing] PayU return error", { err: err.message });
     const qs = new URLSearchParams({
@@ -218,8 +231,7 @@ exports.handlePayuReturn = async (req, res) => {
       message: err.message || "Payment return failed",
     }).toString();
     const fallback = `listifyapp://event-payment?${qs}`;
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><script>window.location.replace(${JSON.stringify(fallback)});<\/script></head><body></body></html>`;
-    return res.status(200).type("html").send(html);
+    return res.status(200).type("html").send(buildPayuReturnBridgeHtml(fallback));
   }
 };
 

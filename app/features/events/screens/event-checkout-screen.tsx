@@ -234,7 +234,10 @@ export function EventCheckoutScreen() {
     (result: PayuCheckoutReturn) => {
       const orderId = activeOrderIdRef.current || result.orderId;
       setPayuSession(null);
-      void finalizePayment(orderId, result);
+      setPaymentPhase("verifying");
+      setTimeout(() => {
+        void finalizePayment(orderId, result);
+      }, 400);
     },
     [finalizePayment],
   );
