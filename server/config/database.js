@@ -26,7 +26,8 @@ const connectDB = async () => {
       waitQueueTimeoutMS: 10_000,           // Max wait when pool is exhausted (fail fast)
 
       // ── Read/Write settings ───────────────────────────────────────────────────
-      readPreference: "primaryPreferred",
+      // Transactions (e.g. ticket payment confirm) require readPreference "primary".
+      readPreference: "primary",
       retryWrites: true,                    // Auto-retry failed writes (network glitch)
       retryReads: true,                     // Auto-retry failed reads
       w: "majority",                        // Write concern: acknowledged by majority
