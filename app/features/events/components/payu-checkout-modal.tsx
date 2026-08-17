@@ -13,9 +13,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   buildPayuLaunchHtml,
+  isPayuFailureBridgeUrl,
   isPayuHostedUrl,
+  isPayuReturnInProgress,
   parsePayuReturnUrl,
-  shouldInterceptPostPaymentUrl,
+  shouldBlockWebViewNavigation,
   type PayuCheckoutReturn,
   type PayuPaymentSession,
 } from "@/features/events/utils/payu-checkout-html";
@@ -34,7 +36,7 @@ export type PayuCheckoutModalProps = {
 export function PayuCheckoutModal({
   visible,
   session,
-  orderId,
+  orderId: _orderId,
   onSuccess,
   onInAppVerified,
   onCancel,
@@ -43,8 +45,8 @@ export function PayuCheckoutModal({
   const [connecting, setConnecting] = useState(true);
   const [connectingText, setConnectingText] = useState("Loading PayU checkout…");
   const handledRef = useRef(false);
-  const verifyingRef = useRef(false);
   const paymentStartedRef = useRef(false);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasNativeWebView = isWebViewNativeAvailable();
   const WebViewComponent = useMemo(
     () => (visible && hasNativeWebView ? getLazyWebViewModule()?.WebView ?? null : null),
@@ -56,15 +58,18 @@ export function PayuCheckoutModal({
     [session],
   );
 
-  const resolvedOrderId = orderId || session?.fields?.udf1 || null;
+  const resolvedOrderId = _orderId || session?.fields?.udf1 || null;
 
   useEffect(() => {
     if (!visible) {
       handledRef.current = false;
-      verifyingRef.current = false;
       paymentStartedRef.current = false;
       setConnecting(true);
       setConnectingText("Loading PayU checkout…");
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
     }
   }, [visible]);
 
@@ -77,10 +82,21 @@ export function PayuCheckoutModal({
     return () => sub.remove();
   }, [visible, onCancel]);
 
+  useEffect(
+    () => () => {
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+    },
+    [],
+  );
+
   const finish = useCallback(
     (result: PayuCheckoutReturn | "cancelled", message?: string) => {
       if (handledRef.current) return;
       handledRef.current = true;
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
       if (result === "cancelled") {
         onCancel(message);
         return;
@@ -90,48 +106,57 @@ export function PayuCheckoutModal({
     [onCancel, onSuccess],
   );
 
-  const triggerInAppVerify = useCallback(
+  const scheduleServerVerifyFallback = useCallback(
     (targetOrderId: string) => {
-      if (handledRef.current || verifyingRef.current) return true;
-      verifyingRef.current = true;
-      setConnecting(true);
-      setConnectingText("Confirming payment…");
-      onInAppVerified(targetOrderId);
-      return true;
+      if (handledRef.current || fallbackTimerRef.current) return;
+      fallbackTimerRef.current = setTimeout(() => {
+        fallbackTimerRef.current = null;
+        if (handledRef.current || !targetOrderId) return;
+        handledRef.current = true;
+        setConnecting(true);
+        setConnectingText("Confirming payment…");
+        onInAppVerified(targetOrderId);
+      }, 12_000);
     },
     [onInAppVerified],
   );
 
   const inspectUrl = useCallback(
     (url: string) => {
+      if (isPayuFailureBridgeUrl(url)) {
+        finish("cancelled", "Payment failed or was cancelled");
+        return;
+      }
+
       const parsed = parsePayuReturnUrl(url);
       if (parsed === "cancelled") {
         finish("cancelled");
-        return true;
+        return;
       }
       if (parsed) {
         finish(parsed);
-        return true;
       }
-
-      if (shouldInterceptPostPaymentUrl(url, paymentStartedRef.current)) {
-        if (resolvedOrderId) {
-          return triggerInAppVerify(resolvedOrderId);
-        }
-        return true;
-      }
-
-      return false;
     },
-    [finish, resolvedOrderId, triggerInAppVerify],
+    [finish],
   );
 
-  const notePayuActivity = useCallback((url: string) => {
-    if (isPayuHostedUrl(url)) {
-      paymentStartedRef.current = true;
-      setConnecting(false);
-    }
-  }, []);
+  const notePayuActivity = useCallback(
+    (url: string) => {
+      if (isPayuHostedUrl(url)) {
+        paymentStartedRef.current = true;
+        setConnecting(false);
+      }
+      if (isPayuReturnInProgress(url, paymentStartedRef.current)) {
+        setConnecting(true);
+        setConnectingText("Confirming payment…");
+        if (resolvedOrderId) {
+          scheduleServerVerifyFallback(resolvedOrderId);
+        }
+      }
+      inspectUrl(url);
+    },
+    [inspectUrl, resolvedOrderId, scheduleServerVerifyFallback],
+  );
 
   if (!visible || !session) return null;
 
@@ -201,12 +226,10 @@ export function PayuCheckoutModal({
           originWhitelist={["https://*", "http://*", "listifyapp://*"]}
           onShouldStartLoadWithRequest={(request: { url: string }) => {
             notePayuActivity(request.url);
-            if (inspectUrl(request.url)) return false;
-            return true;
+            return !shouldBlockWebViewNavigation(request.url);
           }}
           onNavigationStateChange={(nav: { url: string }) => {
             notePayuActivity(nav.url);
-            inspectUrl(nav.url);
           }}
           onLoadEnd={(event: { nativeEvent: { url: string } }) => {
             notePayuActivity(event.nativeEvent.url);

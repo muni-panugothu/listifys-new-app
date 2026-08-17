@@ -51,6 +51,7 @@ function buildPaymentSession({
   firstname,
   email,
   phone,
+  callbackBase,
 }) {
   const key = getMerchantKey();
   const amount = paiseToPayuAmount(amountPaise);
@@ -65,7 +66,7 @@ function buildPaymentSession({
     udf1,
   });
 
-  const apiBase = getCallbackBaseUrl();
+  const apiBase = (callbackBase || getCallbackBaseUrl()).replace(/\/$/, "");
   return {
     provider: "payu",
     actionUrl: getPayuPaymentUrl(),
@@ -119,23 +120,34 @@ async function verifyTransactionWithPayu(txnid) {
       return { verified: false, reason: "invalid_response" };
     }
 
-    if (parsed.status !== 1) {
+    if (parsed.status !== 1 && !parsed.transaction_details) {
       return { verified: false, reason: parsed.msg || "verify_failed" };
     }
 
-    const details = parsed.transaction_details?.[var1];
+    const details =
+      parsed.transaction_details?.[var1] ||
+      Object.values(parsed.transaction_details || {}).find(
+        (entry) => entry && String(entry.mihpayid || "") !== "Not Found",
+      );
+
     if (!details) {
       return { verified: false, reason: "transaction_not_found" };
     }
 
     const status = String(details.status || "").toLowerCase();
+    const unmapped = String(details.unmappedstatus || "").toLowerCase();
     const amountRupees = parseFloat(details.amt || details.transaction_amount || "0");
+    const isSuccess =
+      status === "success" ||
+      unmapped === "captured" ||
+      unmapped === "success";
+
     return {
-      verified: status === "success",
-      status,
+      verified: isSuccess,
+      status: status || unmapped || "unknown",
       amountPaise: Math.round(amountRupees * 100),
       paymentId: details.mihpayid || details.bank_ref_num || null,
-      reason: status !== "success" ? status : undefined,
+      reason: isSuccess ? undefined : status || unmapped || parsed.msg || "verify_failed",
     };
   } catch (err) {
     return { verified: false, reason: err.message || "network_error" };

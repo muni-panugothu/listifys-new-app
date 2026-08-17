@@ -81,16 +81,16 @@ export function isPayuReturnBridgeUrl(url: string) {
   return url.includes("/api/event-tickets/payu/return/");
 }
 
-/** Block backend callback / Render host after PayU — verify in-app instead of loading the page. */
-export function shouldInterceptPostPaymentUrl(url: string, paymentStarted: boolean) {
-  if (parsePayuReturnUrl(url)) return true;
-  if (isPayuReturnBridgeUrl(url)) return true;
+export function isPayuFailureBridgeUrl(url: string) {
+  return url.includes("/api/event-tickets/payu/return/failure");
+}
+
+/** Only block app deep-link returns — PayU surl/furl must load so PayU marks payment success. */
+export function shouldBlockWebViewNavigation(url: string) {
+  return Boolean(parsePayuReturnUrl(url));
+}
+
+export function isPayuReturnInProgress(url: string, paymentStarted: boolean) {
   if (!paymentStarted) return false;
-  try {
-    const { hostname } = new URL(url);
-    if (hostname.includes("onrender.com")) return true;
-  } catch {
-    return false;
-  }
-  return false;
+  return isPayuReturnBridgeUrl(url) || url.startsWith(PAYU_CHECKOUT_RETURN_SCHEME);
 }

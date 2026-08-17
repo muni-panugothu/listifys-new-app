@@ -121,7 +121,22 @@ export function EventCheckoutScreen() {
       setPayuSession(null);
       setPaymentPhase("verifying");
       try {
-        const confirmed = await verifyInAppPayuOrder(orderId);
+        let confirmed = null;
+        let lastError: Error | null = null;
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          try {
+            confirmed = await verifyInAppPayuOrder(orderId);
+            break;
+          } catch (e) {
+            lastError = e instanceof Error ? e : new Error("Verification failed");
+            if (attempt < 3) {
+              await new Promise((resolve) => setTimeout(resolve, 2500));
+            }
+          }
+        }
+        if (!confirmed) {
+          throw lastError ?? new Error("Verification failed");
+        }
         showSuccessToast("Payment successful", "Your ticket is ready");
         const ticketId = confirmed.ticket?.id;
         if (ticketId) {

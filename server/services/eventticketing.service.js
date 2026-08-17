@@ -27,6 +27,12 @@ const HOLD_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const PLATFORM_FEE_PAISE = 0; // configurable later
 const TAX_RATE = 0; // GST can be added per event later
 
+function startPrimarySession() {
+  return mongoose.startSession({
+    defaultTransactionOptions: { readPreference: "primary" },
+  });
+}
+
 function generateBookingId() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
@@ -277,7 +283,7 @@ async function createHold({ userId, eventId, ticketTypeId, quantity, idempotency
     throw err;
   }
 
-  const session = await mongoose.startSession();
+  const session = await startPrimarySession();
   session.startTransaction();
 
   try {
@@ -370,7 +376,7 @@ async function expireStaleHolds() {
 
   let count = 0;
   for (const hold of stale) {
-    const session = await mongoose.startSession();
+    const session = await startPrimarySession();
     session.startTransaction();
     try {
       const fresh = await TicketHold.findById(hold._id).session(session);
@@ -404,7 +410,7 @@ async function getActiveHold(holdId, userId) {
     throw err;
   }
   if (hold.expiresAt <= new Date()) {
-    const session = await mongoose.startSession();
+    const session = await startPrimarySession();
     session.startTransaction();
     try {
       await expireHold(hold, session);
@@ -425,6 +431,7 @@ async function buildPayuPaymentExtras(order, userId, apiBase) {
   const user = await User.findById(userId).select("name email phone").lean();
   const productinfo = `${order.ticketTypeName} x ${order.quantity}`.slice(0, 100);
   const checkoutToken = createCheckoutToken(order._id, userId);
+  const callbackBase = (apiBase || payuService.getCallbackBaseUrl()).replace(/\/$/, "");
   const paymentSession = payuService.buildPaymentSession({
     orderId: order._id,
     txnid: order.bookingId,
@@ -434,6 +441,7 @@ async function buildPayuPaymentExtras(order, userId, apiBase) {
     email: (user?.email || "guest@listifys.app").slice(0, 60),
     phone:
       (user?.phone || "9999999999").replace(/\D/g, "").slice(-10) || "9999999999",
+    callbackBase,
   });
 
   const launchBase = (apiBase || payuService.getCallbackBaseUrl()).replace(/\/$/, "");
@@ -573,7 +581,7 @@ async function confirmOrderPayment({
     if (order) return formatOrderResponse(order, { ticketId: parsed.ticketId });
   }
 
-  const session = await mongoose.startSession();
+  const session = await startPrimarySession();
   session.startTransaction();
 
   try {
@@ -667,7 +675,11 @@ async function confirmOrderPayment({
       }
 
       if (!verified) {
-        const err = new Error("Payment verification failed");
+        const err = new Error(
+          payuServerVerify && provider === "payu"
+            ? "PayU has not confirmed this payment yet. If money was debited, wait a moment and try again."
+            : "Payment verification failed",
+        );
         err.statusCode = 400;
         throw err;
       }
@@ -1128,7 +1140,7 @@ async function listUserTickets(userId, { tab = "upcoming" } = {}) {
 }
 
 async function cancelTicket({ ticketId, userId }) {
-  const session = await mongoose.startSession();
+  const session = await startPrimarySession();
   session.startTransaction();
 
   try {
@@ -1299,7 +1311,7 @@ function summarizeTicket(ticket, order, event) {
 
 async function checkInTicket({ token, scannerUserId, eventId }) {
   const secureToken = parseQrToken(token);
-  const session = await mongoose.startSession();
+  const session = await startPrimarySession();
   session.startTransaction();
 
   try {
