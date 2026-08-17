@@ -1,6 +1,5 @@
 import * as FileSystem from "expo-file-system";
-import * as Sharing from "expo-sharing";
-import { Platform, Share } from "react-native";
+import { Share } from "react-native";
 
 import type { TicketDetail } from "@/features/events/services/event-ticketing-api";
 
@@ -43,33 +42,26 @@ async function downloadTicketQrImage(qrPayload: string, bookingId: string): Prom
 }
 
 export async function shareEventTicket(detail: TicketDetail): Promise<void> {
-  const message = buildTicketShareMessage(detail);
+  const qrLink = detail.ticket.qrPayload
+    ? buildTicketQrImageUrl(detail.ticket.qrPayload, 512)
+    : null;
+  const message = [
+    buildTicketShareMessage(detail),
+    qrLink ? `\n🧾 Ticket QR: ${qrLink}` : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
   const qrUri = detail.ticket.qrPayload
     ? await downloadTicketQrImage(detail.ticket.qrPayload, detail.ticket.bookingId)
     : null;
 
   if (qrUri) {
-    if (Platform.OS === "android") {
-      try {
-        await Share.share({ message, url: qrUri, title: "Share ticket" });
-        return;
-      } catch {
-        /* fall through to expo-sharing */
-      }
-    }
-
-    if (await Sharing.isAvailableAsync()) {
-      if (Platform.OS === "ios") {
-        await Share.share({ message, url: qrUri, title: "Share ticket" });
-        return;
-      }
-
-      await Sharing.shareAsync(qrUri, {
-        mimeType: "image/png",
-        dialogTitle: "Share ticket",
-        UTI: "public.png",
-      });
+    try {
+      await Share.share({ message, url: qrUri, title: "Share ticket" });
       return;
+    } catch {
+      /* fall through to text-only share */
     }
   }
 
