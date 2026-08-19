@@ -117,9 +117,19 @@ function hasRestrictiveEventFilters(params: EventsQueryParams): boolean {
     params.location ||
       params.lat != null ||
       params.lng != null ||
+      params.countryCode ||
       params.date ||
       params.weekend ||
       (params.subcategory && params.subcategory !== "All"),
+  );
+}
+
+function hasLocationScope(params: EventsQueryParams): boolean {
+  return (
+    params.lat != null ||
+    params.lng != null ||
+    Boolean(params.countryCode) ||
+    Boolean(params.location)
   );
 }
 
@@ -131,6 +141,8 @@ function buildBroadEventsParams(params: EventsQueryParams): EventsQueryParams {
   };
 }
 
+const WIDER_RADIUS_STEPS_KM = [200, 500] as const;
+
 export async function fetchUpcomingEvents(
   params: EventsQueryParams = {},
   opts: { force?: boolean } = {},
@@ -138,25 +150,52 @@ export async function fetchUpcomingEvents(
   return fetchUpcomingEventsOnce(params, opts);
 }
 
-/** Tries the requested filters, then falls back to a global upcoming list. */
+/**
+ * Tries the requested filters. When the user has a location scope, never falls
+ * back to a global unfiltered list — only widens radius within the same scope.
+ */
 export async function fetchUpcomingEventsReliable(
   params: EventsQueryParams = {},
   opts: { force?: boolean } = {},
 ): Promise<UpcomingEventsResponse> {
+  const locationScoped = hasLocationScope(params);
+
   try {
     const primary = await fetchUpcomingEventsOnce(params, opts);
     if ((primary.listings?.length ?? 0) > 0 || !hasRestrictiveEventFilters(params)) {
       return primary;
     }
-  } catch {
+
+    if (
+      locationScoped &&
+      params.lat != null &&
+      params.lng != null &&
+      params.radius != null
+    ) {
+      for (const widerRadius of WIDER_RADIUS_STEPS_KM) {
+        if (widerRadius <= params.radius) continue;
+        const widened = await fetchUpcomingEventsOnce(
+          { ...params, radius: widerRadius },
+          { force: true },
+        );
+        if ((widened.listings?.length ?? 0) > 0) {
+          return widened;
+        }
+      }
+    }
+
+    return primary;
+  } catch (err) {
+    if (locationScoped) {
+      throw err;
+    }
     if (!hasRestrictiveEventFilters(params)) {
       return fetchUpcomingEventsOnce(buildBroadEventsParams(params), {
         force: true,
       });
     }
+    return fetchUpcomingEventsOnce(buildBroadEventsParams(params), { force: true });
   }
-
-  return fetchUpcomingEventsOnce(buildBroadEventsParams(params), { force: true });
 }
 
 /** Prefetch adjacent dates for snappy date-strip navigation. */
@@ -175,7 +214,7 @@ export type SimilarEventsResponse = {
 
 export async function fetchSimilarEvents(
   eventId: string,
-  params: Pick<EventsQueryParams, "lat" | "lng" | "radius" | "countryCode"> & {
+  params: Pick<EventsQueryParams, "lat" | "lng" | "radius" | "countryCode" | "location"> & {
     limit?: number;
   } = {},
 ): Promise<SimilarEventsResponse> {
@@ -184,6 +223,7 @@ export async function fetchSimilarEvents(
   if (params.lng != null) query.set("lng", String(params.lng));
   if (params.radius != null) query.set("radius", String(params.radius));
   if (params.countryCode) query.set("countryCode", params.countryCode);
+  if (params.location) query.set("location", params.location);
   if (params.limit) query.set("limit", String(params.limit));
   const qs = query.toString();
   const key = cacheKeys.eventsSimilar(eventId, qs);
@@ -207,7 +247,7 @@ export async function fetchSimilarEvents(
 
 export function prefetchSimilarEvents(
   eventId: string,
-  params: Pick<EventsQueryParams, "lat" | "lng" | "radius" | "countryCode"> = {},
+  params: Pick<EventsQueryParams, "lat" | "lng" | "radius" | "countryCode" | "location"> = {},
 ): void {
   void fetchSimilarEvents(eventId, params).catch(() => {});
 }

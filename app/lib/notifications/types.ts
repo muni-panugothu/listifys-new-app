@@ -20,6 +20,7 @@ export type NotificationType =
   | 'listing_saved'
   | 'listing_sold'
   | 'new_listing'
+  | 'organizer_new_event'
   | 'price_drop'
   | 'promotion'
   | 'flash_sale'

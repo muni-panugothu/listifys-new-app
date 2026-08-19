@@ -39,6 +39,7 @@ const App = () => {
   const bgSize = useFullScreenBackgroundSize()
   const dispatch = useAppDispatch()
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated)
+  const sessionHydrated = useAppSelector((s) => s.auth.sessionHydrated)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
 
   const markOnboardingComplete = async () => {
@@ -60,14 +61,14 @@ const App = () => {
 
   // Safety net if imperative navigation in handleGoogleSignIn was blocked.
   useEffect(() => {
-    if (!isAuthenticated) return
+    if (!sessionHydrated || !isAuthenticated) return
     authTrace('onboarding.effect_nav')
     void (async () => {
       await markOnboardingComplete()
       await navigateAfterAuthentication(router, { source: 'onboarding.effect' })
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated])
+  }, [isAuthenticated, sessionHydrated])
 
   const handleGoogleSignIn = async () => {
     try {

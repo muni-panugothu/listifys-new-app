@@ -44,24 +44,28 @@ type PickerFieldProps = {
 
 export function PickerField({ icon, value, placeholder, onPress }: PickerFieldProps) {
   const { colors } = useTheme();
+  const hasValue = Boolean(value.trim());
 
   return (
     <Pressable
       onPress={onPress}
       className="h-12 flex-row items-center rounded-2xl border px-4"
-      style={{ borderColor: colors.border, backgroundColor: colors.inputBackground }}
+      style={{
+        borderColor: hasValue ? colors.primary : colors.border,
+        backgroundColor: colors.inputBackground,
+      }}
     >
-      <MaterialIcons name={icon} size={20} color={colors.icon} />
+      <MaterialIcons name={icon} size={20} color={hasValue ? colors.primary : colors.icon} />
       <Text
         className="ml-2 flex-1"
         style={{
           fontSize: 14,
-          fontFamily: ListifyFonts.regular,
-          color: value.trim() ? colors.textPrimary : colors.inputPlaceholder,
+          fontFamily: hasValue ? ListifyFonts.semiBold : ListifyFonts.regular,
+          color: hasValue ? colors.textPrimary : colors.inputPlaceholder,
         }}
         numberOfLines={1}
       >
-        {value.trim() || placeholder}
+        {hasValue ? value.trim() : placeholder}
       </Text>
     </Pressable>
   );
@@ -148,11 +152,20 @@ function BottomSheetModal({
 type EventDatePickerModalProps = {
   visible: boolean;
   value: string;
+  title?: string;
+  minDate?: Date;
   onClose: () => void;
   onSelect: (formattedDate: string) => void;
 };
 
-export function EventDatePickerModal({ visible, value, onClose, onSelect }: EventDatePickerModalProps) {
+export function EventDatePickerModal({
+  visible,
+  value,
+  title = "Event Date",
+  minDate,
+  onClose,
+  onSelect,
+}: EventDatePickerModalProps) {
   const { colors } = useTheme();
   const parsed = useMemo(() => parseEventDateInput(value) ?? startOfToday(), [value]);
 
@@ -167,6 +180,11 @@ export function EventDatePickerModal({ visible, value, onClose, onSelect }: Even
 
   const calendarGrid = useMemo(() => buildCalendarGrid(calendarMonth), [calendarMonth]);
   const todayStart = useMemo(() => startOfToday(), []);
+  const earliestSelectable = useMemo(() => {
+    const floor = minDate ? new Date(minDate) : todayStart;
+    floor.setHours(0, 0, 0, 0);
+    return floor;
+  }, [minDate, todayStart]);
 
   const navigateMonth = useCallback((dir: number) => {
     setCalendarMonth((prev) => {
@@ -184,7 +202,7 @@ export function EventDatePickerModal({ visible, value, onClose, onSelect }: Even
   return (
     <BottomSheetModal
       visible={visible}
-      title="Event Date"
+      title={title}
       onClose={onClose}
       onConfirm={handleConfirm}
     >
@@ -226,7 +244,7 @@ export function EventDatePickerModal({ visible, value, onClose, onSelect }: Even
 
             const isToday = isSameDay(day, new Date());
             const isPicked = isSameDay(day, selectedDate);
-            const isPast = day < todayStart;
+            const isPast = day < earliestSelectable;
 
             return (
               <Pressable
@@ -347,11 +365,18 @@ function TimeWheelColumn<T extends string | number>({
 type EventTimePickerModalProps = {
   visible: boolean;
   value: string;
+  title?: string;
   onClose: () => void;
   onSelect: (formattedTime: string) => void;
 };
 
-export function EventTimePickerModal({ visible, value, onClose, onSelect }: EventTimePickerModalProps) {
+export function EventTimePickerModal({
+  visible,
+  value,
+  title = "Event Time",
+  onClose,
+  onSelect,
+}: EventTimePickerModalProps) {
   const { colors } = useTheme();
   const initialParts = useMemo(() => parseEventTimeParts(value), [value]);
   const [parts, setParts] = useState<EventTimeParts>(initialParts);
@@ -369,7 +394,7 @@ export function EventTimePickerModal({ visible, value, onClose, onSelect }: Even
   return (
     <BottomSheetModal
       visible={visible}
-      title="Event Time"
+      title={title}
       onClose={onClose}
       onConfirm={handleConfirm}
     >

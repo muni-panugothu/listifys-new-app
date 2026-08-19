@@ -15,9 +15,12 @@ import { CATEGORY_MAP } from "@/constants/categories";
 import { getAdPlaceholders, MOBILE_DEVICE_SUBCATEGORIES } from "@/constants/post-form-placeholders";
 import {
   isEventDateTodayOrFuture,
+  isEventEndDateOnOrAfterStart,
+  isEventEndTimeAfterStart,
   isValidEventTime,
   normalizeEventTime,
   parseEventDateInput,
+  buildEventSchedulePreview,
 } from "@/lib/post-form-validators";
 import {
   EventDatePickerModal,
@@ -34,6 +37,8 @@ import {
 } from "@/constants/categories";
 import { CURRENCY_OPTIONS, type CurrencyEntry } from "@/constants/currencies";
 import { COMEDY_FORMAT_OPTIONS } from "@/features/events/data/comedy-event-meta";
+import { buildEventTypeDisplay } from "@/features/events/data/events-form-schema";
+import { EventDynamicFields } from "@/features/sell/components/event-dynamic-fields";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   setTitle, setDescription, setPrice, setCondition, setListingType, setCurrency,
@@ -52,7 +57,7 @@ import {
   // TakeCare
   setAvailability, setAge, toggleLanguage, toggleCertification,
   // Events
-  setEventDate, setEventTime, setOrganizer, setVenue, setTicketsAvailable, setAgeRestriction, setDressCode,
+  setEventDate, setEventEndDate, setEventTime, setEventEndTime, setOrganizer, setVenue, setTicketsAvailable, setAgeRestriction, setDressCode,
   setEventFormat, setEventDuration,
   // Mobiles
   setBatteryHealth,
@@ -351,7 +356,9 @@ export function PostAdStep2DetailsScreen() {
   const [currencyPickerVisible, setCurrencyPickerVisible] = useState(false);
   const [currencySearch, setCurrencySearch] = useState("");
   const [eventDatePickerVisible, setEventDatePickerVisible] = useState(false);
+  const [eventEndDatePickerVisible, setEventEndDatePickerVisible] = useState(false);
   const [eventTimePickerVisible, setEventTimePickerVisible] = useState(false);
+  const [eventEndTimePickerVisible, setEventEndTimePickerVisible] = useState(false);
 
   const pf = useAppSelector((s) => s.postForm);
   const [deleting, setDeleting] = useState(false);
@@ -365,8 +372,8 @@ export function PostAdStep2DetailsScreen() {
     companyName, companyWebsite, companyEmail, companyLogoUri, uploadedCompanyLogoUrl, applyLink, experience, education,
     employmentType, workMode, salaryMin, salaryMax, salaryType, industry, positions,
     availability, age, languages, certifications,
-    eventDate, eventTime, organizer, venue, ticketsAvailable, ageRestriction, dressCode,
-    eventFormat, eventDuration,
+    eventDate, eventEndDate, eventTime, eventEndTime, organizer, venue, ticketsAvailable, ageRestriction, dressCode,
+    eventFormat, eventDuration, eventCategory, eventType,
     batteryHealth,
     material, dimensions, weight, assemblyRequired, numberOfPieces,
     size, gender, fabricType,
@@ -447,7 +454,13 @@ export function PostAdStep2DetailsScreen() {
 
   const isTakeCare = category === "takecare";
   const isEvent = category === "events";
-  const isComedyEvent = isEvent && subcategory === "Comedy";
+  const isComedyEvent =
+    isEvent &&
+    (subcategory === "Comedy" ||
+      (eventCategory === "theatre" && eventType === "standup_performance"));
+  const eventTypeLabel = isEvent
+    ? buildEventTypeDisplay({ eventCategory, eventType, subcategory, eventFormat })
+    : subcategory;
   const isMobile = category === "mobiles";
   const isFurniture = category === "furniture";
   const isFashion = category === "fashion";
@@ -475,13 +488,32 @@ export function PostAdStep2DetailsScreen() {
     [category, subcategory],
   );
 
-  const eventDatePlaceholder = useMemo(() => {
+  const eventEndDateMin = useMemo(() => {
+    const parsed = parseEventDateInput(eventDate);
+    if (parsed) {
+      const d = new Date(parsed);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
     const today = new Date();
-    const day = today.getDate();
-    const month = today.toLocaleString("en-IN", { month: "short" });
-    const year = today.getFullYear();
-    return `e.g. ${day} ${month} ${year}`;
-  }, []);
+    today.setHours(0, 0, 0, 0);
+    return today;
+  }, [eventDate]);
+
+  const eventSchedulePreview = useMemo(
+    () => buildEventSchedulePreview(eventDate, eventEndDate, eventTime, eventEndTime),
+    [eventDate, eventEndDate, eventTime, eventEndTime],
+  );
+
+  const handleStartDateSelect = useCallback(
+    (formattedDate: string) => {
+      dispatch(setEventDate(formattedDate));
+      if (!eventEndDate.trim() || !isEventEndDateOnOrAfterStart(formattedDate, eventEndDate)) {
+        dispatch(setEventEndDate(formattedDate));
+      }
+    },
+    [dispatch, eventEndDate],
+  );
 
   // Vehicle subcategory-specific
   const isCar = isVehicle && subcategory === "Cars";
@@ -548,30 +580,59 @@ export function PostAdStep2DetailsScreen() {
     }
 
     if (isEvent) {
-      if (!eventDate.trim()) {
-        showErrorToast("Event date required", "Enter the event date (today or a future date).");
-        return;
-      }
-      const parsedDate = parseEventDateInput(eventDate);
-      if (!parsedDate) {
+      if (!subcategory?.trim() || !eventCategory?.trim() || !eventType?.trim()) {
         showErrorToast(
-          "Invalid event date",
-          "Use a valid date like 25 Dec 2026, 25/12/2026, or 2026-12-25. Past dates are not allowed.",
+          "Event type required",
+          "Go back to Step 1 and pick a main category and event type.",
         );
         return;
       }
-      if (!isEventDateTodayOrFuture(parsedDate)) {
-        showErrorToast("Past date not allowed", "Event date must be today or a future date.");
+      if (!eventDate.trim()) {
+        showErrorToast("Start date required", "Select when your event begins.");
+        return;
+      }
+      const parsedStart = parseEventDateInput(eventDate);
+      if (!parsedStart) {
+        showErrorToast("Invalid start date", "Use a valid date like 29 Aug 2026.");
+        return;
+      }
+      if (!isEventDateTodayOrFuture(parsedStart)) {
+        showErrorToast("Past date not allowed", "Start date must be today or a future date.");
+        return;
+      }
+      if (!eventEndDate.trim()) {
+        showErrorToast("End date required", "Select when your event ends (same day for single-day events).");
+        return;
+      }
+      const parsedEnd = parseEventDateInput(eventEndDate);
+      if (!parsedEnd) {
+        showErrorToast("Invalid end date", "Use a valid date like 31 Aug 2026.");
+        return;
+      }
+      if (!isEventEndDateOnOrAfterStart(eventDate, eventEndDate)) {
+        showErrorToast("Invalid date range", "End date must be on or after the start date.");
         return;
       }
       if (!eventTime.trim()) {
-        showErrorToast("Event time required", "Enter the event start time.");
+        showErrorToast("Start time required", "Select when your event starts.");
         return;
       }
       if (!isValidEventTime(eventTime)) {
+        showErrorToast("Invalid start time", "Use 12-hour time with AM/PM (e.g. 7:00 PM).");
+        return;
+      }
+      if (!eventEndTime.trim()) {
+        showErrorToast("End time required", "Select when your event ends.");
+        return;
+      }
+      if (!isValidEventTime(eventEndTime)) {
+        showErrorToast("Invalid end time", "Use 12-hour time with AM/PM (e.g. 10:00 PM).");
+        return;
+      }
+      if (!isEventEndTimeAfterStart(eventDate, eventEndDate, eventTime, eventEndTime)) {
         showErrorToast(
-          "Invalid event time",
-          "Use 12-hour time with AM/PM (e.g. 7:00 PM) or 24-hour format (e.g. 19:00).",
+          "Invalid time range",
+          "For single-day events, end time must be after start time.",
         );
         return;
       }
@@ -581,6 +642,26 @@ export function PostAdStep2DetailsScreen() {
       }
       if (!venue.trim()) {
         showErrorToast("Venue required", "Enter where the event will take place.");
+        return;
+      }
+      const ticketPriceRaw = price.trim();
+      if (ticketPriceRaw === "" || Number.isNaN(Number(ticketPriceRaw))) {
+        showErrorToast("Ticket price required", "Enter a ticket price (use 0 for free entry).");
+        return;
+      }
+      const ticketPrice = Number(ticketPriceRaw);
+      if (ticketPrice < 0) {
+        showErrorToast("Invalid ticket price", "Ticket price cannot be negative.");
+        return;
+      }
+      const totalTicketsRaw = ticketsAvailable.trim();
+      if (totalTicketsRaw === "" || Number.isNaN(Number(totalTicketsRaw))) {
+        showErrorToast("Tickets required", "Enter total tickets available for this event.");
+        return;
+      }
+      const totalTickets = Number(totalTicketsRaw);
+      if (!Number.isInteger(totalTickets) || totalTickets < 1) {
+        showErrorToast("Invalid ticket count", "Total tickets must be a whole number of at least 1.");
         return;
       }
       if (isComedyEvent) {
@@ -1228,27 +1309,39 @@ export function PostAdStep2DetailsScreen() {
                   className="text-[13px]"
                   style={{ color: colors.textSecondary, fontFamily: ListifyFonts.medium }}
                 >
-                  Event type: {subcategory || "—"}
+                  Event type: {eventTypeLabel || "—"}
                 </Text>
                 <Text
                   className="mt-1 text-[12px]"
                   style={{ color: colors.textTertiary, fontFamily: ListifyFonts.regular }}
                 >
-                  This determines where your event appears (Music, Comedy, Food & Drinks, etc.).
+                  Dynamic fields below match your selected event type.
                 </Text>
               </View>
-              <View className="mb-6 flex-row gap-4">
+              <EventDynamicFields />
+              <View className="mb-4 flex-row gap-4">
                 <View className="flex-1">
-                  <Label text="Event Date" required />
+                  <Label text="Start Date" required />
                   <PickerField
                     icon="event"
                     value={eventDate}
-                    placeholder={eventDatePlaceholder}
+                    placeholder="e.g. 29 Aug 2026"
                     onPress={() => setEventDatePickerVisible(true)}
                   />
                 </View>
                 <View className="flex-1">
-                  <Label text="Event Time" required />
+                  <Label text="End Date" required />
+                  <PickerField
+                    icon="event"
+                    value={eventEndDate}
+                    placeholder="e.g. 31 Aug 2026"
+                    onPress={() => setEventEndDatePickerVisible(true)}
+                  />
+                </View>
+              </View>
+              <View className="mb-4 flex-row gap-4">
+                <View className="flex-1">
+                  <Label text="Start Time" required />
                   <PickerField
                     icon="access-time"
                     value={eventTime}
@@ -1256,9 +1349,38 @@ export function PostAdStep2DetailsScreen() {
                     onPress={() => setEventTimePickerVisible(true)}
                   />
                 </View>
+                <View className="flex-1">
+                  <Label text="End Time" required />
+                  <PickerField
+                    icon="access-time"
+                    value={eventEndTime}
+                    placeholder="e.g. 10:00 PM"
+                    onPress={() => setEventEndTimePickerVisible(true)}
+                  />
+                </View>
               </View>
+              {eventSchedulePreview ? (
+                <View
+                  className="mb-4 rounded-2xl px-4 py-3"
+                  style={{ backgroundColor: colors.surfaceMuted }}
+                >
+                  <Text
+                    className="text-[12px]"
+                    style={{ color: colors.textTertiary, fontFamily: ListifyFonts.regular }}
+                  >
+                    Scheduled for
+                  </Text>
+                  <Text
+                    className="mt-1 text-[14px]"
+                    style={{ color: colors.textPrimary, fontFamily: ListifyFonts.semiBold }}
+                  >
+                    {eventSchedulePreview}
+                  </Text>
+                </View>
+              ) : null}
               <Text className="mb-6 px-1 text-[11px]" style={{ color: colors.textTertiary }}>
-                Event date must be today or later. Tap the fields above to pick date and time.
+                For single-day events, pick the same start and end date. End date must be on or after start date.
+                For same-day events, end time must be after start time.
               </Text>
               <View className="mb-6">
                 <IconField icon="person" value={organizer} onChangeText={(v) => dispatch(setOrganizer(v))} placeholder="e.g. EventBrite Inc." />
@@ -1266,6 +1388,56 @@ export function PostAdStep2DetailsScreen() {
               <View className="mb-6">
                 <Label text="Venue" required />
                 <IconField icon="place" value={venue} onChangeText={(v) => dispatch(setVenue(v))} placeholder="e.g. HICC, Hyderabad" />
+              </View>
+              <View className="mb-4">
+                <Label text="Ticket Price" required />
+                <View
+                  className="h-12 flex-row items-center rounded-lg overflow-hidden"
+                  style={{
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.inputBackground,
+                  }}
+                >
+                  <View
+                    style={{
+                      paddingHorizontal: 12,
+                      height: "100%",
+                      justifyContent: "center",
+                      borderRightWidth: 1,
+                      borderRightColor: colors.border,
+                    }}
+                  >
+                    <Text style={{ fontSize: 15, fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}>
+                      {displayCurrency}
+                    </Text>
+                  </View>
+                  <TextInput
+                    value={price}
+                    onChangeText={(v) => dispatch(setPrice(v.replace(/[^0-9.]/g, "")))}
+                    keyboardType="decimal-pad"
+                    placeholder="0 for free entry"
+                    placeholderTextColor={colors.textTertiary}
+                    className="flex-1 px-3 text-[16px]"
+                    style={{ paddingVertical: 0, color: colors.textPrimary, fontFamily: ListifyFonts.medium }}
+                  />
+                </View>
+                <Text className="mt-2 px-1 text-[11px]" style={{ color: colors.textTertiary }}>
+                  Enter ₹0 for free events — guests can reserve spots without payment.
+                </Text>
+              </View>
+              <View className="mb-6">
+                <Label text="Total Tickets Available" required />
+                <IconField
+                  icon="confirmation-number"
+                  value={ticketsAvailable}
+                  onChangeText={(v) => dispatch(setTicketsAvailable(v.replace(/\D/g, "")))}
+                  placeholder="e.g. 2000"
+                  numeric
+                />
+                <Text className="mt-2 px-1 text-[11px]" style={{ color: colors.textTertiary }}>
+                  Maximum number of spots/tickets that can be booked for this event.
+                </Text>
               </View>
               <View className="mb-6 flex-row gap-4">
                 <View className="flex-1">
@@ -1943,14 +2115,31 @@ export function PostAdStep2DetailsScreen() {
     <EventDatePickerModal
       visible={eventDatePickerVisible}
       value={eventDate}
+      title="Start Date"
       onClose={() => setEventDatePickerVisible(false)}
-      onSelect={(formattedDate) => dispatch(setEventDate(formattedDate))}
+      onSelect={handleStartDateSelect}
+    />
+    <EventDatePickerModal
+      visible={eventEndDatePickerVisible}
+      value={eventEndDate}
+      title="End Date"
+      minDate={eventEndDateMin}
+      onClose={() => setEventEndDatePickerVisible(false)}
+      onSelect={(formattedDate) => dispatch(setEventEndDate(formattedDate))}
     />
     <EventTimePickerModal
       visible={eventTimePickerVisible}
       value={eventTime}
+      title="Start Time"
       onClose={() => setEventTimePickerVisible(false)}
       onSelect={(formattedTime) => dispatch(setEventTime(normalizeEventTime(formattedTime)))}
+    />
+    <EventTimePickerModal
+      visible={eventEndTimePickerVisible}
+      value={eventEndTime}
+      title="End Time"
+      onClose={() => setEventEndTimePickerVisible(false)}
+      onSelect={(formattedTime) => dispatch(setEventEndTime(normalizeEventTime(formattedTime)))}
     />
     </>
   );

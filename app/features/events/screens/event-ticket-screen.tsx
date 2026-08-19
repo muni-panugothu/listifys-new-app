@@ -29,6 +29,7 @@ import {
   type PendingTicketPreview,
 } from "@/features/events/utils/pending-ticket-preview";
 import { shareEventTicket } from "@/features/events/utils/ticket-share";
+import { formatEventDisplayLabel } from "@/lib/event-dates";
 import { ListifyFonts } from "@/constants/typography";
 import { resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
 import { formatPrice } from "@/lib/currency";
@@ -266,6 +267,14 @@ export function EventTicketScreen() {
         ? ticket.status
         : "CONFIRMED";
   const showQr = Boolean(ticket.qrPayload) && !qrLoading;
+  const scheduleLabel = formatEventDisplayLabel({
+    eventDate: event?.eventDate,
+    eventTime: event?.eventTime,
+    startDate: event?.startDate,
+    endDate: event?.endDate,
+    startTime: event?.startTime,
+    endTime: event?.endTime,
+  });
 
   return (
     <Modal visible animationType="slide" transparent onRequestClose={() => router.back()}>
@@ -335,10 +344,9 @@ export function EventTicketScreen() {
                     {event.subcategory}
                   </Text>
                 ) : null}
-                {event?.eventDate ? (
+                {scheduleLabel ? (
                   <Text style={{ marginTop: 8, fontFamily: ListifyFonts.semiBold, fontSize: 14, color: isDark ? "#D4A853" : "#B8860B" }}>
-                    {event.eventDate}
-                    {event.eventTime ? ` • ${event.eventTime}` : ""}
+                    {scheduleLabel}
                   </Text>
                 ) : null}
                 <Text style={{ marginTop: 4, fontFamily: ListifyFonts.regular, fontSize: 13, color: colors.textSecondary }} numberOfLines={2}>

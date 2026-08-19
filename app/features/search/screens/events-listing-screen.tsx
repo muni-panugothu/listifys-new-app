@@ -50,7 +50,7 @@ import {
 //   FEATURED_ARTISTS,
 //   type FeaturedArtistItem,
 // } from "@/features/home/data/featured-mock-data";
-import { fetchUpcomingEventsReliable } from "@/features/events/services/events-api";
+import { fetchUpcomingEventsReliable, invalidateEventsCaches } from "@/features/events/services/events-api";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { normalizeListingItem } from "@/features/listing/services/listing-api";
 import {
@@ -69,9 +69,8 @@ import { useEventsTheme } from "@/features/events/theme/events-theme";
 import { useTheme } from "@/providers/theme-provider";
 import { useAppSelector } from "@/store/hooks";
 import {
-  selectIsoCountryCode,
   selectLocationCoords,
-  selectLocationLabel,
+  selectLocationQueryState,
 } from "@/store/slices/location-slice";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -144,6 +143,8 @@ export function EventsListingScreen() {
   const filtersAnchorY = useRef(0);
   const lastScrollY = useRef(0);
   const lastFetchAtRef = useRef(0);
+  const loadSeqRef = useRef(0);
+  const prevLocationSigRef = useRef("");
   const navCollapse = useSharedValue(0);
 
   const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
@@ -189,23 +190,29 @@ export function EventsListingScreen() {
   //   );
   // }, [query]);
 
+  const locationQueryState = useAppSelector(selectLocationQueryState);
   const locationCoords = useAppSelector(selectLocationCoords);
-  const locationLabel = useAppSelector(selectLocationLabel);
-  const isoCountryCode = useAppSelector(selectIsoCountryCode);
 
   const [apiListings, setApiListings] = useState<ListingItem[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
 
+  useEffect(() => {
+    const sig = JSON.stringify(locationQueryState);
+    if (prevLocationSigRef.current && prevLocationSigRef.current !== sig) {
+      invalidateEventsCaches();
+      setApiListings([]);
+    }
+    prevLocationSigRef.current = sig;
+  }, [locationQueryState]);
+
   const loadUpcomingEvents = useCallback(async (force = false) => {
+    const seq = ++loadSeqRef.current;
     setEventsLoading(true);
     try {
-      const queryParams = buildEventsFilterQuery(allFilterId, {
-        lat: locationCoords.lat,
-        lng: locationCoords.lng,
-        countryCode: isoCountryCode,
-        locationLabel,
-      });
+      const queryParams = buildEventsFilterQuery(allFilterId, locationQueryState);
       const res = await fetchUpcomingEventsReliable(queryParams, { force });
+      if (seq !== loadSeqRef.current) return;
+
       let listings = res.listings ?? [];
       if (needsClientSideFilter(allFilterId)) {
         listings = listings.filter((listing) =>
@@ -218,26 +225,14 @@ export function EventsListingScreen() {
       setApiListings(listings);
       lastFetchAtRef.current = Date.now();
     } catch {
-      try {
-        const fallback = await fetchUpcomingEventsReliable(
-          { limit: 50, sort: "newest" },
-          { force: true },
-        );
-        setApiListings(fallback.listings ?? []);
-        lastFetchAtRef.current = Date.now();
-      } catch {
-        setApiListings([]);
-      }
+      if (seq !== loadSeqRef.current) return;
+      setApiListings([]);
     } finally {
-      setEventsLoading(false);
+      if (seq === loadSeqRef.current) {
+        setEventsLoading(false);
+      }
     }
-  }, [
-    allFilterId,
-    isoCountryCode,
-    locationCoords.lat,
-    locationCoords.lng,
-    locationLabel,
-  ]);
+  }, [allFilterId, locationCoords.lat, locationCoords.lng, locationQueryState]);
 
   useEffect(() => {
     void loadUpcomingEvents();

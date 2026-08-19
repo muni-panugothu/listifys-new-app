@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, forwardRef } from "react";
 import { type ScrollViewProps } from "react-native";
 import { KeyboardAwareScrollView } from "@/lib/safe-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,18 +12,25 @@ type KeyboardFormScrollProps = ScrollViewProps & {
 };
 
 /** Scrollable form area that smoothly tracks the keyboard. */
-export function KeyboardFormScroll({
-  children,
-  bottomOffset,
-  keyboardVerticalOffset = 0,
-  contentContainerStyle,
-  ...scrollProps
-}: KeyboardFormScrollProps) {
+export const KeyboardFormScroll = forwardRef<
+  React.ElementRef<typeof KeyboardAwareScrollView>,
+  KeyboardFormScrollProps
+>(function KeyboardFormScroll(
+  {
+    children,
+    bottomOffset,
+    keyboardVerticalOffset = 0,
+    contentContainerStyle,
+    ...scrollProps
+  },
+  ref,
+) {
   const insets = useSafeAreaInsets();
   const resolvedBottom = bottomOffset ?? Math.max(insets.bottom, 8);
 
   return (
     <KeyboardAwareScrollView
+      ref={ref}
       style={{ flex: 1 }}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
@@ -36,4 +43,4 @@ export function KeyboardFormScroll({
       {children}
     </KeyboardAwareScrollView>
   );
-}
+});

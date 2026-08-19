@@ -28,7 +28,14 @@ function EventListingCardImpl({
   const eventTime = (event as { eventTime?: string }).eventTime ?? "";
   const startDate = (event as { startDate?: string }).startDate;
   const endDate = (event as { endDate?: string }).endDate;
-  const dateLabel = formatEventDisplayLabel({ eventDate, eventTime, startDate, endDate });
+  const dateLabel = formatEventDisplayLabel({
+    eventDate,
+    eventTime,
+    startDate,
+    endDate,
+    startTime: (listing as { startTime?: string }).startTime,
+    endTime: (listing as { endTime?: string }).endTime,
+  });
   const featured = (event as { featured?: boolean }).featured;
 
   return (

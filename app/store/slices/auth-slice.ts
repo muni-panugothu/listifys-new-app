@@ -325,10 +325,18 @@ export const restoreSession = createAsyncThunk(
   "auth/restoreSession",
   async () => {
     await restoreTokens();
-    const [json, flowJson] = await Promise.all([
-      AsyncStorage.getItem(USER_STORAGE_KEY),
-      AsyncStorage.getItem(FLOW_STATE_KEY),
-    ]);
+    let json: string | null = null;
+    let flowJson: string | null = null;
+
+    try {
+      [json, flowJson] = await Promise.all([
+        AsyncStorage.getItem(USER_STORAGE_KEY),
+        AsyncStorage.getItem(FLOW_STATE_KEY),
+      ]);
+    } catch {
+      json = null;
+      flowJson = null;
+    }
 
     const flow = flowJson
       ? (JSON.parse(flowJson) as {
@@ -339,15 +347,37 @@ export const restoreSession = createAsyncThunk(
         })
       : null;
 
-    const cachedUser = json ? normalizeStoredUser(JSON.parse(json) as AuthUser) : null;
-    const hasTokens = Boolean(getAccessToken() || getRefreshToken());
+    let cachedUser: AuthUser | null = null;
+    if (json) {
+      try {
+        cachedUser = normalizeStoredUser(JSON.parse(json) as AuthUser);
+      } catch {
+        cachedUser = null;
+      }
+    }
 
-    if (!hasTokens) {
+    const hasTokens = () => Boolean(getAccessToken() || getRefreshToken());
+
+    if (!hasTokens()) {
       if (cachedUser) {
         await AsyncStorage.removeItem(USER_STORAGE_KEY);
       }
-      return { user: null, flow, isAuthenticated: false };
+      return {
+        user: null,
+        profileCompletion: null,
+        flow,
+        isAuthenticated: false,
+      };
     }
+
+    const authenticatedFallback = () => ({
+      user: cachedUser,
+      profileCompletion: cachedUser
+        ? buildProfileCompletionFromUser(cachedUser)
+        : null,
+      flow,
+      isAuthenticated: true as const,
+    });
 
     const loadProfile = async () => {
       const profile = await getProfile();
@@ -371,53 +401,93 @@ export const restoreSession = createAsyncThunk(
       }
     } catch (profileError) {
       if (isTransientSessionError(profileError)) {
-        if (cachedUser) {
-          return {
-            user: cachedUser,
-            profileCompletion: buildProfileCompletionFromUser(cachedUser),
-            flow,
-            isAuthenticated: true,
-          };
-        }
-        return { user: null, profileCompletion: null, flow, isAuthenticated: true };
+        return authenticatedFallback();
       }
 
-      const refreshed = await refreshAccessToken();
-      if (refreshed) {
-        try {
-          const profile = await loadProfile();
-          if (profile.user) {
-            return {
-              user: profile.user,
-              profileCompletion:
-                profile.profileCompletion ??
-                buildProfileCompletionFromUser(profile.user),
-              flow,
-              isAuthenticated: true,
-            };
-          }
-        } catch (retryError) {
-          if (isTransientSessionError(retryError)) {
-            if (cachedUser) {
+      const isAuthError =
+        profileError instanceof AuthApiError &&
+        (profileError.status === 401 || profileError.status === 403);
+
+      if (isAuthError && !hasTokens()) {
+        if (cachedUser) {
+          await AsyncStorage.removeItem(USER_STORAGE_KEY);
+        }
+        return {
+          user: null,
+          profileCompletion: null,
+          flow,
+          isAuthenticated: false,
+        };
+      }
+
+      if (isAuthError && hasTokens()) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+          try {
+            const profile = await loadProfile();
+            if (profile.user) {
               return {
-                user: cachedUser,
-                profileCompletion: buildProfileCompletionFromUser(cachedUser),
+                user: profile.user,
+                profileCompletion:
+                  profile.profileCompletion ??
+                  buildProfileCompletionFromUser(profile.user),
                 flow,
                 isAuthenticated: true,
               };
             }
-            return { user: null, profileCompletion: null, flow, isAuthenticated: true };
+          } catch (retryError) {
+            if (isTransientSessionError(retryError)) {
+              return authenticatedFallback();
+            }
+            if (!hasTokens()) {
+              if (cachedUser) {
+                await AsyncStorage.removeItem(USER_STORAGE_KEY);
+              }
+              return {
+                user: null,
+                profileCompletion: null,
+                flow,
+                isAuthenticated: false,
+              };
+            }
+            return authenticatedFallback();
           }
         }
+
+        if (hasTokens()) {
+          return authenticatedFallback();
+        }
+
+        if (cachedUser) {
+          await AsyncStorage.removeItem(USER_STORAGE_KEY);
+        }
+        return {
+          user: null,
+          profileCompletion: null,
+          flow,
+          isAuthenticated: false,
+        };
+      }
+
+      if (hasTokens()) {
+        return authenticatedFallback();
       }
     }
 
-    // Tokens invalid/expired — clear local session and require fresh login.
+    if (hasTokens()) {
+      return authenticatedFallback();
+    }
+
     await clearTokens();
     if (cachedUser) {
       await AsyncStorage.removeItem(USER_STORAGE_KEY);
     }
-    return { user: null, flow, isAuthenticated: false };
+    return {
+      user: null,
+      profileCompletion: null,
+      flow,
+      isAuthenticated: false,
+    };
   },
 );
 

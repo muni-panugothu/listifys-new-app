@@ -127,10 +127,34 @@ const publishImageCleanup = async ({ imageUrls }) => {
   return true;
 };
 
+// ── 6. Listing Published (draft → live) ───────────────────────────────────────
+const publishListingPublished = async ({ entity, listing, userId, ip, userAgent }) => {
+  const payload = {
+    type: 'listing_published',
+    entity,
+    listing,
+    userId,
+    ip,
+    userAgent,
+    timestamp: new Date().toISOString(),
+  };
+
+  const queued = await publish(QUEUES.LISTING_EVENTS.name, payload);
+  if (queued) return true;
+
+  logger.warn('[ListingProducer] Queue unavailable, processing listing_published in-process', {
+    entity,
+    listingId: listing?._id,
+  });
+  await handleListingEvent(payload);
+  return true;
+};
+
 module.exports = {
   publishListingCreated,
   publishListingUpdated,
   publishListingDeleted,
+  publishListingPublished,
   publishSearchIndex,
   publishImageCleanup,
 };

@@ -5,10 +5,9 @@ import { ActivityIndicator, Image, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { configureGoogleSignIn } from "@/lib/google-sign-in";
-import { useAppDispatch } from "@/store/hooks";
+import { ensureSessionRestored } from "@/lib/session-bootstrap";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store";
-import { getAccessToken, getRefreshToken, restoreTokens } from "@/features/auth/services/auth-api";
-import { restoreSession } from "@/store/slices/auth-slice";
 import {
   checkFirstInstallIntro,
   checkOnboarding,
@@ -36,21 +35,26 @@ export function SplashScreen() {
           dispatch(checkOnboarding()),
           dispatch(checkFirstInstallIntro()),
         ]);
-        const sessionResult = await dispatch(restoreSession());
+        await ensureSessionRestored(dispatch);
         await configureGoogleSignIn().catch(() => {});
 
         if (cancelled) return;
 
-        const authenticated =
-          restoreSession.fulfilled.match(sessionResult) &&
-          sessionResult.payload.isAuthenticated;
+        const authenticated = Boolean(
+          store.getState().auth.isAuthenticated &&
+            store.getState().auth.sessionHydrated,
+        );
 
         await finishNavigation(authenticated);
       } catch {
         if (cancelled) return;
-        await restoreTokens().catch(() => {});
-        const hasTokens = Boolean(getAccessToken() || getRefreshToken());
-        await finishNavigation(hasTokens);
+        try {
+          await ensureSessionRestored(dispatch);
+        } catch {
+          // ignore — finishNavigation uses hydrated auth state when available
+        }
+        const { isAuthenticated, sessionHydrated } = store.getState().auth;
+        await finishNavigation(Boolean(sessionHydrated && isAuthenticated));
       }
     };
 

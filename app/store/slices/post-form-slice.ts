@@ -89,8 +89,13 @@ export type PostFormState = {
   languages: string[];
   certifications: string[];
   // ── Events ──
+  eventCategory: string;
+  eventType: string;
+  categoryData: Record<string, string | number | boolean>;
   eventDate: string;
+  eventEndDate: string;
   eventTime: string;
+  eventEndTime: string;
   organizer: string;
   venue: string;
   ticketsAvailable: string;
@@ -246,8 +251,13 @@ const initialState: PostFormState = {
   age: "",
   languages: [],
   certifications: [],
+  eventCategory: "",
+  eventType: "",
+  categoryData: {},
   eventDate: "",
+  eventEndDate: "",
   eventTime: "",
+  eventEndTime: "",
   organizer: "",
   venue: "",
   ticketsAvailable: "",
@@ -317,11 +327,49 @@ const postFormSlice = createSlice({
   initialState,
   reducers: {
     setCategory(state, action: PayloadAction<CategorySlug>) {
-      state.category = action.payload;
-      state.subcategory = "";
+      const next = action.payload;
+      if (state.category !== next) {
+        state.subcategory = "";
+        state.eventCategory = "";
+        state.eventType = "";
+        state.categoryData = {};
+      }
+      state.category = next;
     },
     setSubcategory(state, action: PayloadAction<string>) {
       state.subcategory = action.payload;
+    },
+    setEventCategory(state, action: PayloadAction<string>) {
+      const next = action.payload;
+      if (state.eventCategory !== next) {
+        state.eventType = "";
+        state.categoryData = {};
+      }
+      state.eventCategory = next;
+    },
+    setEventType(state, action: PayloadAction<string>) {
+      state.eventType = action.payload;
+    },
+    setEventCategorySelection(
+      state,
+      action: PayloadAction<{ eventCategory: string; eventType: string; subcategory: string }>,
+    ) {
+      const { eventCategory, eventType, subcategory } = action.payload;
+      if (state.eventCategory !== eventCategory || state.eventType !== eventType) {
+        state.categoryData = {};
+      }
+      state.eventCategory = eventCategory;
+      state.eventType = eventType;
+      state.subcategory = subcategory;
+    },
+    setCategoryDataField(
+      state,
+      action: PayloadAction<{ key: string; value: string | number | boolean }>,
+    ) {
+      state.categoryData[action.payload.key] = action.payload.value;
+    },
+    patchCategoryData(state, action: PayloadAction<Record<string, string | number | boolean>>) {
+      state.categoryData = { ...state.categoryData, ...action.payload };
     },
     setTitle(state, action: PayloadAction<string>) {
       state.title = action.payload;
@@ -577,8 +625,14 @@ const postFormSlice = createSlice({
     setEventDate(state, action: PayloadAction<string>) {
       state.eventDate = action.payload;
     },
+    setEventEndDate(state, action: PayloadAction<string>) {
+      state.eventEndDate = action.payload;
+    },
     setEventTime(state, action: PayloadAction<string>) {
       state.eventTime = action.payload;
+    },
+    setEventEndTime(state, action: PayloadAction<string>) {
+      state.eventEndTime = action.payload;
     },
     setOrganizer(state, action: PayloadAction<string>) {
       state.organizer = action.payload;
@@ -828,6 +882,11 @@ const postFormSlice = createSlice({
 export const {
   setCategory,
   setSubcategory,
+  setEventCategory,
+  setEventType,
+  setEventCategorySelection,
+  setCategoryDataField,
+  patchCategoryData,
   setTitle,
   setDescription,
   setPrice,
@@ -909,7 +968,9 @@ export const {
   setCertifications,
   toggleCertification,
   setEventDate,
+  setEventEndDate,
   setEventTime,
+  setEventEndTime,
   setOrganizer,
   setVenue,
   setTicketsAvailable,

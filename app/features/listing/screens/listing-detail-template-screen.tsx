@@ -579,7 +579,11 @@ export function ListingDetailTemplateScreen() {
     push("Availability", l.availability);
 
     // ── Events ────────────────────────────────────────────────
-    if (l.startDate) {
+    if (l.eventDate) push("Event Date", String(l.eventDate));
+    if (l.startTime) push("Start Time", String(l.startTime));
+    if (l.endTime) push("End Time", String(l.endTime));
+    if (l.eventTime && !l.startTime) push("Event Time", String(l.eventTime));
+    if (l.startDate && !l.eventDate) {
       try {
         push("Event Date", new Date(String(l.startDate)).toLocaleDateString("en-IN", {
           day: "numeric", month: "short", year: "numeric",

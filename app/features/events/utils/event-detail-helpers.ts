@@ -6,16 +6,15 @@ import {
 } from "@/features/events/data/comedy-event-meta";
 import type { EventsAllFilterId } from "@/features/events/data/events-all-filters";
 import type { ListingItem } from "@/features/listing/services/listing-api";
-import { eventOccursOnDate, formatEventDisplayLabel } from "@/lib/event-dates";
+import { eventOccursOnDate, formatEventDisplayLabel, formatEventTimeDisplayLabel, getEventRange, isSameDay } from "@/lib/event-dates";
 import { formatPrice } from "@/lib/currency";
 import { getListingDistanceLabel } from "@/lib/listing-distance";
 import { getListingCoverMediaUrl } from "@/lib/listing-media";
 
 export type EventOrganizerStats = {
+  likedCount?: number;
   hostedEvents?: number;
-  hostingDuration?: string | null;
-  likedPercent?: number | null;
-  ratingsCount?: number;
+  hostingCount?: number;
 };
 
 export type EventThingToKnow = {
@@ -229,21 +228,53 @@ export function buildEventTags(listing: ListingItem): string[] {
 }
 
 export function buildEventScheduleLabel(listing: ListingItem): string {
-  const eventTime = (listing.eventTime as string | undefined)?.trim();
-  if (eventTime) {
-    const start = eventTime.split(/[–\-•|]/)[0]?.trim();
-    if (start) return `Starts at ${start}`;
-  }
-  return "View full schedule & timeline";
+  return formatEventDisplayLabel(buildListingEventDateFields(listing));
 }
 
-export function buildEventDateAccent(listing: ListingItem): string {
-  return formatEventDisplayLabel({
+function buildListingEventDateFields(listing: ListingItem) {
+  return {
     eventDate: listing.eventDate as string | undefined,
     eventTime: listing.eventTime as string | undefined,
     startDate: listing.startDate as string | undefined,
     endDate: listing.endDate as string | undefined,
-  });
+    startTime: (listing as { startTime?: string }).startTime,
+    endTime: (listing as { endTime?: string }).endTime,
+  };
+}
+
+/** Primary line for the schedule row (date). */
+export function buildEventScheduleTitle(listing: ListingItem): string {
+  const eventDate = (listing.eventDate as string | undefined)?.trim();
+  const range = getEventRange(buildListingEventDateFields(listing));
+  if (range) {
+    if (isSameDay(range.start, range.end)) {
+      return range.start.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    }
+    return `${range.start.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} – ${range.end.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`;
+  }
+  if (eventDate) return eventDate;
+  return "View full schedule & timeline";
+}
+
+/** Secondary line for the schedule row (time or helper). */
+export function buildEventScheduleSubtitle(listing: ListingItem): string {
+  const timeLabel = formatEventTimeDisplayLabel(buildListingEventDateFields(listing));
+  if (timeLabel) return timeLabel;
+
+  const range = getEventRange(buildListingEventDateFields(listing));
+  if (range) {
+    return range.start.toLocaleDateString("en-IN", { weekday: "long" });
+  }
+
+  return "Tap to view schedule & timeline";
+}
+
+export function buildEventDateAccent(listing: ListingItem): string {
+  return formatEventDisplayLabel(buildListingEventDateFields(listing));
 }
 
 export function buildEventPriceLabel(
@@ -348,23 +379,64 @@ export function buildOrganizerName(listing: ListingItem): string {
   );
 }
 
-/** Active listings with default DB ticket count (0) should still be bookable. */
-export function isEventSoldOut(listing: ListingItem): boolean {
+/** Sold out when listing status is closed or live inventory is zero. */
+export function isEventSoldOut(
+  listing: ListingItem,
+  liveAvailable?: number | null,
+): boolean {
   const status = (listing.status as string | undefined)?.toLowerCase();
   if (status === "sold" || status === "expired") return true;
+
+  if (typeof liveAvailable === "number") {
+    return liveAvailable <= 0;
+  }
 
   const raw = listing.ticketsAvailable;
   if (raw === undefined || raw === null || raw === "") return false;
 
   const tickets = Number(raw);
-  return !Number.isNaN(tickets) && tickets < 0;
+  return !Number.isNaN(tickets) && tickets <= 0;
 }
 
-export function getEventBookCtaLabel(listing: ListingItem, booked?: boolean): string {
+export function formatSpotsRemaining(count: number): string {
+  const safe = Math.max(0, Math.floor(count));
+  const label = safe === 1 ? "spot remaining" : "spots remaining";
+  return `${safe.toLocaleString()} ${label}`;
+}
+
+export function buildEventTicketPriceLine(
+  listing: ListingItem,
+  isoCountryCode?: string | null,
+  livePrice?: number | null,
+): string {
+  const resolvedPrice =
+    typeof livePrice === "number"
+      ? livePrice
+      : listing.price == null
+        ? 0
+        : Number(listing.price);
+
+  if (!resolvedPrice || resolvedPrice <= 0) return "FREE ENTRY";
+  return `${formatPrice(resolvedPrice, listing.currency, listing.countryCode ?? isoCountryCode)} per ticket`;
+}
+
+export function getEventBookCtaLabel(
+  listing: ListingItem,
+  booked?: boolean,
+  options?: { quantity?: number; isFree?: boolean; liveAvailable?: number | null },
+): string {
   if (booked) return "View ticket";
-  if (isEventSoldOut(listing)) return "Sold out";
-  if (listing.price == null || listing.price === 0) return "Reserve spot";
-  return "Book ticket";
+  if (isEventSoldOut(listing, options?.liveAvailable)) return "Sold out";
+
+  const qty = Math.max(1, options?.quantity ?? 1);
+  const isFree =
+    options?.isFree ??
+    (listing.price == null || Number(listing.price) === 0);
+
+  if (isFree) {
+    return qty === 1 ? "Reserve spot" : `Reserve ${qty} spots`;
+  }
+  return qty === 1 ? "Book ticket" : `Book ${qty} tickets`;
 }
 
 export function parseEventIdsParam(raw?: string | string[]): string[] {

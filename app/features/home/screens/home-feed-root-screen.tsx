@@ -300,18 +300,8 @@ export function HomeFeedRootScreen() {
       setNearbyMusicEvents(items);
       setEventsLoadState(items.length > 0 ? "success" : "empty");
     } catch {
-      try {
-        const fallback = await fetchUpcomingEventsReliable(
-          { limit: 12, sort: "newest" },
-          { force: true },
-        );
-        const items = filterOutOwnListings(fallback.listings ?? [], user?.id);
-        setNearbyMusicEvents(items);
-        setEventsLoadState(items.length > 0 ? "success" : "empty");
-      } catch {
-        setNearbyMusicEvents([]);
-        setEventsLoadState("error");
-      }
+      setNearbyMusicEvents([]);
+      setEventsLoadState("error");
     }
   }, [isOffline, locationQueryState, user?.id]);
 

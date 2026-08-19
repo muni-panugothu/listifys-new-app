@@ -145,3 +145,99 @@ export function parseEventTimeParts(raw: string): EventTimeParts {
 export function formatEventTimeFromParts(parts: EventTimeParts): string {
   return `${parts.hour12}:${String(parts.minute).padStart(2, "0")} ${parts.period}`;
 }
+
+export function isSameCalendarDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/** Minutes since midnight for 12h or 24h time strings. */
+export function parseTimeToMinutes(raw: string): number | null {
+  const input = raw.trim();
+  const twelve = /^(0?[1-9]|1[0-2]):([0-5]\d)\s*(AM|PM|am|pm)$/.exec(input);
+  if (twelve) {
+    let hour = Number(twelve[1]) % 12;
+    if (twelve[3].toUpperCase() === "PM") hour += 12;
+    return hour * 60 + Number(twelve[2]);
+  }
+  const twentyFour = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(input);
+  if (twentyFour) {
+    return Number(twentyFour[1]) * 60 + Number(twentyFour[2]);
+  }
+  return null;
+}
+
+export function isEventEndDateOnOrAfterStart(startRaw: string, endRaw: string): boolean {
+  const start = parseEventDateInput(startRaw);
+  const end = parseEventDateInput(endRaw);
+  if (!start || !end) return false;
+  const s = new Date(start);
+  const e = new Date(end);
+  s.setHours(0, 0, 0, 0);
+  e.setHours(0, 0, 0, 0);
+  return e >= s;
+}
+
+/** When dates are the same day, end time must be after start time. */
+export function isEventEndTimeAfterStart(
+  startDateRaw: string,
+  endDateRaw: string,
+  startTimeRaw: string,
+  endTimeRaw: string,
+): boolean {
+  const startDate = parseEventDateInput(startDateRaw);
+  const endDate = parseEventDateInput(endDateRaw);
+  if (!startDate || !endDate) return false;
+  if (!isSameCalendarDay(startDate, endDate)) return true;
+
+  const startM = parseTimeToMinutes(startTimeRaw);
+  const endM = parseTimeToMinutes(endTimeRaw);
+  if (startM == null || endM == null) return false;
+  return endM > startM;
+}
+
+/** Legacy display string stored in eventDate (single or multi-day). */
+export function buildLegacyEventDateString(startRaw: string, endRaw: string): string {
+  const start = parseEventDateInput(startRaw);
+  const end = parseEventDateInput(endRaw);
+  if (!start) return startRaw.trim();
+  if (!end || isSameCalendarDay(start, end)) return formatEventDateForForm(start);
+
+  const startDay = start.getDate();
+  const startMonth = start.toLocaleString("en-IN", { month: "short" });
+  const endDay = end.getDate();
+  const endMonth = end.toLocaleString("en-IN", { month: "short" });
+  const endYear = end.getFullYear();
+
+  if (start.getFullYear() === endYear && start.getMonth() === end.getMonth()) {
+    return `${startDay} – ${endDay} ${endMonth} ${endYear}`;
+  }
+  if (start.getFullYear() === endYear) {
+    return `${startDay} ${startMonth} – ${endDay} ${endMonth} ${endYear}`;
+  }
+  return `${formatEventDateForForm(start)} – ${formatEventDateForForm(end)}`;
+}
+
+/** Legacy display string stored in eventTime. */
+export function buildLegacyEventTimeString(startTimeRaw: string, endTimeRaw: string): string {
+  const start = normalizeEventTime(startTimeRaw);
+  const end = normalizeEventTime(endTimeRaw);
+  if (!start) return end;
+  if (!end || start === end) return start;
+  return `${start} – ${end}`;
+}
+
+/** Preview label for the post-ad form. */
+export function buildEventSchedulePreview(
+  startDateRaw: string,
+  endDateRaw: string,
+  startTimeRaw: string,
+  endTimeRaw: string,
+): string {
+  const datePart = buildLegacyEventDateString(startDateRaw, endDateRaw);
+  const timePart = buildLegacyEventTimeString(startTimeRaw, endTimeRaw);
+  return [datePart, timePart].filter(Boolean).join(" • ");
+}

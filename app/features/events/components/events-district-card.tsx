@@ -2,8 +2,9 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { memo } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 
-import { ListifyFonts } from "@/constants/typography";
+import { formatEventDisplayLabel } from "@/lib/event-dates";
 import type { FeaturedEventDummy } from "@/features/events/data/events-discovery";
+import { ListifyFonts } from "@/constants/typography";
 import { Image } from "@/lib/nativewind-interop";
 
 type EventsDistrictCardProps = {
@@ -92,7 +93,10 @@ function EventsDistrictCardImpl({
           ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
         }}
       >
-        {[event.eventDate, event.eventTime].filter(Boolean).join(" · ")}
+        {formatEventDisplayLabel({
+          eventDate: event.eventDate,
+          eventTime: event.eventTime,
+        })}
       </Text>
     </Pressable>
   );

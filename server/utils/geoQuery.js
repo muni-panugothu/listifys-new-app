@@ -105,7 +105,34 @@ function buildSortOption(sort, hasGeo = false, hasText = false) {
   return { createdAt: -1 }; // default: newest
 }
 
-module.exports = { applyGeoFilter, buildSortOption, escapeRegex, buildLocationRegex, applyCountryFilter };
+/**
+ * Strict country filter — only listings with matching countryCode (no missing/null passthrough).
+ * Use for location-scoped discovery (events) where global fallbacks must not leak other countries.
+ */
+function applyStrictCountryFilter(filter, countryCode) {
+  if (!countryCode || typeof countryCode !== 'string') return;
+  const code = countryCode.toUpperCase().trim();
+  if (!code) return;
+  filter.countryCode = { $regex: new RegExp(`^${escapeRegex(code)}$`, 'i') };
+}
+
+/**
+ * Strict geo filter — requires stored coordinates within radius (no global text-only passthrough).
+ */
+function applyStrictGeoFilter(filter, lat, lng, radiusKm = 50) {
+  if (lat == null || lng == null) return;
+  const numLat = Number(lat);
+  const numLng = Number(lng);
+  if (Number.isNaN(numLat) || Number.isNaN(numLng)) return;
+
+  const maxDistMeters = (Number(radiusKm) || 50) * 1000;
+  const radiusRadians = maxDistMeters / 6378100;
+  filter.coordinates = {
+    $geoWithin: {
+      $centerSphere: [[numLng, numLat], radiusRadians],
+    },
+  };
+}
 
 /**
  * Apply an ISO country code filter to a MongoDB filter object.
@@ -246,3 +273,13 @@ function buildLocationRegex(locationStr) {
   if (uniqueParts.length === 0) return null;
   return { $regex: uniqueParts.join('|'), $options: 'i' };
 }
+
+module.exports = {
+  applyGeoFilter,
+  applyStrictGeoFilter,
+  applyStrictCountryFilter,
+  buildSortOption,
+  escapeRegex,
+  buildLocationRegex,
+  applyCountryFilter,
+};

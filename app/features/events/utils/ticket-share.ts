@@ -2,6 +2,7 @@ import * as FileSystem from "expo-file-system";
 import { Share } from "react-native";
 
 import type { TicketDetail } from "@/features/events/services/event-ticketing-api";
+import { formatEventDisplayLabel } from "@/lib/event-dates";
 
 export function buildTicketQrImageUrl(qrPayload: string, size = 512): string {
   const dim = Math.max(128, Math.round(size));
@@ -10,13 +11,19 @@ export function buildTicketQrImageUrl(qrPayload: string, size = 512): string {
 
 export function buildTicketShareMessage(detail: TicketDetail): string {
   const event = detail.event;
+  const scheduleLabel = formatEventDisplayLabel({
+    eventDate: event?.eventDate,
+    eventTime: event?.eventTime,
+    startDate: event?.startDate,
+    endDate: event?.endDate,
+    startTime: event?.startTime,
+    endTime: event?.endTime,
+  });
   const lines = [
     "🎟️ My Listifys Event Ticket",
     "",
     `Event: ${event?.title ?? "Event"}`,
-    event?.eventDate
-      ? `📅 Date: ${event.eventDate}${event.eventTime ? `\n⏰ Time: ${event.eventTime}` : ""}`
-      : "",
+    scheduleLabel ? `📅 Schedule: ${scheduleLabel}` : "",
     event?.venue || event?.location
       ? `📍 Venue: ${[event?.venue, event?.location].filter(Boolean).join(", ")}`
       : "",

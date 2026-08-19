@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 
+import { buildEventTypeDisplay } from "@/features/events/data/events-form-schema";
 import { SellFlowLayout, SellSectionCard } from "@/components/sell-flow-layout";
 import { ListifyFonts } from "@/constants/typography";
 import { useTheme } from "@/providers/theme-provider";
@@ -35,7 +36,12 @@ import { PhoneInputWithCountry } from "@/components/phone-input-with-country";
 import { GooglePlacesInput, type PlacesSelectResult } from "@/components/google-places-input";
 import { useLocale } from "@/providers/locale-provider";
 import { getMileageUnitForCountry } from "@/lib/listing-distance";
-import { dateKey, normalizeToCalendarDate, parseDateRangeFromText } from "@/lib/event-dates";
+import { dateKey, normalizeToCalendarDate } from "@/lib/event-dates";
+import {
+  buildLegacyEventDateString,
+  buildLegacyEventTimeString,
+  parseEventDateInput,
+} from "@/lib/post-form-validators";
 import { getCurrencyCodeFromCountry } from "@/lib/currency";
 import { validateListingContactPhone } from "@/lib/phone-validation";
 import { AuthApiError } from "@/features/auth/services/auth-api";
@@ -138,8 +144,8 @@ export function PostAdStep3MediaScreen() {
     applyLink, jobType, experience, education,
     employmentType, workMode, salaryMin, salaryMax, salaryType, industry, positions,
     availability, age, languages, certifications,
-    eventDate, eventTime, organizer, venue, ticketsAvailable, ageRestriction, dressCode,
-    eventFormat, eventDuration,
+    eventDate, eventEndDate, eventTime, eventEndTime, organizer, venue, ticketsAvailable, ageRestriction, dressCode,
+    eventFormat, eventDuration, eventCategory, eventType, categoryData,
     batteryHealth,
     material, dimensions, weight, assemblyRequired, numberOfPieces,
     size, gender, fabricType,
@@ -313,6 +319,16 @@ export function PostAdStep3MediaScreen() {
       showErrorToast("Description too short", "Description must be at least 20 characters.");
       return;
     }
+
+    const categoryConfig = CATEGORY_MAP[category];
+    if (categoryConfig?.subcategories?.length && !subcategory?.trim()) {
+      showErrorToast(
+        "Event type missing",
+        "Go back to Step 1 (Category) and choose an event type — e.g. Music, Comedy, or Food & Drink.",
+      );
+      return;
+    }
+
     if (!location || location.length < 2) {
       showErrorToast("Location required", "Please enter a location (at least 2 characters).");
       return;
@@ -654,22 +670,32 @@ export function PostAdStep3MediaScreen() {
 
       // Attach event-specific fields
       if (category === "events") {
-        if (eventDate) listingBody.eventDate = eventDate;
-        if (eventTime) listingBody.eventTime = eventTime;
-        const range = parseDateRangeFromText(eventDate);
-        const startCal = range.start ? normalizeToCalendarDate(range.start) : null;
-        const endCal = (range.end ?? range.start)
-          ? normalizeToCalendarDate(range.end ?? range.start)
-          : null;
+        const legacyEventDate = buildLegacyEventDateString(eventDate, eventEndDate || eventDate);
+        const legacyEventTime = buildLegacyEventTimeString(eventTime, eventEndTime || eventTime);
+        if (legacyEventDate) listingBody.eventDate = legacyEventDate;
+        if (legacyEventTime) listingBody.eventTime = legacyEventTime;
+        if (eventTime) listingBody.startTime = eventTime;
+        if (eventEndTime) listingBody.endTime = eventEndTime;
+
+        const startParsed = parseEventDateInput(eventDate);
+        const endParsed = parseEventDateInput(eventEndDate || eventDate);
+        const startCal = startParsed ? normalizeToCalendarDate(startParsed) : null;
+        const endCal = endParsed ? normalizeToCalendarDate(endParsed) : null;
         if (startCal) listingBody.startDate = startCal.toISOString();
         if (endCal) listingBody.endDate = endCal.toISOString();
         if (organizer) listingBody.organizer = organizer;
         if (venue) listingBody.venue = venue;
-        if (ticketsAvailable) listingBody.ticketsAvailable = Number(ticketsAvailable);
+        listingBody.price = price.trim() === "" ? 0 : Number(price);
+        listingBody.ticketsAvailable = Number(ticketsAvailable);
         if (ageRestriction) listingBody.ageRestriction = ageRestriction;
         if (dressCode) listingBody.dressCode = dressCode;
         if (eventFormat) listingBody.eventFormat = eventFormat;
         if (eventDuration) listingBody.eventDuration = eventDuration;
+        if (eventCategory) listingBody.eventCategory = eventCategory;
+        if (eventType) listingBody.eventType = eventType;
+        if (categoryData && Object.keys(categoryData).length > 0) {
+          listingBody.categoryData = categoryData;
+        }
       }
 
       // Attach mobile-specific fields
@@ -861,7 +887,10 @@ export function PostAdStep3MediaScreen() {
       }
       const message =
         err instanceof Error ? err.message : "Failed to post listing";
-      dispatch(setSubmitError(message));
+      const friendlyMessage = /subcategory is required/i.test(message)
+        ? "Event type is missing. Go back to Step 1 (Category) and select an event type — e.g. Music, Comedy, or Sports."
+        : message;
+      dispatch(setSubmitError(friendlyMessage));
       dispatch(setSubmitting(false));
       setSubmitPhase("idle");
       if (
@@ -872,7 +901,7 @@ export function PostAdStep3MediaScreen() {
         dispatch(showAuthGate({ action: "sell", redirectTo: POST_AD_RETURN_PATH }));
         return;
       }
-      showErrorToast("Error", message);
+      showErrorToast("Error", friendlyMessage);
     }
   };
 
@@ -903,6 +932,75 @@ export function PostAdStep3MediaScreen() {
       }
       primaryLoading={isSubmitting}
     >
+      {category === "events" ? (
+        <SellSectionCard title="Event type">
+          <View className="px-4 py-4">
+            {subcategory?.trim() ? (
+              <View className="flex-row items-center justify-between">
+                <View className="flex-1 pr-3">
+                  <Text
+                    className="text-[15px]"
+                    style={{ fontFamily: ListifyFonts.semiBold, color: colors.textPrimary }}
+                  >
+                    {buildEventTypeDisplay({ eventCategory, eventType, subcategory, eventFormat })}
+                  </Text>
+                  <Text
+                    className="mt-1 text-[12px]"
+                    style={{ fontFamily: ListifyFonts.regular, color: colors.textTertiary }}
+                  >
+                    Where your event appears in discovery (Music, Comedy, etc.)
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() =>
+                    router.push({
+                      pathname: "/post-ad-step1-category",
+                      params: { category: "events" },
+                    } as Href)
+                  }
+                  hitSlop={8}
+                >
+                  <Text
+                    style={{ fontFamily: ListifyFonts.semiBold, fontSize: 13, color: colors.primary }}
+                  >
+                    Change
+                  </Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View>
+                <Text
+                  className="text-[14px]"
+                  style={{ fontFamily: ListifyFonts.medium, color: colors.danger }}
+                >
+                  No event type selected
+                </Text>
+                <Text
+                  className="mt-1 text-[12px]"
+                  style={{ fontFamily: ListifyFonts.regular, color: colors.textSecondary }}
+                >
+                  This is required before publishing. Choose Music, Comedy, Food & Drink, etc.
+                </Text>
+                <Pressable
+                  onPress={() =>
+                    router.push({
+                      pathname: "/post-ad-step1-category",
+                      params: { category: "events" },
+                    } as Href)
+                  }
+                  className="mt-3 self-start rounded-lg px-4 py-2"
+                  style={{ backgroundColor: colors.primarySoft }}
+                >
+                  <Text style={{ fontFamily: ListifyFonts.semiBold, fontSize: 13, color: colors.primary }}>
+                    Select event type
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </SellSectionCard>
+      ) : null}
+
       <SellSectionCard title="Photos & videos" required>
         <ListingMediaPicker
           mediaItems={mediaItems}

@@ -35,7 +35,10 @@ import { useTheme } from "@/providers/theme-provider";
 type PaymentPhase = "idle" | "initializing" | "checkout" | "verifying";
 
 export function EventCheckoutScreen() {
-  const { eventId } = useLocalSearchParams<{ eventId: string }>();
+  const { eventId, quantity: quantityParam } = useLocalSearchParams<{
+    eventId: string;
+    quantity?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -79,6 +82,13 @@ export function EventCheckoutScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const parsed = Number(quantityParam);
+    if (Number.isInteger(parsed) && parsed >= 1) {
+      setQuantity(parsed);
+    }
+  }, [quantityParam]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -248,9 +258,11 @@ export function EventCheckoutScreen() {
   const payLabel = useMemo(() => {
     if (paymentPhase === "initializing") return "Starting payment…";
     if (paymentPhase === "verifying") return "Confirming…";
-    if (selectedType && selectedType.price <= 0) return "Confirm booking";
-    return "Pay securely";
-  }, [paymentPhase, selectedType]);
+    if (selectedType && selectedType.price <= 0) {
+      return quantity === 1 ? "Reserve spot" : `Reserve ${quantity} spots`;
+    }
+    return quantity === 1 ? "Pay securely" : `Pay for ${quantity} tickets`;
+  }, [paymentPhase, quantity, selectedType]);
 
   if (loading) {
     return (

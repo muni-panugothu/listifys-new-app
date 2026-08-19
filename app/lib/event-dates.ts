@@ -11,6 +11,8 @@ export type EventDateFields = {
   eventTime?: string;
   startDate?: string | Date;
   endDate?: string | Date;
+  startTime?: string;
+  endTime?: string;
 };
 
 function stripOrdinals(input: string): string {
@@ -81,7 +83,7 @@ export function normalizeToCalendarDate(input: unknown): Date | null {
   );
 }
 
-function calendarDayFromStored(value: string | Date): Date | null {
+export function calendarDayFromStored(value: string | Date): Date | null {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   const y = d.getUTCFullYear();
@@ -242,6 +244,21 @@ export function isSameDay(a: Date, b: Date): boolean {
 }
 
 /**
+ * Human-readable time range for event cards.
+ */
+export function formatEventTimeDisplayLabel(event: EventDateFields): string {
+  const start = event.startTime?.trim();
+  const end = event.endTime?.trim();
+  if (start && end && start !== end) return `${start} – ${end}`;
+  if (start) return start;
+  if (end) return end;
+
+  const legacy = event.eventTime?.trim();
+  if (!legacy) return "";
+  return legacy;
+}
+
+/**
  * Human-readable date/time for event cards.
  * Never returns "Invalid Date" — falls back to raw text fields.
  */
@@ -259,8 +276,9 @@ export function formatEventDisplayLabel(event: EventDateFields): string {
     parts.push(event.eventDate.trim());
   }
 
-  if (event.eventTime?.trim()) {
-    parts.push(event.eventTime.trim());
+  const timeLabel = formatEventTimeDisplayLabel(event);
+  if (timeLabel) {
+    parts.push(timeLabel);
   }
 
   return parts.join(" • ");

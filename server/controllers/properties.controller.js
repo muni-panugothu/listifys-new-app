@@ -184,10 +184,23 @@ exports.getProperties = async (req, res) => {
     } = req.query;
 
     const query = { status: "active" };
-    if (category) {
-      query.category = category;
+
+    const TOP_LEVEL_CATEGORIES = new Set(["Properties", "Rentals", "Roommates"]);
+    // Client sends subcategory chips as ?category= (via fetchCategoryListings).
+    if (subcategory) {
+      query.subcategory = subcategory;
+    } else if (category) {
+      if (TOP_LEVEL_CATEGORIES.has(category)) {
+        query.category = category;
+      } else {
+        query.subcategory = category;
+      }
     }
-    if (subcategory) query.subcategory = subcategory;
+
+    const subcategoryFilter =
+      subcategory ||
+      (category && !TOP_LEVEL_CATEGORIES.has(category) ? category : undefined);
+
     if (sellerId) query.seller = sellerId;
     const { applyGeoFilter, buildSortOption, escapeRegex, applyCountryFilter } = require('../utils/geoQuery');
 
@@ -197,7 +210,7 @@ exports.getProperties = async (req, res) => {
       const limitNumber = Math.max(1, Math.min(parseInt(limit, 10), 100));
       const esResult = await esHydratedSearch({
         entity: 'properties',
-        searchParams: { query: search, category: subcategory, minPrice, maxPrice, sort, page: pageNumber, limit: limitNumber },
+        searchParams: { query: search, category: subcategoryFilter, minPrice, maxPrice, sort, page: pageNumber, limit: limitNumber },
         Model: Property,
         projection: LIST_PROJECTION,
         populate: [],

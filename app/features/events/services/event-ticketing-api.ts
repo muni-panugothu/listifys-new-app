@@ -25,6 +25,10 @@ export type EventAvailability = {
     location?: string;
     eventDate?: string;
     eventTime?: string;
+    startDate?: string;
+    endDate?: string;
+    startTime?: string;
+    endTime?: string;
     image?: string | null;
   };
   ticketTypes: TicketTypeAvailability[];
@@ -68,6 +72,10 @@ export type CheckoutOrderResponse = {
       location?: string;
       eventDate?: string;
       eventTime?: string;
+      startDate?: string;
+      endDate?: string;
+      startTime?: string;
+      endTime?: string;
       image?: string;
       subcategory?: string;
     };
@@ -120,6 +128,10 @@ export type TicketDetail = {
     location?: string;
     eventDate?: string;
     eventTime?: string;
+    startDate?: string;
+    endDate?: string;
+    startTime?: string;
+    endTime?: string;
     image?: string;
     subcategory?: string;
   };

@@ -7,6 +7,7 @@ import type { TicketDetail } from "@/features/events/services/event-ticketing-ap
 import type { EventDetailTheme } from "@/features/events/utils/event-detail-helpers";
 import { shareEventTicket } from "@/features/events/utils/ticket-share";
 import { resolveAbsoluteMediaUrl } from "@/features/auth/services/auth-api";
+import { formatEventDisplayLabel } from "@/lib/event-dates";
 import { ListifyFonts } from "@/constants/typography";
 import { Image } from "@/lib/nativewind-interop";
 
@@ -37,6 +38,14 @@ function EventBookedTicketCardImpl({
   }, [detail]);
 
   const venueLabel = [event?.venue, event?.location].filter(Boolean).join(", ");
+  const scheduleLabel = formatEventDisplayLabel({
+    eventDate: event?.eventDate,
+    eventTime: event?.eventTime,
+    startDate: event?.startDate,
+    endDate: event?.endDate,
+    startTime: event?.startTime,
+    endTime: event?.endTime,
+  });
 
   return (
     <View style={{ marginTop: 22 }}>
@@ -123,7 +132,7 @@ function EventBookedTicketCardImpl({
             >
               {event?.title ?? "Event"}
             </Text>
-            {event?.eventDate ? (
+            {scheduleLabel ? (
               <Text
                 style={{
                   marginTop: 6,
@@ -132,8 +141,7 @@ function EventBookedTicketCardImpl({
                   color: theme.dateAccent,
                 }}
               >
-                {event.eventDate}
-                {event.eventTime ? ` • ${event.eventTime}` : ""}
+                {scheduleLabel}
               </Text>
             ) : null}
             {venueLabel ? (

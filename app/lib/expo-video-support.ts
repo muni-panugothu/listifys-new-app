@@ -6,7 +6,11 @@ let cachedAvailability: boolean | null = null;
 /** True when the current dev/production build includes expo-video native code. */
 export function isExpoVideoAvailable(): boolean {
   if (cachedAvailability != null) return cachedAvailability;
-  cachedAvailability = Boolean(requireOptionalNativeModule("ExpoVideo"));
+  try {
+    cachedAvailability = Boolean(requireOptionalNativeModule("ExpoVideo"));
+  } catch {
+    cachedAvailability = false;
+  }
   return cachedAvailability;
 }
 
@@ -50,7 +54,7 @@ export function getNativeListingVideoPlayer():
     return cachedNativePlayer;
   }
   try {
-    const mod = require("../components/listing-video-player-native") as NativeVideoModule & {
+    const mod = require("../components/listing-video-player-native.impl") as NativeVideoModule & {
       default?: ComponentType<NativeListingVideoPlayerProps>;
     };
     const component = mod?.ListingVideoPlayerNative ?? mod?.default;

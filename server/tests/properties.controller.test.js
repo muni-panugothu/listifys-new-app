@@ -119,7 +119,7 @@ describe('🏠 PROPERTIES CONTROLLER TESTS', () => {
       expect(res._json.pagination.total).toBe(2);
     });
 
-    test('TC-P02: Should apply category filter', async () => {
+    test('TC-P02: Should apply top-level category filter', async () => {
       req.query = { category: 'Rentals' };
       mockPropertyFind.mockResolvedValue([]);
       mockPropertyCountDocuments.mockResolvedValue(0);
@@ -129,6 +129,21 @@ describe('🏠 PROPERTIES CONTROLLER TESTS', () => {
       expect(res.statusCode).toBe(200);
       expect(res._json.success).toBe(true);
       expect(res._json.data.length).toBe(0);
+    });
+
+    test('TC-P02b: Should treat category query as subcategory for property tabs', async () => {
+      req.query = { category: 'Office Space' };
+      mockPropertyFind.mockResolvedValue([
+        { _id: '1', title: 'Office Space in Salarpuria', subcategory: 'Office Space', category: 'Properties' },
+      ]);
+      mockPropertyCountDocuments.mockResolvedValue(1);
+
+      await propertiesController.getProperties(req, res);
+
+      expect(Property.find).toHaveBeenCalled();
+      const findArg = Property.find.mock.calls[Property.find.mock.calls.length - 1][0];
+      expect(findArg.subcategory).toBe('Office Space');
+      expect(findArg.category).toBeUndefined();
     });
 
     test('TC-P03: Should apply price range filters', async () => {

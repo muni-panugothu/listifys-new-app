@@ -9,6 +9,7 @@ const viewCounter = require("../services/viewcount.service.js");
 const SearchService = require("../services/search.service.js");
 const { esHydratedSearch } = require("../utils/esSearch");
 const { notifyFollowersOfNewListing } = require("../services/notifyfollowers.service.js");
+const { syncDefaultTicketTypeFromEvent } = require("../services/eventticketing.service.js");
 const {
   buildDayOverlapFilter,
   buildUpcomingFilter,
@@ -18,6 +19,8 @@ const {
   eventOccursOnUpcomingWeekend,
   isEventExpired,
   resolveEventDatesFromBody,
+  resolveEventTimesFromBody,
+  buildLegacyEventTimeString,
   repairEventDatesIfNeeded,
   startOfDay,
   endOfDay,
@@ -29,8 +32,21 @@ const {
   publishListingCreated,
   publishListingUpdated,
   publishListingDeleted,
+  publishListingPublished,
   publishImageCleanup,
 } = require('../queues/producers/listing.producer');
+const {
+  resolveCategoryPair,
+  validateCategoryData,
+} = require("../utils/eventsCategorySchema");
+const { findSimilarEvents } = require("../utils/similarEventsQuery");
+const {
+  isPublishedEventStatus,
+  isDraftEventStatus,
+  isProtectedEventStatus,
+  publishedStatusFilter,
+} = require("../utils/eventStatus");
+const { emitEventStatusChange } = require("../services/eventrealtime.service.js");
 
 const LIST_PROJECTION = { currency: 1, slug: 1,
   title: 1,
@@ -40,6 +56,9 @@ const LIST_PROJECTION = { currency: 1, slug: 1,
   condition: 1,
   category: 1,
   subcategory: 1,
+  eventCategory: 1,
+  eventType: 1,
+  categoryData: 1,
   images: 1,
   videos: 1,
   sellerName: 1,
@@ -54,6 +73,8 @@ const LIST_PROJECTION = { currency: 1, slug: 1,
   eventTime: 1,
   startDate: 1,
   endDate: 1,
+  startTime: 1,
+  endTime: 1,
   organizer: 1,
   venue: 1,
   ticketsAvailable: 1,
@@ -65,43 +86,46 @@ const { normaliseListingMedia } = require("../utils/listing-media");
 const { resolveSellerName } = require("../utils/listing-seller");
 const normaliseImages = (listing) => normaliseListingMedia(listing);
 
-function formatHostingDuration(createdAt) {
-  if (!createdAt) return null;
-  const start = new Date(createdAt);
-  if (Number.isNaN(start.getTime())) return null;
-  const months =
-    (new Date().getFullYear() - start.getFullYear()) * 12 +
-    (new Date().getMonth() - start.getMonth());
-  if (months < 1) return "New host";
-  if (months < 12) return `${months} month${months === 1 ? "" : "s"}`;
-  const years = Math.floor(months / 12);
-  return `${years} year${years === 1 ? "" : "s"}`;
-}
-
 async function attachOrganizerStats(listingObj) {
-  if (!listingObj?.seller) return listingObj;
-  const sellerId = listingObj.seller._id || listingObj.seller;
-  if (!sellerId) return listingObj;
+  if (!listingObj) return listingObj;
+
+  const likedCount = Array.isArray(listingObj.savedBy) ? listingObj.savedBy.length : 0;
+  const sellerId = listingObj.seller?._id || listingObj.seller;
+
+  if (!sellerId) {
+    listingObj.organizerStats = {
+      likedCount,
+      hostedEvents: 0,
+      hostingCount: 0,
+    };
+    return listingObj;
+  }
 
   try {
-    const hostedEvents = await Event.countDocuments({
-      seller: sellerId,
-      status: "active",
-    });
-    const rating = Number(listingObj.sellerRating ?? 5);
-    const reviews = Number(listingObj.sellerReviews ?? 0);
+    const [hostedEvents, hostingCount] = await Promise.all([
+      Event.countDocuments({
+        seller: sellerId,
+        status: { $in: ["active", "sold", "expired"] },
+      }),
+      Event.countDocuments({
+        $and: [
+          { seller: sellerId },
+          { status: "active" },
+          buildUpcomingFilter(),
+        ],
+      }),
+    ]);
+
     listingObj.organizerStats = {
+      likedCount,
       hostedEvents,
-      hostingDuration: formatHostingDuration(listingObj.seller?.createdAt),
-      likedPercent: Math.min(100, Math.max(0, Math.round((rating / 5) * 100))),
-      ratingsCount: reviews,
+      hostingCount,
     };
   } catch {
     listingObj.organizerStats = {
+      likedCount,
       hostedEvents: 0,
-      hostingDuration: null,
-      likedPercent: null,
-      ratingsCount: 0,
+      hostingCount: 0,
     };
   }
   return listingObj;
@@ -121,6 +145,47 @@ const VALID_SUBCATEGORIES = [
   "Community",
   "Other",
 ];
+
+function parseRequestedEventStatus(bodyStatus, { isCreate = false } = {}) {
+  const raw = String(bodyStatus || "").trim().toLowerCase();
+  if (!raw) return isCreate ? "active" : undefined;
+  if (raw === "draft") return "draft";
+  if (raw === "published") return "active";
+  if (raw === "active") return "active";
+  if (isProtectedEventStatus(raw)) {
+    return { error: `Status "${raw}" cannot be set directly` };
+  }
+  return { error: `Invalid status "${raw}"` };
+}
+
+function applyEventCategoryFromBody(body) {
+  const pair = resolveCategoryPair({
+    eventCategory: body.eventCategory,
+    eventType: body.eventType,
+    subcategory: body.subcategory,
+  });
+  if (!pair) {
+    return {
+      ok: false,
+      message: body.eventCategory && body.eventType
+        ? "Invalid event category and type combination"
+        : `Invalid subcategory. Allowed: ${VALID_SUBCATEGORIES.join(", ")}`,
+    };
+  }
+
+  const catResult = validateCategoryData(body.categoryData);
+  if (!catResult.ok) {
+    return { ok: false, message: catResult.message };
+  }
+
+  return {
+    ok: true,
+    eventCategory: pair.eventCategory || body.eventCategory || undefined,
+    eventType: pair.eventType || body.eventType || undefined,
+    subcategory: pair.subcategory,
+    categoryData: catResult.value,
+  };
+}
 
 exports.createEvent = async (req, res) => {
   try {
@@ -143,6 +208,8 @@ exports.createEvent = async (req, res) => {
       eventTime,
       startDate: bodyStartDate,
       endDate: bodyEndDate,
+      startTime: bodyStartTime,
+      endTime: bodyEndTime,
       organizer,
       venue,
       ticketsAvailable,
@@ -152,7 +219,22 @@ exports.createEvent = async (req, res) => {
       eventDuration,
       lat,
       lng,
+      eventCategory,
+      eventType,
+      categoryData,
+      status: bodyStatus,
     } = req.body;
+
+    const categoryFields = applyEventCategoryFromBody(req.body);
+    if (!categoryFields.ok) {
+      return res.status(400).json({ success: false, message: categoryFields.message });
+    }
+
+    const parsedStatus = parseRequestedEventStatus(bodyStatus, { isCreate: true });
+    if (parsedStatus && typeof parsedStatus === "object" && parsedStatus.error) {
+      return res.status(400).json({ success: false, message: parsedStatus.error });
+    }
+    const eventStatus = typeof parsedStatus === "string" ? parsedStatus : "active";
 
     if (category !== "Events") {
       logger.securityLog("wrong_category", {
@@ -168,10 +250,10 @@ exports.createEvent = async (req, res) => {
       });
     }
 
-    if (!VALID_SUBCATEGORIES.includes(subcategory)) {
+    if (!VALID_SUBCATEGORIES.includes(categoryFields.subcategory)) {
       return res.status(400).json({
         success: false,
-        message: `Invalid subcategory \"${subcategory}\" for Events. Allowed: ${VALID_SUBCATEGORIES.join(", ")}`,
+        message: `Invalid subcategory for Events.`,
       });
     }
 
@@ -180,13 +262,24 @@ exports.createEvent = async (req, res) => {
       endDate: bodyEndDate,
       eventDate,
     });
+    const resolvedTimes = resolveEventTimesFromBody({
+      startTime: bodyStartTime,
+      endTime: bodyEndTime,
+      eventTime,
+    });
 
     const listing = await Event.create({
       title,
       description,
       price,
       category,
-      subcategory,
+      subcategory: categoryFields.subcategory,
+      eventCategory: categoryFields.eventCategory,
+      eventType: categoryFields.eventType,
+      categoryData: Object.keys(categoryFields.categoryData || {}).length
+        ? categoryFields.categoryData
+        : undefined,
+      status: eventStatus,
       condition: condition || "Good",
       location,
       phone,
@@ -197,9 +290,11 @@ exports.createEvent = async (req, res) => {
       images: images || [],
       videos: videos || [],
       eventDate,
-      eventTime,
+      eventTime: eventTime || buildLegacyEventTimeString(resolvedTimes.startTime, resolvedTimes.endTime),
       startDate: resolvedDates.startDate,
       endDate: resolvedDates.endDate,
+      startTime: resolvedTimes.startTime,
+      endTime: resolvedTimes.endTime,
       organizer,
       venue,
       ticketsAvailable: ticketsAvailable !== undefined && ticketsAvailable !== null && ticketsAvailable !== ""
@@ -221,6 +316,15 @@ exports.createEvent = async (req, res) => {
       "name profileImage"
     );
 
+    try {
+      await syncDefaultTicketTypeFromEvent(populated);
+    } catch (syncErr) {
+      logger.warn("Event ticket type sync failed on create", {
+        eventId: listing._id,
+        message: syncErr.message,
+      });
+    }
+
     const listingObj = populated.toObject ? populated.toObject() : populated;
     normaliseImages(listingObj);
 
@@ -237,7 +341,7 @@ exports.createEvent = async (req, res) => {
       venue,
     });
 
-    // ✅ Background via RabbitMQ (non-blocking)
+    // Background via RabbitMQ (non-blocking)
     publishListingCreated({
       entity:    'events',
       listing:   listingObj,
@@ -245,6 +349,16 @@ exports.createEvent = async (req, res) => {
       ip:        req.ip,
       userAgent: req.get('user-agent'),
     }).catch(() => {});
+
+    if (isPublishedEventStatus(eventStatus)) {
+      publishListingPublished({
+        entity: 'events',
+        listing: listingObj,
+        userId: req.user._id,
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+      }).catch(() => {});
+    }
   } catch (error) {
     logger.error("Create event error:", error);
     const isValidationError = error.name === "ValidationError";
@@ -332,7 +446,7 @@ exports.getAllEvents = async (req, res) => {
       }
     }
 
-    const filter = { status: "active" };
+    const filter = { status: publishedStatusFilter() };
 
     if (search) {
       const escapedSearch = String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -442,6 +556,7 @@ exports.getEventById = async (req, res) => {
       if (cached) {
         viewCounter.recordView("events", param);
         normaliseImages(cached);
+        await attachOrganizerStats(cached);
         res.setHeader("X-Cache", "HIT");
         res.setHeader("X-Cache-Source", "listing-cache");
         return res.status(200).json({ success: true, listing: cached });
@@ -450,7 +565,7 @@ exports.getEventById = async (req, res) => {
 
     const listing = isObjectId
       ? await Event.findById(param).populate("seller", "name profileImage createdAt")
-      : await Event.findOne({ slug: param, status: "active" }).populate("seller", "name profileImage createdAt");
+      : await Event.findOne({ slug: param, status: publishedStatusFilter() }).populate("seller", "name profileImage createdAt");
 
     if (!listing) {
       return res.status(404).json({
@@ -530,6 +645,8 @@ exports.updateEvent = async (req, res) => {
       "eventTime",
       "startDate",
       "endDate",
+      "startTime",
+      "endTime",
       "organizer",
       "venue",
       "ticketsAvailable",
@@ -537,10 +654,44 @@ exports.updateEvent = async (req, res) => {
       "dressCode",
       "eventFormat",
       "eventDuration",
+      "eventCategory",
+      "eventType",
+      "categoryData",
     ];
 
+    if (
+      req.body.eventCategory !== undefined ||
+      req.body.eventType !== undefined ||
+      req.body.subcategory !== undefined ||
+      req.body.categoryData !== undefined
+    ) {
+      const categoryFields = applyEventCategoryFromBody({
+        ...listing.toObject(),
+        ...req.body,
+      });
+      if (!categoryFields.ok) {
+        return res.status(400).json({ success: false, message: categoryFields.message });
+      }
+      listing.subcategory = categoryFields.subcategory;
+      listing.eventCategory = categoryFields.eventCategory;
+      listing.eventType = categoryFields.eventType;
+      if (categoryFields.categoryData && Object.keys(categoryFields.categoryData).length) {
+        listing.categoryData = categoryFields.categoryData;
+      }
+    }
+
+    if (req.body.status !== undefined) {
+      const parsedStatus = parseRequestedEventStatus(req.body.status);
+      if (parsedStatus && typeof parsedStatus === "object" && parsedStatus.error) {
+        return res.status(400).json({ success: false, message: parsedStatus.error });
+      }
+      if (typeof parsedStatus === "string") {
+        listing.status = parsedStatus;
+      }
+    }
+
     allowedUpdates.forEach((field) => {
-      if (req.body[field] !== undefined) {
+      if (req.body[field] !== undefined && !["eventCategory", "eventType", "categoryData", "subcategory", "status"].includes(field)) {
         listing[field] = req.body[field];
       }
     });
@@ -559,12 +710,44 @@ exports.updateEvent = async (req, res) => {
       listing.endDate = resolvedDates.endDate;
     }
 
+    if (
+      req.body.startTime !== undefined ||
+      req.body.endTime !== undefined ||
+      req.body.eventTime !== undefined
+    ) {
+      const resolvedTimes = resolveEventTimesFromBody({
+        startTime: req.body.startTime ?? listing.startTime,
+        endTime: req.body.endTime ?? listing.endTime,
+        eventTime: req.body.eventTime ?? listing.eventTime,
+      });
+      listing.startTime = resolvedTimes.startTime;
+      listing.endTime = resolvedTimes.endTime;
+      if (!req.body.eventTime && (req.body.startTime !== undefined || req.body.endTime !== undefined)) {
+        listing.eventTime = buildLegacyEventTimeString(resolvedTimes.startTime, resolvedTimes.endTime);
+      }
+    }
+
     await listing.save();
 
     const updated = await Event.findById(listing._id).populate(
       "seller",
       "name profileImage"
     );
+
+    if (
+      req.body.price !== undefined ||
+      req.body.ticketsAvailable !== undefined
+    ) {
+      try {
+        await syncDefaultTicketTypeFromEvent(updated);
+      } catch (syncErr) {
+        const status = syncErr.statusCode === 400 ? 400 : 500;
+        return res.status(status).json({
+          success: false,
+          message: syncErr.message || "Failed to update ticket inventory",
+        });
+      }
+    }
 
     const updatedObj = updated.toObject ? updated.toObject() : updated;
     const newImages = Array.isArray(updatedObj.images) ? updatedObj.images : [];
@@ -824,9 +1007,13 @@ exports.toggleSave = async (req, res) => {
       await Event.updateOne({ _id: req.params.id }, { $addToSet: { savedBy: userId } });
     }
 
+    const updated = await Event.findById(req.params.id).select("savedBy").lean();
+    const likedCount = Array.isArray(updated?.savedBy) ? updated.savedBy.length : 0;
+
     res.status(200).json({
       success: true,
       saved: !isSaved,
+      likedCount,
       message: isSaved ? "Listing unsaved" : "Listing saved",
     });
 
@@ -934,7 +1121,6 @@ exports.getSimilarEvents = async (req, res) => {
   try {
     const param = req.params.id;
     const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 20);
-    const { lat, lng, countryCode } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(param)) {
       return res.status(400).json({ success: false, message: "Invalid event ID" });
@@ -945,45 +1131,18 @@ exports.getSimilarEvents = async (req, res) => {
       return res.status(404).json({ success: false, message: "Event not found" });
     }
 
-    const filter = {
-      status: "active",
-      _id: { $ne: current._id },
-      ...buildUpcomingFilter(),
-    };
-
-    if (current.subcategory) {
-      filter.subcategory = current.subcategory;
+    if (!isPublishedEventStatus(current.status)) {
+      return res.status(404).json({ success: false, message: "Event not found" });
     }
 
-    const { applyGeoFilter, applyCountryFilter } = require("../utils/geoQuery");
-    applyCountryFilter(filter, countryCode);
-    applyGeoFilter(filter, lat, lng, req.query.radius ?? 50);
+    const listings = await findSimilarEvents(current, {
+      limit,
+      lat: req.query.lat,
+      lng: req.query.lng,
+      countryCode: req.query.countryCode,
+      location: req.query.location,
+    });
 
-    let listings = await Event.find(filter, LIST_PROJECTION)
-      .sort({ featured: -1, createdAt: -1 })
-      .limit(limit * 2)
-      .populate("seller", "name profileImage")
-      .lean();
-
-    listings = listings.filter((e) => !isEventExpired(e));
-
-    if (listings.length < limit && current.subcategory) {
-      const broader = await Event.find(
-        {
-          status: "active",
-          _id: { $ne: current._id, $nin: listings.map((l) => l._id) },
-          ...buildUpcomingFilter(),
-        },
-        LIST_PROJECTION,
-      )
-        .sort({ featured: -1, createdAt: -1 })
-        .limit(limit)
-        .populate("seller", "name profileImage")
-        .lean();
-      listings = [...listings, ...broader.filter((e) => !isEventExpired(e))];
-    }
-
-    listings = listings.slice(0, limit);
     listings.forEach(normaliseImages);
 
     res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=180");
@@ -1022,7 +1181,7 @@ exports.getUpcomingEvents = async (req, res) => {
     const safePage = Math.max(Number(page) || 1, 1);
     const skip = (safePage - 1) * safeLimit;
 
-    const filter = { status: "active" };
+    const filter = { status: publishedStatusFilter() };
     const andClauses = [buildUpcomingFilter()];
     const day = date ? parseDateKey(String(date)) : null;
 
@@ -1047,12 +1206,35 @@ exports.getUpcomingEvents = async (req, res) => {
       });
     }
 
-    const { applyGeoFilter, buildSortOption, buildLocationRegex, applyCountryFilter } = require("../utils/geoQuery");
+    const { applyGeoFilter, applyStrictGeoFilter, applyStrictCountryFilter, buildSortOption, buildLocationRegex, applyCountryFilter } = require("../utils/geoQuery");
     if (locationFilter) {
       filter.location = buildLocationRegex(locationFilter);
     }
-    applyGeoFilter(filter, lat, lng, radius);
-    applyCountryFilter(filter, countryCode);
+
+    const numLat = lat != null ? Number(lat) : null;
+    const numLng = lng != null ? Number(lng) : null;
+    const hasGeo =
+      numLat != null &&
+      numLng != null &&
+      !Number.isNaN(numLat) &&
+      !Number.isNaN(numLng);
+    const normalizedCountry =
+      countryCode && String(countryCode).trim()
+        ? String(countryCode).trim().toUpperCase()
+        : null;
+    const hasLocationScope = hasGeo || Boolean(normalizedCountry);
+
+    if (hasLocationScope) {
+      if (hasGeo) {
+        applyStrictGeoFilter(filter, numLat, numLng, radius || 100);
+      }
+      if (normalizedCountry) {
+        applyStrictCountryFilter(filter, normalizedCountry);
+      }
+    } else {
+      applyGeoFilter(filter, lat, lng, radius);
+      applyCountryFilter(filter, countryCode);
+    }
 
     const sortOption = date
       ? { startDate: 1, createdAt: -1 }
@@ -1088,8 +1270,8 @@ exports.getUpcomingEvents = async (req, res) => {
       hasMore = listings.length > skip + safeLimit;
       listings = listings.slice(skip, skip + safeLimit);
 
-      // Wide fallback when geo/structured filters hid text-dated events
-      if (listings.length === 0 && skip === 0) {
+      // Wide fallback when geo/structured filters hid text-dated events (global mode only)
+      if (listings.length === 0 && skip === 0 && !hasLocationScope) {
         const fallbackFilter = { status: "active", eventDate: { $exists: true, $ne: "" } };
         if (filter.subcategory) fallbackFilter.subcategory = filter.subcategory;
         const fallback = await Event.find(fallbackFilter, LIST_PROJECTION)
@@ -1120,6 +1302,14 @@ exports.getUpcomingEvents = async (req, res) => {
         $or: [{ startDate: null }, { startDate: { $exists: false } }],
       };
       if (filter.subcategory) legacyFilter.subcategory = filter.subcategory;
+      if (hasLocationScope) {
+        if (hasGeo) {
+          applyStrictGeoFilter(legacyFilter, numLat, numLng, radius || 100);
+        }
+        if (normalizedCountry) {
+          applyStrictCountryFilter(legacyFilter, normalizedCountry);
+        }
+      }
       const legacy = await Event.find(legacyFilter, LIST_PROJECTION)
         .sort({ createdAt: -1 })
         .limit(100)
@@ -1155,5 +1345,87 @@ exports.getUpcomingEvents = async (req, res) => {
   } catch (error) {
     logger.error("Get upcoming events error:", error);
     res.status(500).json({ success: false, message: "Failed to load upcoming events" });
+  }
+};
+
+exports.publishEvent = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: "Invalid listing ID format" });
+    }
+
+    const listing = await Event.findById(req.params.id);
+    if (!listing) {
+      return res.status(404).json({ success: false, message: "Event listing not found" });
+    }
+
+    if (listing.seller.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: "Not authorized to publish this event" });
+    }
+
+    if (isPublishedEventStatus(listing.status)) {
+      const populated = await Event.findById(listing._id).populate("seller", "name profileImage");
+      const listingObj = populated.toObject ? populated.toObject() : populated;
+      normaliseImages(listingObj);
+      return res.status(200).json({
+        success: true,
+        message: "Event is already published",
+        listing: listingObj,
+      });
+    }
+
+    if (!isDraftEventStatus(listing.status) && listing.status !== "pending_review") {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot publish event with status "${listing.status}"`,
+        code: "INVALID_EVENT_STATUS",
+      });
+    }
+
+    if (!listing.subcategory || !listing.ticketsAvailable || listing.ticketsAvailable < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "Complete event details and ticket inventory before publishing",
+        code: "EVENT_INCOMPLETE",
+      });
+    }
+
+    const previousStatus = listing.status;
+    listing.status = "active";
+    await listing.save();
+
+    try {
+      await syncDefaultTicketTypeFromEvent(listing);
+    } catch (syncErr) {
+      logger.warn("Event ticket sync failed on publish", { eventId: listing._id, message: syncErr.message });
+    }
+
+    const updated = await Event.findById(listing._id).populate("seller", "name profileImage");
+    const listingObj = updated.toObject ? updated.toObject() : updated;
+    normaliseImages(listingObj);
+
+    res.status(200).json({
+      success: true,
+      message: "Event published successfully",
+      listing: listingObj,
+    });
+
+    emitEventStatusChange(listing._id, { status: "active", previousStatus });
+
+    Promise.all([
+      ListingCache.cacheListing("events", listingObj),
+      ListingCache.invalidateListCaches("events"),
+    ]).catch((err) => logger.error("[Cache] Event publish cache error:", err.message));
+
+    publishListingPublished({
+      entity: "events",
+      listing: listingObj,
+      userId: req.user._id,
+      ip: req.ip,
+      userAgent: req.get("user-agent"),
+    }).catch(() => {});
+  } catch (error) {
+    logger.error("Publish event error:", error);
+    res.status(500).json({ success: false, message: "Failed to publish event" });
   }
 };

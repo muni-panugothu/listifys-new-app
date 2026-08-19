@@ -38,9 +38,7 @@ import { toggleSaveListing } from "@/features/listing/services/listing-api";
 import { Image } from "@/lib/nativewind-interop";
 import { useAppSelector } from "@/store/hooks";
 import {
-  selectIsoCountryCode,
-  selectLocationCoords,
-  selectLocationLabel,
+  selectLocationQueryState,
 } from "@/store/slices/location-slice";
 
 const STORY_DURATION_MS = 6000;
@@ -56,9 +54,7 @@ export function EventsCategoryStoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const user = useAppSelector((s) => s.auth.user);
-  const locationLabel = useAppSelector(selectLocationLabel);
-  const userCoords = useAppSelector(selectLocationCoords);
-  const isoCountryCode = useAppSelector(selectIsoCountryCode);
+  const locationQueryState = useAppSelector(selectLocationQueryState);
 
   const params = useLocalSearchParams<{
     categoryId?: string | string[];
@@ -96,14 +92,9 @@ export function EventsCategoryStoryScreen() {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
   }, [params.startIndex]);
 
-  const hasCoords = userCoords?.lat != null && userCoords?.lng != null;
-
   const { events, isLoading, error } = useCategoryStoryEvents({
     weekCategory,
-    lat: userCoords?.lat ?? undefined,
-    lng: userCoords?.lng ?? undefined,
-    countryCode: hasCoords ? isoCountryCode : undefined,
-    locationLabel,
+    locationState: locationQueryState,
   });
 
   const [activeIndex, setActiveIndex] = useState(startIndex);
@@ -447,7 +438,7 @@ export function EventsCategoryStoryScreen() {
               <EventsStorySlide
                 event={currentEvent}
                 isSaved={isSaved}
-                isoCountryCode={isoCountryCode}
+                isoCountryCode={locationQueryState.isoCountryCode}
                 isActive
                 isPaused={isPaused}
                 onVideoEnded={handleVideoEnded}

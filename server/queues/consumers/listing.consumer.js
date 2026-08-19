@@ -39,15 +39,41 @@ const handleListingEvent = async (payload) => {
         getSearchService(),
         getNotifyService(),
       ];
+      const isDraft = listing?.status === 'draft';
+      const notifyOnCreate = !isDraft && entity !== 'events';
       await Promise.allSettled([
         ListingCache.cacheListing(entity, listing),
         ListingCache.logProductPosted(entity, listing),
         ListingCache.invalidateListCaches(entity),
-        SearchService.indexListing(entity, listing),
-        userId ? NotifyService.notifyFollowersOfNewListing(userId, listing, entity) : null,
+        isDraft ? null : SearchService.indexListing(entity, listing),
+        notifyOnCreate && userId
+          ? NotifyService.notifyFollowersOfNewListing(userId, listing, entity)
+          : null,
         userId ? invalidateSellerListingsCache(userId) : null,
       ]);
-      logger.info(`[ListingConsumer] Listing created processed`, { entity, id: listing?._id });
+      logger.info(`[ListingConsumer] Listing created processed`, { entity, id: listing?._id, isDraft });
+      break;
+    }
+
+    // ── PUBLISHED (draft → live, events publish pipeline) ─────────────────────
+    case 'listing_published': {
+      const [ListingCache, SearchService, NotifyService] = [
+        getListingCache(),
+        getSearchService(),
+        getNotifyService(),
+      ];
+      await Promise.allSettled([
+        ListingCache.cacheListing(entity, listing),
+        ListingCache.invalidateListCaches(entity),
+        SearchService.indexListing(entity, listing),
+        userId
+          ? NotifyService.notifyFollowersOfNewListing(userId, listing, entity, {
+              notificationType: entity === 'events' ? 'organizer_new_event' : 'new_listing',
+            })
+          : null,
+        userId ? invalidateSellerListingsCache(userId) : null,
+      ]);
+      logger.info(`[ListingConsumer] Listing published processed`, { entity, id: listing?._id });
       break;
     }
 

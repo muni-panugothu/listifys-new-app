@@ -41,7 +41,7 @@ export function SignInScreen() {
   const params = useLocalSearchParams<{ redirectTo?: string | string[] }>();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
-  const { status, error, isAuthenticated } = useAppSelector((s) => s.auth);
+  const { status, error, isAuthenticated, sessionHydrated } = useAppSelector((s) => s.auth);
   const [credential, setCredential] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -61,6 +61,19 @@ export function SignInScreen() {
     void configureGoogleSignIn().catch(() => {});
     dispatch(resetAuthStatus());
   }, [dispatch]);
+
+  useEffect(() => {
+    if (!sessionHydrated || !isAuthenticated) return;
+
+    authTrace("sign-in.already_authenticated", { redirectTo: redirectTo ?? null });
+    Keyboard.dismiss();
+    dispatch(hideAuthGate());
+    void navigateAfterAuthentication(router, {
+      redirectTo,
+      source: "sign-in.already_authenticated",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, isAuthenticated, redirectTo, sessionHydrated]);
 
   useEffect(() => {
     if (!isAuthenticated || status !== "succeeded") return;

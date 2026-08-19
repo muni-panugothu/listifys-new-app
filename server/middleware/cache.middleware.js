@@ -38,7 +38,22 @@ const buildListKey = (entity, query = {}) => {
 
 const buildDetailKey = (entity, id) => `cache:${entity}:detail:${id}`;
 
+const buildSimilarKey = (entity, eventId, query = {}) => {
+  const sorted = Object.keys(query)
+    .sort()
+    .filter((k) => ALLOWED_QUERY_KEYS.has(k) && query[k] !== undefined && query[k] !== "")
+    .map((k) => `${k}=${query[k]}`)
+    .join("&");
+  return `cache:${entity}:similar:${eventId}:${sorted || "default"}`;
+};
+
 const buildPatternKey = (entity) => `cache:${entity}:*`;
+
+function resolveCacheKey(entity, type, req) {
+  if (type === "detail") return buildDetailKey(entity, req.params.id);
+  if (type === "similar") return buildSimilarKey(entity, req.params.id, req.query);
+  return buildListKey(entity, req.query);
+}
 
 // ══════════════════════════════════════════════════════════
 //  Cache middleware factory
@@ -57,10 +72,7 @@ const cacheResponse = (entity, ttlSeconds = 120, type = 'list') => {
     if (req.method !== 'GET') return next();
 
     try {
-      const cacheKey =
-        type === 'detail'
-          ? buildDetailKey(entity, req.params.id)
-          : buildListKey(entity, req.query);
+      const cacheKey = resolveCacheKey(entity, type, req);
 
       const cached = await redis.get(cacheKey);
 
@@ -162,10 +174,7 @@ const cacheResponseTracked = (entity, ttlSeconds = 120, type = 'list') => {
     if (req.method !== 'GET') return next();
 
     try {
-      const cacheKey =
-        type === 'detail'
-          ? buildDetailKey(entity, req.params.id)
-          : buildListKey(entity, req.query);
+      const cacheKey = resolveCacheKey(entity, type, req);
 
       // ── L1: Check in-memory cache first (sub-millisecond) ──
       const memCached = responseCache.get(cacheKey);

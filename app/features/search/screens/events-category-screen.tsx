@@ -39,9 +39,7 @@ import { MARKETPLACE_LIST_PROPS } from "@/lib/performance/flat-list-config";
 import { useLocalSearchParams } from "@/lib/safe-router";
 import { useAppSelector } from "@/store/hooks";
 import {
-  selectIsoCountryCode,
-  selectLocationCoords,
-  selectLocationLabel,
+  selectLocationQueryState,
 } from "@/store/slices/location-slice";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -100,9 +98,7 @@ export function EventsCategoryScreen() {
     categoryLabel?: string | string[];
   }>();
   const user = useAppSelector((s) => s.auth.user);
-  const locationLabel = useAppSelector(selectLocationLabel);
-  const userCoords = useAppSelector(selectLocationCoords);
-  const isoCountryCode = useAppSelector(selectIsoCountryCode);
+  const locationQueryState = useAppSelector(selectLocationQueryState);
 
   const categoryId = paramToString(params.categoryId).toLowerCase();
   const categoryLabel = paramToString(params.categoryLabel);
@@ -144,10 +140,7 @@ export function EventsCategoryScreen() {
     dateFilter,
     sort,
     under10km,
-    lat: userCoords?.lat ?? undefined,
-    lng: userCoords?.lng ?? undefined,
-    countryCode: isoCountryCode,
-    locationLabel,
+    locationState: locationQueryState,
   });
 
   useEffect(() => {
@@ -225,11 +218,13 @@ export function EventsCategoryScreen() {
 
   const cycleSort = useCallback(() => {
     setSort((prev) => {
-      if (prev === "newest") return userCoords?.lat != null ? "nearby" : "date";
+      const hasCoords =
+        locationQueryState.lat != null && locationQueryState.lng != null;
+      if (prev === "newest") return hasCoords ? "nearby" : "date";
       if (prev === "nearby") return "date";
       return "newest";
     });
-  }, [userCoords?.lat]);
+  }, [locationQueryState.lat, locationQueryState.lng]);
 
   const cycleDateFilter = useCallback(() => {
     setDateFilter((prev) => {

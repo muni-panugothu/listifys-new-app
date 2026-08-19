@@ -56,6 +56,25 @@ const eventSchema = new mongoose.Schema(
         message: "Invalid subcategory for Events",
       },
     },
+    /** Main category slug, e.g. music_nightlife — see eventsCategorySchema.js */
+    eventCategory: {
+      type: String,
+      trim: true,
+      maxlength: [80, "Event category cannot exceed 80 characters"],
+      index: true,
+    },
+    /** Granular subcategory slug, e.g. dj_nights */
+    eventType: {
+      type: String,
+      trim: true,
+      maxlength: [80, "Event type cannot exceed 80 characters"],
+      index: true,
+    },
+    /** Structured category-specific fields (validated server-side) */
+    categoryData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined,
+    },
     condition: {
       type: String,
       enum: ["New", "Like New", "Good", "Fair", "Used"],
@@ -114,6 +133,16 @@ const eventSchema = new mongoose.Schema(
     endDate: {
       type: Date,
       index: true,
+    },
+    startTime: {
+      type: String,
+      trim: true,
+      maxlength: [80, "Start time cannot exceed 80 characters"],
+    },
+    endTime: {
+      type: String,
+      trim: true,
+      maxlength: [80, "End time cannot exceed 80 characters"],
     },
     organizer: {
       type: String,
@@ -180,8 +209,22 @@ const eventSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["active", "sold", "expired", "removed"],
+      enum: [
+        "draft",
+        "pending_review",
+        "active",
+        "published",
+        "sold",
+        "sold_out",
+        "expired",
+        "cancelled",
+        "postponed",
+        "completed",
+        "archived",
+        "removed",
+      ],
       default: "active",
+      index: true,
     },
     featured: {
       type: Boolean,
@@ -241,7 +284,8 @@ eventSchema.index({ eventDate: 1, subcategory: 1 });
 eventSchema.index({ startDate: 1, endDate: 1, status: 1 });
 eventSchema.index({ status: 1, startDate: 1 });
 eventSchema.index({ title: "text", description: "text", organizer: "text", venue: "text" });
-eventSchema.index({ coordinates: "2dsphere" });
+eventSchema.index({ eventCategory: 1, eventType: 1, status: 1 });
+eventSchema.index({ eventCategory: 1, status: 1, startDate: 1 });
 
 attachListingVideosField(eventSchema);
 attachSlugPlugin(eventSchema);

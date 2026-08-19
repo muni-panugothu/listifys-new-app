@@ -21,9 +21,10 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ListifyFonts } from "@/constants/typography";
-import { AUTH_API_BASE_URL } from "@/features/auth/services/auth-api";
+import { AUTH_API_BASE_URL, requestJson, toggleFollowUser } from "@/features/auth/services/auth-api";
 import { AuthGateBottomSheet } from "@/features/auth/components/auth-gate-bottom-sheet";
 import { EventBookedTicketCard } from "@/features/events/components/event-booked-ticket-card";
+import { EventCategoryDetailSections } from "@/features/events/components/event-category-detail-sections";
 import { FeaturedEventCard } from "@/features/events/components/featured-event-card";
 import { EventListingMedia } from "@/features/events/components/event-listing-media";
 import {
@@ -32,6 +33,8 @@ import {
 } from "@/features/events/data/comedy-event-meta";
 import {
   fetchMyEventTicket,
+  fetchEventAvailability,
+  type EventAvailability,
   type TicketDetail,
 } from "@/features/events/services/event-ticketing-api";
 import {
@@ -42,13 +45,15 @@ import {
   buildEventDateAccent,
   buildEventDetailTheme,
   buildEventDistanceLabel,
-  buildEventPriceLabel,
-  buildEventScheduleLabel,
+  buildEventScheduleSubtitle,
+  buildEventScheduleTitle,
   buildEventTags,
+  buildEventTicketPriceLine,
   buildOrganizerName,
   buildThingsToKnow,
   dummyToListingItem,
   findDummyFeaturedEvent,
+  formatSpotsRemaining,
   getEventBookCtaLabel,
   isEventSoldOut,
   type EventOrganizerStats,
@@ -60,6 +65,12 @@ import {
   toggleSaveListing,
   type ListingItem,
 } from "@/features/listing/services/listing-api";
+import {
+  connectSocket,
+  getSocket,
+  joinEventRoom,
+  leaveEventRoom,
+} from "@/features/messaging/services/socket-service";
 import { getListingSellerId, isOwnListing } from "@/lib/is-own-listing";
 import { buildListingMediaGallery } from "@/lib/listing-media";
 import { cacheKeys, getCachedStale, seedListingDetail } from "@/lib/cache";
@@ -148,7 +159,7 @@ function EventDetailPageImpl({
       : null;
   }, [dummy, eventId, isDummy]);
 
-  const { listing: swrListing } = useSwrListing(
+  const { listing: swrListing, refresh: refreshListing } = useSwrListing(
     "events",
     isDummy ? null : eventId,
   );
@@ -165,6 +176,11 @@ function EventDetailPageImpl({
   const [authGateAction, setAuthGateAction] = useState<"save" | "message">("save");
   const [bookedTicket, setBookedTicket] = useState<TicketDetail | null>(null);
   const [bookedTicketLoading, setBookedTicketLoading] = useState(false);
+  const [ticketAvailability, setTicketAvailability] = useState<EventAvailability | null>(null);
+  const [ticketQuantity, setTicketQuantity] = useState(1);
+  const [followingOrganizer, setFollowingOrganizer] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+  const [organizerFollowersCount, setOrganizerFollowersCount] = useState(0);
 
   const loadBookedTicket = useCallback(async () => {
     if (!user?.id || isDummy || !eventId) {
@@ -191,12 +207,84 @@ function EventDetailPageImpl({
     }
   }, [eventId, isDummy, user?.id]);
 
+  const loadTicketAvailability = useCallback(async () => {
+    if (isDummy || !eventId) return;
+    try {
+      const data = await fetchEventAvailability(eventId);
+      setTicketAvailability(data);
+    } catch {
+      /* keep last known availability */
+    }
+  }, [eventId, isDummy]);
+
   useFocusEffect(
     useCallback(() => {
-      if (!isActive) return;
+      if (!isActive || isDummy) return;
+      void refreshListing();
       void loadBookedTicket();
-    }, [isActive, loadBookedTicket]),
+      void loadTicketAvailability();
+    }, [isActive, isDummy, loadBookedTicket, loadTicketAvailability, refreshListing]),
   );
+
+  useEffect(() => {
+    if (!isActive || isDummy || !eventId) return;
+    const interval = setInterval(() => {
+      void loadTicketAvailability();
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [eventId, isActive, isDummy, loadTicketAvailability]);
+
+  useEffect(() => {
+    if (!isActive || isDummy || !eventId || !user?.id) return;
+    let cancelled = false;
+
+    const setupRealtime = async () => {
+      try {
+        await connectSocket();
+        joinEventRoom(eventId);
+        const socket = getSocket();
+        if (!socket) return;
+
+        const onAvailability = (payload: {
+          eventId?: string;
+          ticketTypes?: EventAvailability["ticketTypes"];
+        }) => {
+          if (payload.eventId && payload.eventId !== eventId) return;
+          if (!payload.ticketTypes) return;
+          setTicketAvailability((prev) =>
+            prev
+              ? { ...prev, ticketTypes: payload.ticketTypes! }
+              : prev,
+          );
+        };
+
+        socket.on("event:availability", onAvailability);
+        return () => {
+          socket.off("event:availability", onAvailability);
+          leaveEventRoom(eventId);
+        };
+      } catch {
+        return undefined;
+      }
+    };
+
+    let cleanup: (() => void) | undefined;
+    void setupRealtime().then((fn) => {
+      if (cancelled) fn?.();
+      else cleanup = fn;
+    });
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+      leaveEventRoom(eventId);
+    };
+  }, [eventId, isActive, isDummy, user?.id]);
+
+  useEffect(() => {
+    setTicketQuantity(1);
+    setTicketAvailability(null);
+  }, [eventId]);
 
   useEffect(() => {
     if (!isActive || !user?.id) {
@@ -234,21 +322,33 @@ function EventDetailPageImpl({
   }, [isDummy, listing, locationLabel, isoCountryCode, user?.id]);
 
   useEffect(() => {
-    if (!isActive || isDummy || !eventId) return;
-    prefetchSimilarEvents(eventId, {
-      lat: userCoords?.lat ?? undefined,
-      lng: userCoords?.lng ?? undefined,
-      countryCode: isoCountryCode ?? undefined,
-    });
-    void fetchSimilarEvents(eventId, {
-      lat: userCoords?.lat ?? undefined,
-      lng: userCoords?.lng ?? undefined,
-      countryCode: isoCountryCode ?? undefined,
+    if (!isActive || isDummy || !eventId || !listing) return;
+
+    const coords = listing.coordinates?.coordinates;
+    const similarParams = {
+      lat: coords?.[1] ?? userCoords?.lat ?? undefined,
+      lng: coords?.[0] ?? userCoords?.lng ?? undefined,
+      countryCode: listing.countryCode ?? isoCountryCode ?? undefined,
+      location: listing.location ?? undefined,
       limit: 8,
-    })
+    };
+
+    prefetchSimilarEvents(eventId, similarParams);
+    void fetchSimilarEvents(eventId, similarParams)
       .then((res) => setSimilarEvents(res.listings ?? []))
-      .catch(() => {});
-  }, [eventId, isActive, isDummy, isoCountryCode, userCoords?.lat, userCoords?.lng]);
+      .catch(() => setSimilarEvents([]));
+  }, [
+    eventId,
+    isActive,
+    isDummy,
+    listing,
+    listing?.coordinates,
+    listing?.countryCode,
+    listing?.location,
+    isoCountryCode,
+    userCoords?.lat,
+    userCoords?.lng,
+  ]);
 
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler({
@@ -354,6 +454,20 @@ function EventDetailPageImpl({
       try {
         const res = await toggleSaveListing("events", listing._id);
         setIsSaved(res.saved);
+        if (typeof res.likedCount === "number") {
+          setListing((prev) => {
+            if (!prev) return prev;
+            const currentStats = (prev as ListingItem & { organizerStats?: EventOrganizerStats })
+              .organizerStats;
+            return mergeListingItems(prev, {
+              ...prev,
+              organizerStats: {
+                ...currentStats,
+                likedCount: res.likedCount,
+              },
+            } as ListingItem);
+          });
+        }
       } catch {
         /* ignore */
       }
@@ -372,15 +486,30 @@ function EventDetailPageImpl({
   }, [listing]);
 
   const handleBook = useCallback(() => {
-    if (!listing || isEventSoldOut(listing)) return;
+    if (!listing) return;
+    const primaryType = ticketAvailability?.ticketTypes[0];
+    const availableNow = primaryType?.available ?? null;
+    if (isEventSoldOut(listing, availableNow)) return;
     if (bookedTicket?.ticket.id) {
       router.push(`/event-ticket?ticketId=${bookedTicket.ticket.id}` as Href);
       return;
     }
+    const maxQty = Math.min(
+      primaryType?.maxPerOrder ?? 10,
+      availableNow ?? primaryType?.maxPerOrder ?? 10,
+    );
+    const qty = Math.min(Math.max(1, ticketQuantity), Math.max(1, maxQty));
     requireAuth("message", () => {
-      router.push(`/event-checkout?eventId=${listing._id}` as Href);
+      router.push(`/event-checkout?eventId=${listing._id}&quantity=${qty}` as Href);
     });
-  }, [bookedTicket?.ticket.id, listing, requireAuth, router]);
+  }, [
+    bookedTicket?.ticket.id,
+    listing,
+    requireAuth,
+    router,
+    ticketAvailability?.ticketTypes,
+    ticketQuantity,
+  ]);
 
   const handleViewTicket = useCallback(() => {
     if (!bookedTicket?.ticket.id) return;
@@ -414,6 +543,54 @@ function EventDetailPageImpl({
     };
   }, [activeMedia, listing]);
 
+  const sellerIdForFollow = listing ? getListingSellerId(listing) : null;
+  const isOwnEventListing = listing ? isOwnListing(listing, user?.id) : false;
+
+  useEffect(() => {
+    if (!sellerIdForFollow || !user?.id || isOwnEventListing) {
+      setFollowingOrganizer(false);
+      return;
+    }
+    let cancelled = false;
+    void requestJson<{ seller: { isFollowedByCurrentUser?: boolean; followersCount?: number } }>(
+      `/api/auth/seller/${sellerIdForFollow}`,
+    )
+      .then((res) => {
+        if (cancelled) return;
+        setFollowingOrganizer(Boolean(res.seller?.isFollowedByCurrentUser));
+        if (res.seller?.followersCount != null) {
+          setOrganizerFollowersCount(res.seller.followersCount);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sellerIdForFollow, user?.id, isOwnEventListing]);
+
+  const handleToggleFollowOrganizer = useCallback(async () => {
+    if (!sellerIdForFollow || followLoading || isOwnEventListing) return;
+    if (!user?.id) {
+      setAuthGateAction("save");
+      setAuthGateVisible(true);
+      return;
+    }
+    const prevFollowing = followingOrganizer;
+    setFollowLoading(true);
+    setFollowingOrganizer(!prevFollowing);
+    try {
+      const res = await toggleFollowUser(sellerIdForFollow);
+      setFollowingOrganizer(res.isFollowing);
+      if (res.followersCount != null) {
+        setOrganizerFollowersCount(res.followersCount);
+      }
+    } catch {
+      setFollowingOrganizer(prevFollowing);
+    } finally {
+      setFollowLoading(false);
+    }
+  }, [followLoading, followingOrganizer, isOwnEventListing, sellerIdForFollow, user?.id]);
+
   if (!listing) {
     return (
       <View
@@ -432,7 +609,8 @@ function EventDetailPageImpl({
 
   const tags = buildEventTags(listing);
   const dateLabel = buildEventDateAccent(listing);
-  const scheduleLabel = buildEventScheduleLabel(listing);
+  const scheduleTitle = buildEventScheduleTitle(listing);
+  const scheduleSubtitle = buildEventScheduleSubtitle(listing);
   const comedyCategory = getComedyCategoryLabel(listing);
   const comedyDuration = getEventDurationLabel(listing);
   const venue =
@@ -444,7 +622,25 @@ function EventDetailPageImpl({
     userCoords,
     isoCountryCode,
   );
-  const priceLabel = buildEventPriceLabel(listing, isoCountryCode);
+  const primaryTicketType = ticketAvailability?.ticketTypes[0] ?? null;
+  const liveAvailable = primaryTicketType?.available ?? null;
+  const livePrice = primaryTicketType?.price ?? null;
+  const isFreeEvent =
+    primaryTicketType != null
+      ? primaryTicketType.price <= 0
+      : listing.price == null || Number(listing.price) === 0;
+  const maxTicketQty = Math.min(
+    primaryTicketType?.maxPerOrder ?? 10,
+    liveAvailable ?? primaryTicketType?.maxPerOrder ?? 10,
+  );
+  const safeTicketQuantity = Math.min(
+    Math.max(1, ticketQuantity),
+    Math.max(1, maxTicketQty),
+  );
+
+  const ticketPriceLine = buildEventTicketPriceLine(listing, isoCountryCode, livePrice);
+  const spotsLine =
+    liveAvailable != null ? formatSpotsRemaining(liveAvailable) : null;
   const things = buildThingsToKnow(listing);
   const visibleThings = thingsExpanded ? things : things.slice(0, 3);
   const description = listing.description?.trim() ?? "";
@@ -452,14 +648,23 @@ function EventDetailPageImpl({
     description.length > 180 && !aboutExpanded
       ? `${description.slice(0, 180).trim()}…`
       : description;
-  const organizerStats = (listing as { organizerStats?: EventOrganizerStats })
+  const organizerStats = (listing as ListingItem & { organizerStats?: EventOrganizerStats })
     .organizerStats;
+  const likedCount =
+    organizerStats?.likedCount ??
+    (Array.isArray(listing.savedBy) ? listing.savedBy.length : 0);
+  const hostedEventsCount = organizerStats?.hostedEvents ?? 0;
+  const hostingCount = organizerStats?.hostingCount ?? 0;
   const organizerName = buildOrganizerName(listing);
   const sellerId = getListingSellerId(listing);
   const isOwn = isOwnListing(listing, user?.id);
-  const isSoldOut = isEventSoldOut(listing);
+  const isSoldOut = isEventSoldOut(listing, liveAvailable);
   const isBooked = Boolean(bookedTicket?.ticket.id);
-  const ctaLabel = getEventBookCtaLabel(listing, isBooked);
+  const ctaLabel = getEventBookCtaLabel(listing, isBooked, {
+    quantity: safeTicketQuantity,
+    isFree: isFreeEvent,
+    liveAvailable,
+  });
 
   const sellerProfileImage = listing.seller?.profileImage
     ? listing.seller.profileImage.startsWith("http")
@@ -467,7 +672,7 @@ function EventDetailPageImpl({
       : `${AUTH_API_BASE_URL}${listing.seller.profileImage}`
     : null;
 
-  const bottomBarHeight = Math.max(insets.bottom, 12) + 72;
+  const bottomBarHeight = Math.max(insets.bottom, 12) + 132;
   const similarIds = similarEvents.map((e) => e._id);
 
   return (
@@ -845,7 +1050,7 @@ function EventDetailPageImpl({
                   color: detailTheme.titleText,
                 }}
               >
-                {scheduleLabel}
+                {scheduleTitle}
               </Text>
               <Text
                 style={{
@@ -855,7 +1060,7 @@ function EventDetailPageImpl({
                   color: detailTheme.secondaryText,
                 }}
               >
-                View full schedule & timeline
+                {scheduleSubtitle}
               </Text>
             </View>
             <MaterialIcons name="chevron-right" size={22} color={detailTheme.secondaryText} />
@@ -1019,6 +1224,8 @@ function EventDetailPageImpl({
             </View>
           ) : null}
 
+          <EventCategoryDetailSections listing={listing} />
+
           {things.length > 0 ? (
             <View style={{ marginTop: 26 }}>
               <Text
@@ -1092,6 +1299,48 @@ function EventDetailPageImpl({
             >
               Organised By
             </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              {organizerFollowersCount > 0 ? (
+                <Text
+                  style={{
+                    fontFamily: ListifyFonts.regular,
+                    fontSize: 12,
+                    color: detailTheme.secondaryText,
+                  }}
+                >
+                  {organizerFollowersCount >= 1000
+                    ? `${(organizerFollowersCount / 1000).toFixed(1)}K followers`
+                    : `${organizerFollowersCount} followers`}
+                </Text>
+              ) : (
+                <View />
+              )}
+              {!isOwn && sellerId ? (
+                <Pressable
+                  onPress={() => void handleToggleFollowOrganizer()}
+                  disabled={followLoading}
+                  style={({ pressed }) => ({
+                    paddingHorizontal: 14,
+                    paddingVertical: 8,
+                    borderRadius: 20,
+                    backgroundColor: followingOrganizer ? detailTheme.rowBg : et.accent,
+                    borderWidth: followingOrganizer ? 1 : 0,
+                    borderColor: detailTheme.divider,
+                    opacity: pressed || followLoading ? 0.85 : 1,
+                  })}
+                >
+                  <Text
+                    style={{
+                      fontFamily: ListifyFonts.semiBold,
+                      fontSize: 13,
+                      color: followingOrganizer ? detailTheme.titleText : "#FFFFFF",
+                    }}
+                  >
+                    {followingOrganizer ? "Following ✓" : "+ Follow"}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
             <Pressable
               onPress={() => {
                 if (sellerId) {
@@ -1154,21 +1403,15 @@ function EventDetailPageImpl({
               <View style={{ flex: 1, flexDirection: "row" }}>
                 {[
                   {
-                    value:
-                      organizerStats?.likedPercent != null
-                        ? `${organizerStats.likedPercent}%`
-                        : "—",
-                    label:
-                      organizerStats?.ratingsCount != null && organizerStats.ratingsCount < 100
-                        ? "Liked (<100 ratings)"
-                        : "Liked",
+                    value: String(likedCount),
+                    label: "Liked",
                   },
                   {
-                    value: String(organizerStats?.hostedEvents ?? 0),
+                    value: String(hostedEventsCount),
                     label: "Hosted events",
                   },
                   {
-                    value: organizerStats?.hostingDuration ?? "—",
+                    value: String(hostingCount),
                     label: "Hosting",
                   },
                 ].map((stat, idx, arr) => (
@@ -1183,6 +1426,9 @@ function EventDetailPageImpl({
                     }}
                   >
                     <Text
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.75}
                       style={{
                         fontFamily: ListifyFonts.bold,
                         fontSize: 16,
@@ -1297,13 +1543,10 @@ function EventDetailPageImpl({
             right: 14,
             bottom: Math.max(insets.bottom, 10),
             zIndex: 40,
-            borderRadius: 999,
+            borderRadius: 20,
             backgroundColor: detailTheme.bottomBarBg,
             paddingHorizontal: 16,
-            paddingVertical: 12,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
+            paddingVertical: 14,
             shadowColor: et.isDark ? "#000" : "rgba(0,0,0,0.18)",
             shadowOffset: { width: 0, height: 6 },
             shadowOpacity: 0.25,
@@ -1311,18 +1554,12 @@ function EventDetailPageImpl({
             elevation: 10,
           }}
         >
-          <View>
-            {isBooked ? (
-              <>
+          {isBooked ? (
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <MaterialIcons name="check-circle" size={18} color="#059669" />
-                  <Text
-                    style={{
-                      fontFamily: ListifyFonts.bold,
-                      fontSize: 16,
-                      color: "#059669",
-                    }}
-                  >
+                  <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 16, color: "#059669" }}>
                     Ticket booked
                   </Text>
                 </View>
@@ -1338,52 +1575,135 @@ function EventDetailPageImpl({
                     {bookedTicket.ticket.bookingId}
                   </Text>
                 ) : null}
-              </>
-            ) : (
-              <Text
-                style={{
-                  fontFamily: ListifyFonts.bold,
-                  fontSize: 18,
-                  color: detailTheme.titleText,
-                }}
+              </View>
+              <Pressable
+                onPress={handleBook}
+                style={({ pressed }) => ({
+                  borderRadius: 999,
+                  backgroundColor: isDark ? "rgba(5,150,105,0.22)" : "rgba(5,150,105,0.14)",
+                  paddingHorizontal: 22,
+                  paddingVertical: 12,
+                  opacity: pressed ? 0.88 : 1,
+                })}
               >
-                {priceLabel}
-              </Text>
-            )}
-          </View>
-          <Pressable
-            onPress={handleBook}
-            disabled={isSoldOut && !isBooked}
-            style={({ pressed }) => ({
-              borderRadius: 999,
-              backgroundColor: isSoldOut && !isBooked
-                ? isDark
-                  ? "rgba(255,255,255,0.12)"
-                  : "rgba(0,0,0,0.08)"
-                : isBooked
-                  ? isDark
-                    ? "rgba(5,150,105,0.22)"
-                    : "rgba(5,150,105,0.14)"
-                  : detailTheme.ctaBg,
-              paddingHorizontal: 22,
-              paddingVertical: 12,
-              opacity: isSoldOut && !isBooked ? 1 : pressed ? 0.88 : 1,
-            })}
-          >
-            <Text
-              style={{
-                fontFamily: ListifyFonts.bold,
-                fontSize: 15,
-                color: isSoldOut && !isBooked
-                  ? detailTheme.secondaryText
-                  : isBooked
-                    ? "#059669"
-                    : detailTheme.ctaText,
-              }}
-            >
-              {ctaLabel}
-            </Text>
-          </Pressable>
+                <Text style={{ fontFamily: ListifyFonts.bold, fontSize: 15, color: "#059669" }}>
+                  {ctaLabel}
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <>
+              <View style={{ marginBottom: isSoldOut ? 12 : 10 }}>
+                <Text
+                  style={{
+                    fontFamily: ListifyFonts.bold,
+                    fontSize: 17,
+                    color: isFreeEvent ? "#059669" : detailTheme.titleText,
+                    letterSpacing: isFreeEvent ? 0.6 : 0,
+                  }}
+                >
+                  {ticketPriceLine}
+                </Text>
+                {spotsLine ? (
+                  <Text
+                    style={{
+                      marginTop: 4,
+                      fontFamily: ListifyFonts.regular,
+                      fontSize: 13,
+                      color: detailTheme.secondaryText,
+                    }}
+                  >
+                    {spotsLine}
+                  </Text>
+                ) : null}
+              </View>
+
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                {!isSoldOut ? (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.08)",
+                      backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.03)",
+                    }}
+                  >
+                    <Pressable
+                      onPress={() => setTicketQuantity((q) => Math.max(1, q - 1))}
+                      disabled={safeTicketQuantity <= 1}
+                      style={({ pressed }) => ({
+                        width: 38,
+                        height: 38,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        opacity: safeTicketQuantity <= 1 ? 0.35 : pressed ? 0.7 : 1,
+                      })}
+                    >
+                      <MaterialIcons name="remove" size={20} color={detailTheme.titleText} />
+                    </Pressable>
+                    <Text
+                      style={{
+                        minWidth: 28,
+                        textAlign: "center",
+                        fontFamily: ListifyFonts.bold,
+                        fontSize: 16,
+                        color: detailTheme.titleText,
+                      }}
+                    >
+                      {safeTicketQuantity}
+                    </Text>
+                    <Pressable
+                      onPress={() =>
+                        setTicketQuantity((q) => Math.min(maxTicketQty, q + 1))
+                      }
+                      disabled={safeTicketQuantity >= maxTicketQty}
+                      style={({ pressed }) => ({
+                        width: 38,
+                        height: 38,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        opacity: safeTicketQuantity >= maxTicketQty ? 0.35 : pressed ? 0.7 : 1,
+                      })}
+                    >
+                      <MaterialIcons name="add" size={20} color={detailTheme.titleText} />
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View style={{ flex: 1 }} />
+                )}
+
+                <Pressable
+                  onPress={handleBook}
+                  disabled={isSoldOut}
+                  style={({ pressed }) => ({
+                    flex: 1,
+                    borderRadius: 999,
+                    backgroundColor: isSoldOut
+                      ? isDark
+                        ? "rgba(255,255,255,0.12)"
+                        : "rgba(0,0,0,0.08)"
+                      : detailTheme.ctaBg,
+                    paddingHorizontal: 18,
+                    paddingVertical: 13,
+                    alignItems: "center",
+                    opacity: isSoldOut ? 1 : pressed ? 0.88 : 1,
+                  })}
+                >
+                  <Text
+                    style={{
+                      fontFamily: ListifyFonts.bold,
+                      fontSize: 15,
+                      color: isSoldOut ? detailTheme.secondaryText : detailTheme.ctaText,
+                    }}
+                  >
+                    {ctaLabel}
+                  </Text>
+                </Pressable>
+              </View>
+            </>
+          )}
         </View>
       ) : null}
 

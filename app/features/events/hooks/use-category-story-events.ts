@@ -4,6 +4,10 @@ import { resolveWeekStoryConfig } from "@/features/events/data/events-week-story
 import type { EventsWeekCategory } from "@/features/events/data/events-discovery";
 import { fetchUpcomingEventsReliable } from "@/features/events/services/events-api";
 import type { ListingItem } from "@/features/listing/services/listing-api";
+import {
+  buildLocationQueryParams,
+  type LocationQueryState,
+} from "@/lib/location-query-params";
 
 const STORY_LIMIT = 20;
 
@@ -35,14 +39,11 @@ function filterForWeekCategory(
 
 export type UseCategoryStoryEventsOptions = {
   weekCategory: EventsWeekCategory;
-  lat?: number;
-  lng?: number;
-  countryCode?: string | null;
-  locationLabel?: string | null;
+  locationState: LocationQueryState;
 };
 
 export function useCategoryStoryEvents(opts: UseCategoryStoryEventsOptions) {
-  const { weekCategory, lat, lng, countryCode, locationLabel } = opts;
+  const { weekCategory, locationState } = opts;
   const config = useMemo(
     () => resolveWeekStoryConfig(weekCategory),
     [weekCategory],
@@ -60,17 +61,14 @@ export function useCategoryStoryEvents(opts: UseCategoryStoryEventsOptions) {
     try {
       const apiSubcategory =
         weekCategory.subcategory ?? config.apiSubcategory;
-      const params: Parameters<typeof fetchUpcomingEvents>[0] = {
+      const geo = buildLocationQueryParams(locationState, { radius: 100 });
+      const hasGeo = geo.lat != null && geo.lng != null;
+      const params: Parameters<typeof fetchUpcomingEventsReliable>[0] = {
         subcategory: apiSubcategory,
         limit: STORY_LIMIT,
-        sort: lat != null && lng != null ? "nearest" : "newest",
+        sort: hasGeo ? "nearest" : "newest",
+        ...geo,
       };
-      if (lat != null && lng != null) {
-        params.lat = lat;
-        params.lng = lng;
-        params.radius = 50;
-        if (countryCode) params.countryCode = countryCode;
-      }
 
       const res = await fetchUpcomingEventsReliable(params, { force: true });
       if (seq !== seqRef.current) return;
@@ -85,7 +83,7 @@ export function useCategoryStoryEvents(opts: UseCategoryStoryEventsOptions) {
     } finally {
       if (seq === seqRef.current) setIsLoading(false);
     }
-  }, [config.apiSubcategory, countryCode, lat, lng, weekCategory]);
+  }, [config.apiSubcategory, locationState, weekCategory]);
 
   useEffect(() => {
     void load();

@@ -22,6 +22,8 @@ const {
 } = razorpayService;
 const { createRefund } = require("./razorpay.service");
 const s3Service = require("./s3.service");
+const { emitEventAvailability } = require("./eventrealtime.service");
+const { isPublishedEventStatus } = require("../utils/eventStatus");
 
 const CHECKOUT_APP_SCHEME = "listifyapp://event-payment";
 const HOLD_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -97,8 +99,15 @@ async function ensureDefaultTicketTypes(event) {
 
   if (existing.length > 0) return existing;
 
-  const total =
-    event.ticketsAvailable > 0 ? event.ticketsAvailable : 2000;
+  const total = Number(event.ticketsAvailable);
+  if (!Number.isInteger(total) || total < 1) {
+    const err = new Error(
+      "This event has no ticket inventory configured. The organizer must set total tickets available.",
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
   const pricePaise =
     event.price != null && event.price > 0
       ? rupeesToPaise(event.price)
@@ -123,6 +132,92 @@ async function ensureDefaultTicketTypes(event) {
   return [created];
 }
 
+/**
+ * Upsert the default ticket type when an organizer creates or updates an event listing.
+ * Keeps EventTicketType in sync with Event.price and Event.ticketsAvailable.
+ */
+async function syncDefaultTicketTypeFromEvent(event) {
+  const total = Number(event.ticketsAvailable);
+  if (!Number.isInteger(total) || total < 1) {
+    return null;
+  }
+
+  const pricePaise =
+    event.price != null && Number(event.price) > 0
+      ? rupeesToPaise(Number(event.price))
+      : 0;
+  const name = pricePaise > 0 ? "General Admission" : "Free Entry";
+
+  let ticketType = await EventTicketType.findOne({
+    eventId: event._id,
+    sortOrder: 0,
+  });
+
+  if (ticketType) {
+    const reserved = ticketType.soldQuantity + ticketType.heldQuantity;
+    if (total < reserved) {
+      const err = new Error(
+        `Total tickets cannot be less than ${reserved} (already sold or reserved).`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+    ticketType.totalQuantity = total;
+    if (ticketType.soldQuantity === 0 && ticketType.heldQuantity === 0) {
+      ticketType.pricePaise = pricePaise;
+      ticketType.name = name;
+      ticketType.status = "active";
+    }
+    await ticketType.save();
+    return ticketType;
+  }
+
+  return EventTicketType.create({
+    eventId: event._id,
+    name,
+    pricePaise,
+    currency: "INR",
+    totalQuantity: total,
+    soldQuantity: 0,
+    heldQuantity: 0,
+    maxPerOrder: 10,
+    cancellationAllowed: true,
+    cancellationCutoffHours: 24,
+    refundPercentage: 90,
+    status: "active",
+    sortOrder: 0,
+  });
+}
+
+function buildHoldResponse(hold, ticketType) {
+  const amounts = calculateOrderAmounts(ticketType, hold.quantity);
+  return {
+    holdId: hold.holdId,
+    expiresAt: hold.expiresAt.toISOString(),
+    expiresInSeconds: Math.max(
+      0,
+      Math.floor((hold.expiresAt.getTime() - Date.now()) / 1000),
+    ),
+    quantity: hold.quantity,
+    ticketType: {
+      id: ticketType._id,
+      name: ticketType.name,
+      pricePaise: ticketType.pricePaise,
+      price: paiseToRupees(ticketType.pricePaise),
+    },
+    amounts: {
+      ...amounts,
+      totalAmount: paiseToRupees(amounts.totalAmountPaise),
+      subtotal: paiseToRupees(amounts.subtotalPaise),
+    },
+    cancellationPolicy: {
+      allowed: ticketType.cancellationAllowed,
+      cutoffHours: ticketType.cancellationCutoffHours,
+      refundPercentage: ticketType.refundPercentage,
+    },
+  };
+}
+
 async function getEventForBooking(eventId) {
   const event = await Event.findById(eventId).populate(
     "seller",
@@ -133,12 +228,28 @@ async function getEventForBooking(eventId) {
     err.statusCode = 404;
     throw err;
   }
-  if (event.status !== "active") {
+  if (!isPublishedEventStatus(event.status)) {
     const err = new Error("This event is not available for booking");
     err.statusCode = 400;
     throw err;
   }
   return event;
+}
+
+async function broadcastEventAvailability(eventId) {
+  try {
+    const availability = await getAvailability(eventId);
+    const totalAvailable = availability.ticketTypes.reduce((sum, t) => sum + t.available, 0);
+    emitEventAvailability(eventId, {
+      ticketTypes: availability.ticketTypes,
+      soldOut: totalAvailable <= 0,
+    });
+  } catch (err) {
+    logger.debug("[Ticketing] broadcast availability skipped", {
+      eventId,
+      err: err.message,
+    });
+  }
 }
 
 function pickEventCoverUrl(event) {
@@ -175,6 +286,10 @@ function buildEventSnapshot(event) {
     location: event.location || "",
     eventDate: event.eventDate || "",
     eventTime: event.eventTime || "",
+    startDate: event.startDate || null,
+    endDate: event.endDate || null,
+    startTime: event.startTime || "",
+    endTime: event.endTime || "",
     image: pickEventCoverUrl(event),
     subcategory: event.subcategory || "",
   };
@@ -186,7 +301,7 @@ async function resolveTicketEventSnapshot(order) {
   let snapshot = order.eventSnapshot ? { ...order.eventSnapshot } : null;
   if (order.eventId) {
     const live = await Event.findById(order.eventId)
-      .select("title venue location eventDate eventTime images videos subcategory")
+      .select("title venue location eventDate eventTime startDate endDate startTime endTime images videos subcategory")
       .lean();
     if (live) {
       const fresh = buildEventSnapshot(live);
@@ -279,6 +394,10 @@ async function getAvailability(eventId) {
       location: event.location,
       eventDate: event.eventDate,
       eventTime: event.eventTime,
+      startDate: event.startDate,
+      endDate: event.endDate,
+      startTime: event.startTime,
+      endTime: event.endTime,
       image: event.images?.[0] || null,
     },
     ticketTypes: types.map((t) => ({
@@ -330,6 +449,22 @@ async function createHold({ userId, eventId, ticketTypeId, quantity, idempotency
     );
     err.statusCode = 400;
     throw err;
+  }
+
+  if (idempotencyKey) {
+    const existingHold = await TicketHold.findOne({
+      userId,
+      eventId: event._id,
+      idempotencyKey,
+      status: "ACTIVE",
+      expiresAt: { $gt: new Date() },
+    });
+    if (existingHold) {
+      const existingType = await EventTicketType.findById(existingHold.ticketTypeId);
+      if (existingType) {
+        return buildHoldResponse(existingHold, existingType);
+      }
+    }
   }
 
   const existingTicket = await EventTicket.findOne({
@@ -391,29 +526,10 @@ async function createHold({ userId, eventId, ticketTypeId, quantity, idempotency
 
     await session.commitTransaction();
 
-    const amounts = calculateOrderAmounts(ticketType, quantity);
+    broadcastEventAvailability(event._id).catch(() => {});
 
     return {
-      holdId,
-      expiresAt: expiresAt.toISOString(),
-      expiresInSeconds: Math.floor(HOLD_TTL_MS / 1000),
-      quantity,
-      ticketType: {
-        id: ticketType._id,
-        name: ticketType.name,
-        pricePaise: ticketType.pricePaise,
-        price: paiseToRupees(ticketType.pricePaise),
-      },
-      amounts: {
-        ...amounts,
-        totalAmount: paiseToRupees(amounts.totalAmountPaise),
-        subtotal: paiseToRupees(amounts.subtotalPaise),
-      },
-      cancellationPolicy: {
-        allowed: ticketType.cancellationAllowed,
-        cutoffHours: ticketType.cancellationCutoffHours,
-        refundPercentage: ticketType.refundPercentage,
-      },
+      ...buildHoldResponse(hold[0], ticketType),
       hold: hold[0],
     };
   } catch (e) {
@@ -430,6 +546,7 @@ async function expireHold(holdDoc, session) {
   holdDoc.status = "EXPIRED";
   await holdDoc.save({ session });
   await releaseHoldInventory(holdDoc.ticketTypeId, holdDoc.quantity, session);
+  broadcastEventAvailability(holdDoc.eventId).catch(() => {});
   return true;
 }
 
@@ -802,6 +919,8 @@ async function confirmOrderPayment({
     );
 
     await session.commitTransaction();
+
+    broadcastEventAvailability(order.eventId).catch(() => {});
 
     await redis.setex(
       idempotencyRedisKey,
@@ -1527,6 +1646,7 @@ module.exports = {
   getAvailability,
   createHold,
   createCheckoutOrder,
+  syncDefaultTicketTypeFromEvent,
   getCheckoutPage,
   handlePayuReturn,
   verifyAndConfirmPayment,

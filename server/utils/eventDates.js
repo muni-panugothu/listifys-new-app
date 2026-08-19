@@ -290,6 +290,32 @@ function resolveEventDatesFromBody(body) {
   };
 }
 
+function resolveEventTimesFromBody(body) {
+  let startTime = String(body.startTime || "").trim();
+  let endTime = String(body.endTime || "").trim();
+  const legacy = String(body.eventTime || "").trim();
+
+  if (!startTime && legacy) {
+    const parts = legacy.split(/\s*[–—\-•|]\s*/);
+    startTime = (parts[0] || legacy).trim();
+    endTime = (parts[1] || startTime).trim();
+  }
+  if (!endTime) endTime = startTime;
+
+  return {
+    startTime: startTime || null,
+    endTime: endTime || null,
+  };
+}
+
+function buildLegacyEventTimeString(startTime, endTime) {
+  const start = String(startTime || "").trim();
+  const end = String(endTime || "").trim();
+  if (!start) return end;
+  if (!end || start === end) return start;
+  return `${start} – ${end}`;
+}
+
 /** Repair corrupt startDate/endDate from eventDate text. Returns fields to $set or null. */
 function repairEventDatesIfNeeded(event) {
   if (!event?.eventDate) return null;
@@ -349,5 +375,7 @@ module.exports = {
   buildDayOverlapFilter,
   buildUpcomingFilter,
   resolveEventDatesFromBody,
+  resolveEventTimesFromBody,
+  buildLegacyEventTimeString,
   repairEventDatesIfNeeded,
 };

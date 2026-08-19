@@ -2,6 +2,8 @@ import type { CategorySlug } from "@/constants/categories";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import { mapListingToPostMediaItems, normalizeListingVideos } from "@/lib/listing-media";
 import { parseListingCoordinates } from "@/lib/listing-coordinates";
+import { formatEventDateForForm } from "@/lib/post-form-validators";
+import { calendarDayFromStored, getEventRange } from "@/lib/event-dates";
 import type { PostFormState } from "@/store/slices/post-form-slice";
 
 function str(value: unknown): string {
@@ -38,6 +40,53 @@ function mileageUnitFromListing(listing: ListingItem): "km" | "mi" | "" {
   const unit = listing.mileageUnit;
   if (unit === "mi" || unit === "km") return unit;
   return "";
+}
+
+function hydrateEventDateFields(record: Record<string, unknown>) {
+  const range = getEventRange({
+    eventDate: record.eventDate as string | undefined,
+    startDate: record.startDate as string | undefined,
+    endDate: record.endDate as string | undefined,
+  });
+
+  let startDateText = str(record.eventDate);
+  let endDateText = str(record.eventEndDate);
+
+  if (range) {
+    startDateText = formatEventDateForForm(range.start);
+    endDateText = formatEventDateForForm(range.end);
+  } else if (record.startDate && !startDateText) {
+    const start = calendarDayFromStored(record.startDate);
+    if (start) startDateText = formatEventDateForForm(start);
+  }
+  if (!endDateText && record.endDate) {
+    const end = calendarDayFromStored(record.endDate);
+    if (end) endDateText = formatEventDateForForm(end);
+  }
+  if (!endDateText && startDateText) endDateText = startDateText;
+
+  const startTime = str(record.startTime);
+  const endTime = str(record.endTime);
+  let eventTime = str(record.eventTime);
+  let eventEndTime = endTime;
+
+  if (startTime) {
+    eventTime = startTime;
+    eventEndTime = endTime || startTime;
+  } else if (eventTime.includes("–") || eventTime.includes("-")) {
+    const parts = eventTime.split(/\s*[–—\-•|]\s*/);
+    eventTime = parts[0]?.trim() || eventTime;
+    eventEndTime = parts[1]?.trim() || eventTime;
+  } else {
+    eventEndTime = eventEndTime || eventTime;
+  }
+
+  return {
+    eventDate: startDateText,
+    eventEndDate: endDateText,
+    eventTime,
+    eventEndTime,
+  };
 }
 
 /**
@@ -143,8 +192,7 @@ export function mapListingToPostForm(
     age: str(record.age),
     languages: arr(record.languages),
     certifications: arr(record.certifications),
-    eventDate: str(record.eventDate),
-    eventTime: str(record.eventTime),
+    ...hydrateEventDateFields(record),
     organizer: str(record.organizer),
     venue: str(record.venue),
     ticketsAvailable: str(record.ticketsAvailable),

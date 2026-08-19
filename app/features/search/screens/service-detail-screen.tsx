@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ListingVideoPlayerNative } from "@/components/listing-video-player-native";
+import { ListingVideoPlayer } from "@/components/listing-media-viewer";
 import { PortfolioGalleryModal } from "@/components/portfolio-gallery-modal";
 import { ProfileAvatarImage } from "@/components/profile-avatar-image";
 import { ServiceReviewModal } from "@/components/service-review-modal";
@@ -1601,7 +1601,7 @@ export function ServiceDetailScreen() {
             <MaterialIcons name="close" size={22} color="#FFFFFF" />
           </Pressable>
           {demoVideo ? (
-            <ListingVideoPlayerNative
+            <ListingVideoPlayer
               uri={demoVideo.url}
               poster={demoVideo.thumbnailUrl}
               style={{ width: SCREEN_WIDTH, height: SCREEN_WIDTH * 0.56 }}

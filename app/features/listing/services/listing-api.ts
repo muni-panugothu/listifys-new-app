@@ -690,8 +690,8 @@ export async function markListingStatus(
 export async function toggleSaveListing(
   categorySlug: CategorySlug,
   id: string,
-): Promise<{ success: boolean; saved: boolean }> {
-  const result = await apiRequest<{ success: boolean; saved: boolean }>(
+): Promise<{ success: boolean; saved: boolean; likedCount?: number }> {
+  const result = await apiRequest<{ success: boolean; saved: boolean; likedCount?: number }>(
     `${categoryApiBase(categorySlug)}/${id}/toggle-save`,
     { method: "POST" },
   );

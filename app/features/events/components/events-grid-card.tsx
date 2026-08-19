@@ -40,6 +40,8 @@ function EventsGridCardImpl({
     eventTime: (event.eventTime as string | undefined) ?? "",
     startDate: event.startDate as string | undefined,
     endDate: event.endDate as string | undefined,
+    startTime: (event as { startTime?: string }).startTime,
+    endTime: (event as { endTime?: string }).endTime,
   });
   const comedyCategory = getComedyCategoryLabel(event);
   const eventDuration = getEventDurationLabel(event);

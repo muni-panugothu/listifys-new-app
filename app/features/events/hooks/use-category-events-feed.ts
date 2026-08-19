@@ -11,6 +11,10 @@ import {
 } from "@/features/events/services/events-api";
 import type { ListingItem } from "@/features/listing/services/listing-api";
 import {
+  buildLocationQueryParams,
+  type LocationQueryState,
+} from "@/lib/location-query-params";
+import {
   dateKey,
   eventOccursOnDate,
 } from "@/lib/event-dates";
@@ -120,6 +124,7 @@ export type UseCategoryEventsFeedOptions = {
   dateFilter: CategoryDateFilterId;
   sort: CategorySortId;
   under10km?: boolean;
+  locationState?: LocationQueryState;
   lat?: number;
   lng?: number;
   countryCode?: string | null;
@@ -134,6 +139,7 @@ export function useCategoryEventsFeed(opts: UseCategoryEventsFeedOptions) {
     dateFilter,
     sort,
     under10km = false,
+    locationState,
     lat,
     lng,
     countryCode,
@@ -156,21 +162,28 @@ export function useCategoryEventsFeed(opts: UseCategoryEventsFeedOptions) {
   const lastQueryRef = useRef<string>("");
 
   const queryParams = useMemo((): EventsQueryParams => {
+    const radius = under10km ? 10 : 100;
+    const geo = locationState
+      ? buildLocationQueryParams(locationState, { radius })
+      : lat != null && lng != null
+        ? {
+            lat,
+            lng,
+            radius,
+            countryCode: countryCode ?? undefined,
+          }
+        : {};
+
+    const hasGeo = geo.lat != null && geo.lng != null;
     const useNearest =
-      under10km || (sort === "nearby" && lat != null && lng != null);
+      under10km || (sort === "nearby" && hasGeo);
 
     const params: EventsQueryParams = {
       subcategory: apiSubcategory,
       limit: PAGE_SIZE,
       sort: useNearest ? "nearest" : sort === "date" ? "date" : "newest",
+      ...geo,
     };
-
-    if (lat != null && lng != null) {
-      params.lat = lat;
-      params.lng = lng;
-      params.radius = under10km ? 10 : 50;
-      if (countryCode) params.countryCode = countryCode;
-    }
 
     if (dateFilter === "today") {
       params.date = dateKey(new Date());
@@ -179,7 +192,17 @@ export function useCategoryEventsFeed(opts: UseCategoryEventsFeedOptions) {
     }
 
     return params;
-  }, [apiSubcategory, countryCode, dateFilter, lat, lng, locationLabel, sort, under10km]);
+  }, [
+    apiSubcategory,
+    countryCode,
+    dateFilter,
+    lat,
+    lng,
+    locationLabel,
+    locationState,
+    sort,
+    under10km,
+  ]);
 
   const querySignature = useMemo(
     () =>

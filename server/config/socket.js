@@ -272,6 +272,22 @@ async function initSocket(httpServer, corsOptions) {
       socket.leave(`conversation:${conversationId}`);
     });
 
+    SOCKET_RATE_LIMITS['event:join'] = { max: 30, windowMs: 60_000 };
+    SOCKET_RATE_LIMITS['event:leave'] = { max: 30, windowMs: 60_000 };
+
+    socket.on('event:join', async (eventId) => {
+      if (isRateLimited('event:join')) return;
+      if (typeof eventId !== 'string' || eventId.length > 50) return;
+      if (!mongoose.Types.ObjectId.isValid(eventId)) return;
+      socket.join(`event:${eventId}`);
+    });
+
+    socket.on('event:leave', (eventId) => {
+      if (isRateLimited('event:leave')) return;
+      if (typeof eventId !== 'string' || eventId.length > 50) return;
+      socket.leave(`event:${eventId}`);
+    });
+
     // ── Product Thread events ─────────────────────────────────────────────────
     // thread:join  — join a thread room for fine-grained typing/read indicators
     SOCKET_RATE_LIMITS['thread:join']   = { max: 30, windowMs: 60_000 };

@@ -11,13 +11,23 @@ export type StoredTokens = {
 
 export async function readStoredTokens(): Promise<StoredTokens | null> {
   try {
-    let raw = await SecureStore.getItemAsync(SECURE_TOKEN_KEY);
+    let raw: string | null = null;
+
+    try {
+      raw = await SecureStore.getItemAsync(SECURE_TOKEN_KEY);
+    } catch {
+      raw = null;
+    }
 
     if (!raw) {
       raw = await AsyncStorage.getItem(LEGACY_TOKEN_KEY);
       if (raw) {
-        await SecureStore.setItemAsync(SECURE_TOKEN_KEY, raw);
-        await AsyncStorage.removeItem(LEGACY_TOKEN_KEY);
+        try {
+          await SecureStore.setItemAsync(SECURE_TOKEN_KEY, raw);
+          await AsyncStorage.removeItem(LEGACY_TOKEN_KEY);
+        } catch {
+          // SecureStore unavailable — keep legacy AsyncStorage copy.
+        }
       }
     }
 
@@ -43,6 +53,12 @@ export async function writeStoredTokens(tokens: StoredTokens | null) {
   }
 
   const payload = JSON.stringify(tokens);
-  await SecureStore.setItemAsync(SECURE_TOKEN_KEY, payload);
-  await AsyncStorage.removeItem(LEGACY_TOKEN_KEY).catch(() => {});
+
+  try {
+    await SecureStore.setItemAsync(SECURE_TOKEN_KEY, payload);
+    await AsyncStorage.removeItem(LEGACY_TOKEN_KEY).catch(() => {});
+  } catch {
+    // SecureStore can fail on some dev builds — persist tokens so 7-day sessions survive restarts.
+    await AsyncStorage.setItem(LEGACY_TOKEN_KEY, payload);
+  }
 }

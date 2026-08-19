@@ -18,6 +18,7 @@ import { KeyboardAvoidingView } from "react-native";
 import { AuthUI } from "@/constants/auth-ui";
 import { ListifyFonts } from "@/constants/typography";
 import { AuthPrimaryButton } from "@/features/auth/components/auth-primary-button";
+import { navigateAfterAuthentication } from "@/lib/auth-navigation";
 import { showErrorToast } from "@/lib/toast";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
@@ -40,7 +41,7 @@ export function OtpVerificationScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
-  const { status, isAuthenticated, registrationEmail, registrationPhone } =
+  const { status, isAuthenticated, sessionHydrated, registrationEmail, registrationPhone } =
     useAppSelector((s) => s.auth);
 
   const [otp, setOtp] = useState("");
@@ -75,11 +76,16 @@ export function OtpVerificationScreen() {
   }, [dispatch]);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      router.replace("/(tabs)/home-feed-root" as Href);
-    }
+    if (!sessionHydrated || !isAuthenticated) return;
+    void navigateAfterAuthentication(router, { source: "otp-verification.already_authenticated" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [sessionHydrated, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || status !== "succeeded") return;
+    void navigateAfterAuthentication(router, { source: "otp-verification.verify_success" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, status]);
 
   useEffect(() => {
     const focusTimer = setTimeout(() => inputRef.current?.focus(), 400);

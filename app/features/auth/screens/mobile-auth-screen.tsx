@@ -18,6 +18,7 @@ import { ListifyFonts } from "@/constants/typography";
 import { AuthPrimaryButton } from "@/features/auth/components/auth-primary-button";
 import { useLocale } from "@/providers/locale-provider";
 import { connectivityService } from "@/lib/connectivity-service";
+import { navigateAfterAuthentication } from "@/lib/auth-navigation";
 import { showErrorToast } from "@/lib/toast";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { clearError, sendPhoneOtp, verifyPhoneOtp } from "@/store/slices/auth-slice";
@@ -30,7 +31,7 @@ export function MobileAuthScreen() {
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const { phoneCode: localePhoneCode, isoCountryCode: localeIso } = useLocale();
-  const { status, error, isAuthenticated } = useAppSelector((s) => s.auth);
+  const { status, error, isAuthenticated, sessionHydrated } = useAppSelector((s) => s.auth);
   const [phoneCode, setPhoneCode] = useState(localePhoneCode);
   const [isoCode, setIsoCode] = useState(localeIso);
   const [phoneDigits, setPhoneDigits] = useState("");
@@ -52,11 +53,16 @@ export function MobileAuthScreen() {
   const isVerifyEnabled = otpDigits.every((digit) => digit.length === 1);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      router.replace("/(tabs)/home-feed-root" as Href);
-    }
+    if (!sessionHydrated || !isAuthenticated) return;
+    void navigateAfterAuthentication(router, { source: "mobile-auth.already_authenticated" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [sessionHydrated, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || status !== "succeeded") return;
+    void navigateAfterAuthentication(router, { source: "mobile-auth.verify_success" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, status]);
 
   useEffect(() => {
     if (error) {

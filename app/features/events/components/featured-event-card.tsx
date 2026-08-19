@@ -50,6 +50,8 @@ function FeaturedEventCardImpl({
     eventTime,
     startDate,
     endDate,
+    startTime: (event as { startTime?: string }).startTime,
+    endTime: (event as { endTime?: string }).endTime,
   });
   const comedyCategory = getComedyCategoryLabel(event);
   const eventDuration = getEventDurationLabel(event);

@@ -1,5 +1,9 @@
 import type { EventsAllFilterId } from "@/features/events/data/events-all-filters";
 import type { EventsQueryParams } from "@/features/events/services/events-api";
+import {
+  buildLocationQueryParams,
+  type LocationQueryState,
+} from "@/lib/location-query-params";
 import { dateKey } from "@/lib/event-dates";
 
 function addDays(base: Date, days: number): Date {
@@ -11,30 +15,17 @@ function addDays(base: Date, days: number): Date {
 /** Maps sticky All Events chip → API query (server-side where possible). */
 export function buildEventsFilterQuery(
   filterId: EventsAllFilterId,
-  opts: {
-    lat?: number | null;
-    lng?: number | null;
-    countryCode?: string | null;
-    locationLabel?: string | null;
-  } = {},
+  locationState: LocationQueryState,
 ): EventsQueryParams {
-  const hasCoords = opts.lat != null && opts.lng != null;
+  const radius = filterId === "under_10km" ? 10 : 100;
+  const geo = buildLocationQueryParams(locationState, { radius });
+  const hasGeo = geo.lat != null && geo.lng != null;
+
   const params: EventsQueryParams = {
     limit: 50,
-    sort: "newest",
-    ...(hasCoords && opts.countryCode ? { countryCode: opts.countryCode } : {}),
+    sort: hasGeo ? "nearest" : "newest",
+    ...geo,
   };
-
-  if (hasCoords && filterId === "under_10km") {
-    params.lat = opts.lat ?? undefined;
-    params.lng = opts.lng ?? undefined;
-    params.radius = 10;
-    params.sort = "nearest";
-  }
-
-  // Do not send city-name text filters on the main listing — GPS sublocalities
-  // (e.g. "Uppal") hide events stored under a different city (e.g. "Hyderabad").
-  // Geo radius is applied only for the explicit under_10km chip above.
 
   switch (filterId) {
     case "all":

@@ -1,5 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { type ReactNode } from "react";
+import { type ReactNode, type RefObject } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -12,6 +12,7 @@ import { KeyboardFormScroll } from "@/components/keyboard-form-scroll";
 import { SellStepIndicator } from "@/components/sell-step-indicator";
 import { ListifyFonts } from "@/constants/typography";
 import { useTheme } from "@/providers/theme-provider";
+import type { KeyboardAwareScrollView } from "@/lib/safe-keyboard-controller";
 
 type SellFlowLayoutProps = {
   step: 1 | 2 | 3;
@@ -28,6 +29,7 @@ type SellFlowLayoutProps = {
   primaryLoading?: boolean;
   /** Keeps taps on list rows working while the subcategory search keyboard is open. */
   keyboardPersistTaps?: "always" | "handled" | "never";
+  scrollRef?: RefObject<React.ElementRef<typeof KeyboardAwareScrollView> | null>;
 };
 
 export function SellSectionCard({
@@ -87,6 +89,7 @@ export function SellFlowLayout({
   primaryDisabled = false,
   primaryLoading = false,
   keyboardPersistTaps = "handled",
+  scrollRef,
 }: SellFlowLayoutProps) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -131,6 +134,7 @@ export function SellFlowLayout({
       </View>
 
       <KeyboardFormScroll
+        ref={scrollRef}
         bottomOffset={showFooter ? footerBottomPad + 72 : 24}
         keyboardVerticalOffset={insets.top}
         keyboardShouldPersistTaps={keyboardPersistTaps}

@@ -33,6 +33,7 @@ import { TypographyProvider } from "@/providers/typography-provider";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { hideAuthGate } from "@/store/slices/auth-gate-slice";
 import { navigateAfterAuthentication } from "@/lib/auth-navigation";
+import { ensureSessionRestored } from "@/lib/session-bootstrap";
 import { logout, invalidateSession } from "@/store/slices/auth-slice";
 import { onSessionInvalidated } from "@/features/auth/services/auth-api";
 import { hydrateAppLocation } from "@/store/slices/location-slice";
@@ -199,6 +200,11 @@ function AppLayout() {
   useEffect(() => {
     void initOfflineQueue();
   }, []);
+
+  // Restore JWT session on every cold start / reload — not only when splash mounts.
+  useEffect(() => {
+    void ensureSessionRestored(dispatch);
+  }, [dispatch]);
 
   // Restore saved location from storage only — permission prompt runs on home feed.
   useEffect(() => {

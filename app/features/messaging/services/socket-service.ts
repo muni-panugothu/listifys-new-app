@@ -12,6 +12,7 @@ let socket: Socket | null = null;
 let connectPromise: Promise<Socket> | null = null;
 const joinedConversationIds = new Set<string>();
 const joinedThreadIds = new Set<string>();
+const joinedEventIds = new Set<string>();
 
 export function getSocket(): Socket | null {
   return socket;
@@ -24,6 +25,9 @@ function rejoinActiveRooms() {
   }
   for (const threadId of joinedThreadIds) {
     socket.emit("thread:join", threadId);
+  }
+  for (const eventId of joinedEventIds) {
+    socket.emit("event:join", eventId);
   }
 }
 
@@ -310,4 +314,16 @@ export function requestOnlineUsers(): Promise<string[]> {
     socket.on("users:online", onList);
     socket.emit("users:online");
   });
+}
+
+export function joinEventRoom(eventId: string) {
+  if (!eventId) return;
+  joinedEventIds.add(eventId);
+  socket?.emit("event:join", eventId);
+}
+
+export function leaveEventRoom(eventId: string) {
+  if (!eventId) return;
+  joinedEventIds.delete(eventId);
+  socket?.emit("event:leave", eventId);
 }
